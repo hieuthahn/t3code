@@ -1145,7 +1145,9 @@ export const make = Effect.gen(function* () {
           homePath = layout.sharedHomePath;
         }
 
-        const homeKey = `${source}\0${yield* directoryIdentity(homePath)}`;
+        const homeKey = `${source}\0${yield* directoryIdentity(
+          source === "claudeAgent" ? path.join(homePath, "projects") : homePath,
+        )}`;
         if (seenHomes.has(homeKey)) continue;
         seenHomes.add(homeKey);
         homes.push({ homePath, providerInstanceId: instanceId });
@@ -1370,6 +1372,11 @@ export const make = Effect.gen(function* () {
     return Stream.fromIteratorSucceed(eligibleTranscripts.values(), 1).pipe(
       Stream.mapEffect(({ candidate, transcript }) =>
         Effect.gen(function* () {
+          const skip = (reason: string) =>
+            Effect.logInfo("Skipped agent session transcript", {
+              reason,
+              filePath: transcript.filePath,
+            }).pipe(Effect.as(Option.some<AgentSessionRecentThread>({ _tag: "Skipped" })));
           const completed = completedByFile.get(
             `${candidate.providerInstanceId}\0${transcript.filePath}`,
           );
@@ -1377,11 +1384,11 @@ export const make = Effect.gen(function* () {
             completed === undefined &&
             (transcriptsRemaining === 0 || bytesRemaining === 0 || recordsRemaining === 0)
           ) {
-            return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
+            return yield* skip("transcript budget exhausted");
           }
           const stats = yield* statOption(transcript.filePath);
           if (Option.isNone(stats) || stats.value.type !== "File") {
-            return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
+            return yield* skip("transcript is not a file");
           }
           const identity = transcriptIdentity(transcript.filePath, stats.value);
           const completedSource = completed?.find(
@@ -1403,7 +1410,7 @@ export const make = Effect.gen(function* () {
             identity.size > MAX_IMPORTED_TRANSCRIPT_BYTES ||
             identity.size > bytesRemaining
           ) {
-            return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
+            return yield* skip("transcript over size or record budget");
           }
           transcriptsRemaining -= 1;
           bytesRemaining -= identity.size;
@@ -1414,19 +1421,19 @@ export const make = Effect.gen(function* () {
             candidate.source,
           );
           if (snapshot === null) {
-            return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
+            return yield* skip("transcript unreadable");
           }
           recordsRemaining -= snapshot.recordCount;
 
           if (Option.isNone(snapshot.cwd)) {
-            return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
+            return yield* skip("transcript has no cwd");
           }
           const expandedCwd = expandHomePath(snapshot.cwd.value.trim(), homeDir);
           if (
             !path.isAbsolute(expandedCwd) ||
             (yield* directoryIdentity(path.resolve(expandedCwd))) !== rootIdentity
           ) {
-            return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
+            return yield* skip("cwd outside project root");
           }
 
           const parsedThread = parseAgentSessionRecords(
@@ -1440,7 +1447,7 @@ export const make = Effect.gen(function* () {
             snapshot.claudeFields,
           );
           if (parsedThread === null) {
-            return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
+            return yield* skip("no importable messages");
           }
 
           const source: AgentSessionImportSource = {

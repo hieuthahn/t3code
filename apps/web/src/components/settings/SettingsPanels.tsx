@@ -976,8 +976,14 @@ export function GeneralSettingsPanel() {
                 }
               }}
             >
-              <SelectTrigger size="sm" className="w-full sm:w-44" aria-label="Switch limited threads">
-                <SelectValue>{LIMITED_THREAD_SWITCH_LABELS[settings.limitedThreadSwitch]}</SelectValue>
+              <SelectTrigger
+                size="sm"
+                className="w-full sm:w-44"
+                aria-label="Switch limited threads"
+              >
+                <SelectValue>
+                  {LIMITED_THREAD_SWITCH_LABELS[settings.limitedThreadSwitch]}
+                </SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
                 {LimitedThreadSwitchMode.literals.map((mode) => (

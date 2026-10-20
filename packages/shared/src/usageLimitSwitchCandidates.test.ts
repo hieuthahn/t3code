@@ -2,7 +2,10 @@ import { assert, describe, it } from "@effect/vitest";
 import { ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
-import { limitedWindowIdForReset, rankUsageLimitSwitchCandidates } from "./usageLimitSwitchCandidates.ts";
+import {
+  limitedWindowIdForReset,
+  rankUsageLimitSwitchCandidates,
+} from "./usageLimitSwitchCandidates.ts";
 
 const NOW = Date.parse("2026-10-20T12:00:00.000Z");
 const iso = (offsetMinutes: number) =>
@@ -54,7 +57,10 @@ const rank = (
   }).map((candidate) => candidate.instanceId);
 
 describe("rankUsageLimitSwitchCandidates", () => {
-  const current = makeProvider({ instanceId: "a", usage: { usedPercent: 100, resetsInMinutes: 60 } });
+  const current = makeProvider({
+    instanceId: "a",
+    usage: { usedPercent: 100, resetsInMinutes: 60 },
+  });
   const providers = [
     current,
     makeProvider({ instanceId: "b", usage: { usedPercent: 20, resetsInMinutes: 200 } }),
@@ -123,7 +129,10 @@ describe("rankUsageLimitSwitchCandidates", () => {
 });
 
 describe("limitedWindowIdForReset", () => {
-  const limited = makeProvider({ instanceId: "a", usage: { usedPercent: 100, resetsInMinutes: 60 } });
+  const limited = makeProvider({
+    instanceId: "a",
+    usage: { usedPercent: 100, resetsInMinutes: 60 },
+  });
 
   it("names the window whose reset time matches the failure", () => {
     assert.equal(limitedWindowIdForReset(limited, NOW + 60 * 60_000 + 20_000), "five_hour");

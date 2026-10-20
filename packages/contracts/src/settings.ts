@@ -1209,7 +1209,9 @@ export const ServerSettings = Schema.Struct({
   ),
   snoozeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   autoResumeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  limitedThreadSwitch: LimitedThreadSwitchMode.pipe(Schema.withDecodingDefault(Effect.succeed("ask" as const))),
+  limitedThreadSwitch: LimitedThreadSwitchMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed("ask" as const)),
+  ),
   sidebarAutoSettleKeepPullRequests: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),

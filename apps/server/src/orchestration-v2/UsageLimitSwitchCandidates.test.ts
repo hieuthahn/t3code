@@ -2,7 +2,7 @@ import { assert, describe, it } from "@effect/vitest";
 import { ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
-import { rankUsageLimitSwitchCandidates } from "./UsageLimitSwitchCandidates.ts";
+import { limitedWindowIdForReset, rankUsageLimitSwitchCandidates } from "./UsageLimitSwitchCandidates.ts";
 
 const NOW = Date.parse("2026-10-20T12:00:00.000Z");
 const iso = (offsetMinutes: number) =>
@@ -119,5 +119,18 @@ describe("rankUsageLimitSwitchCandidates", () => {
   it("returns nothing when the current instance has no continuation group", () => {
     const withoutGroup = makeProvider({ instanceId: "a", groupKey: null });
     assert.deepEqual(rank([withoutGroup, providers[1]!], "soonest-reset"), []);
+  });
+});
+
+describe("limitedWindowIdForReset", () => {
+  const limited = makeProvider({ instanceId: "a", usage: { usedPercent: 100, resetsInMinutes: 60 } });
+
+  it("names the window whose reset time matches the failure", () => {
+    assert.equal(limitedWindowIdForReset(limited, NOW + 60 * 60_000 + 20_000), "five_hour");
+  });
+
+  it("defaults to the session window when nothing matches or no snapshot exists", () => {
+    assert.equal(limitedWindowIdForReset(limited, NOW + 5 * 60 * 60_000), "five_hour");
+    assert.equal(limitedWindowIdForReset(undefined, NOW), "five_hour");
   });
 });

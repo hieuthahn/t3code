@@ -77,3 +77,22 @@ export const rankUsageLimitSwitchCandidates = (input: {
           headroomOf(right) - headroomOf(left) || resetOrder(left) - resetOrder(right);
   return [...measured.toSorted(byStrategy), ...unmeasured];
 };
+
+const RESET_MATCH_TOLERANCE_MS = 60_000;
+const DEFAULT_LIMITED_WINDOW_ID = "five_hour";
+
+/**
+ * Name the window a failure's reset time belongs to by matching it against the limited
+ * instance's last snapshot, defaulting to the session window.
+ */
+export const limitedWindowIdForReset = (
+  provider: ServerProvider | undefined,
+  resetAtMs: number,
+): string => {
+  const matched = provider?.usageLimits?.windows.find(
+    (window) =>
+      window.resetsAt !== undefined &&
+      Math.abs(Date.parse(window.resetsAt) - resetAtMs) <= RESET_MATCH_TOLERANCE_MS,
+  );
+  return matched?.id ?? DEFAULT_LIMITED_WINDOW_ID;
+};

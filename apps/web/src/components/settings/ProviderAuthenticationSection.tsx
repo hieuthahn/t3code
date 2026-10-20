@@ -437,11 +437,13 @@ export function ProviderAuthenticationSection({
               }}
             >
               <label className="grid gap-1">
-                If the final localhost page does not load, paste its full URL here.
+                {provider.driver === "claudeAgent"
+                  ? "After you approve the sign-in, paste the code Claude shows here."
+                  : "If the final localhost page does not load, paste its full URL here."}
                 <Input
                   size="sm"
                   id={`provider-callback-${instanceId}`}
-                  type="url"
+                  type={provider.driver === "claudeAgent" ? "text" : "url"}
                   autoComplete="off"
                   value={values.callback ?? ""}
                   disabled={disabled}

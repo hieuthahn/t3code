@@ -18,10 +18,12 @@ import {
 } from "@t3tools/shared/usageLimitSwitchCandidates";
 
 const REFRESH_TIMEOUT = "5 seconds";
+const RETRY_BUCKET_MS = 5 * 60_000;
 
 export function limitSwitchCommand(
   thread: ProjectionStore.ProjectionLimitRecoveryCandidate,
   targetInstanceId: ProviderInstanceId,
+  nowMs: number,
 ): OrchestrationV2Command | null {
   if (
     thread.status !== "failed" ||
@@ -33,7 +35,7 @@ export function limitSwitchCommand(
     thread.pendingRuntimeRequest !== null
   )
     return null;
-  const identity = `${thread.id}:${thread.latestRunId}:${targetInstanceId}`;
+  const identity = `${thread.id}:${thread.latestRunId}:${targetInstanceId}:${Math.floor(nowMs / RETRY_BUCKET_MS)}`;
   return {
     type: "message.dispatch",
     commandId: CommandId.make(`limit-switch:${identity}`),
@@ -108,7 +110,7 @@ const makeSweep = Effect.gen(function* () {
         });
         const target = ranked.find((candidate) => candidate.usedPercent !== undefined);
         if (target === undefined) return;
-        const command = limitSwitchCommand(thread, target.instanceId);
+        const command = limitSwitchCommand(thread, target.instanceId, nowMs);
         if (command === null) return;
         yield* threads.dispatch(command);
       }).pipe(

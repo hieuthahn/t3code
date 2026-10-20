@@ -1577,6 +1577,41 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
       }),
     );
 
+    it.effect("scans Claude homes that share a projects directory once", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const claudeHomePath = yield* makeTempDir("t3code-claude-home-");
+        const codexHomePath = yield* makeTempDir("t3code-codex-home-");
+        const siblingHome = yield* makeTempDir("t3code-claude-sibling-");
+        const workspace = yield* makeTempDir("t3code-workspace-");
+
+        yield* writeTranscript({
+          filePath: path.join(claudeHomePath, "projects", "-slug", "a.jsonl"),
+          contents: claudeSessionLine(workspace),
+          mtimeMs: Date.parse("2026-01-01T00:00:00.000Z"),
+        });
+        yield* fileSystem.symlink(
+          path.join(claudeHomePath, "projects"),
+          path.join(siblingHome, "projects"),
+        );
+
+        const result = yield* runScan({
+          claudeHomePath,
+          codexHomePath,
+          providerInstances: {
+            [ProviderInstanceId.make("claudeAgent_sibling")]: {
+              driver: ProviderDriverKind.make("claudeAgent"),
+              config: { homePath: siblingHome },
+            },
+          },
+        });
+
+        expect(result.candidates).toHaveLength(1);
+        expect(result.candidates[0]?.threadCount).toBe(1);
+      }),
+    );
+
     it.effect("uses configured order when custom instances share a session home", () =>
       Effect.gen(function* () {
         const path = yield* Path.Path;

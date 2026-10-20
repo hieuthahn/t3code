@@ -59,9 +59,19 @@ export const makeClaudeContinuationGroupKey = Effect.fn("makeClaudeContinuationG
   function* (
     config: Pick<ClaudeSettings, "homePath">,
     environment?: NodeJS.ProcessEnv,
-  ): Effect.fn.Return<string, never, Path.Path> {
+  ): Effect.fn.Return<string, never, Path.Path | FileSystem.FileSystem> {
+    const path = yield* Path.Path;
+    const fileSystem = yield* FileSystem.FileSystem;
     const resolvedHomePath = yield* resolveClaudeHomePath(config, environment);
-    return `claude:home:${resolvedHomePath}`;
+    // Homes whose `projects` directory resolves to the same place share their
+    // session history, so a thread can continue on any of them.
+    const sharedProjectsPath = yield* fileSystem
+      .realPath(path.join(resolvedHomePath, "projects"))
+      .pipe(Effect.orElseSucceed(() => undefined));
+    return sharedProjectsPath !== undefined &&
+      sharedProjectsPath !== path.join(resolvedHomePath, "projects")
+      ? `claude:projects:${sharedProjectsPath}`
+      : `claude:home:${resolvedHomePath}`;
   },
 );
 

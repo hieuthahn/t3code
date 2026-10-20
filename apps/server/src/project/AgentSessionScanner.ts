@@ -66,7 +66,7 @@ const MAX_IMPORTED_MESSAGES = 200;
 const MAX_IMPORT_HISTORY_BYTES = 32 * 1024 * 1024;
 const MAX_IMPORT_BYTES = 4 * 1024 * 1024 * 1024;
 const MAX_IMPORT_TRANSCRIPTS = 100;
-const MAX_IMPORT_RECORDS = 100_000;
+export const MAX_IMPORT_RECORDS = 500_000;
 
 const TranscriptContentBlock = Schema.Struct({
   type: Schema.optional(Schema.String),

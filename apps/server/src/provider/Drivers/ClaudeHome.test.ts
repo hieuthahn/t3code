@@ -60,15 +60,23 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
           yield* fileSystem.makeDirectory(`${root}/${name}`);
           yield* fileSystem.symlink(shared, `${root}/${name}/projects`);
         }
+        yield* fileSystem.makeDirectory(`${root}/owner/projects`, { recursive: true });
+        yield* fileSystem.makeDirectory(`${root}/linked`);
+        yield* fileSystem.symlink(`${root}/owner/projects`, `${root}/linked/projects`);
         yield* fileSystem.makeDirectory(`${root}/c/projects`, { recursive: true });
 
         const keyA = yield* makeClaudeContinuationGroupKey({ homePath: `${root}/a` });
         const keyB = yield* makeClaudeContinuationGroupKey({ homePath: `${root}/b` });
         const keyC = yield* makeClaudeContinuationGroupKey({ homePath: `${root}/c` });
 
-        expect(keyA).toBe(`claude:projects:${shared}`);
+        expect(keyA).toBe(`claude:home:${root}`);
         expect(keyB).toBe(keyA);
         expect(keyC).toBe(`claude:home:${root}/c`);
+
+        const owner = yield* makeClaudeContinuationGroupKey({ homePath: `${root}/owner` });
+        const linked = yield* makeClaudeContinuationGroupKey({ homePath: `${root}/linked` });
+        expect(owner).toBe(`claude:home:${root}/owner`);
+        expect(linked).toBe(owner);
       }).pipe(Effect.scoped),
     );
 

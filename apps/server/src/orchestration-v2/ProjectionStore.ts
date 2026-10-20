@@ -182,6 +182,8 @@ export type ProjectionLimitRecoveryCandidate = Pick<
   | "updatedAt"
   | "limitRecovery"
   | "snoozedUntil"
+  | "providerInstanceId"
+  | "modelSelection"
 >;
 
 export type ProjectionThreadPullRequests = Pick<
@@ -3991,6 +3993,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             pendingRuntimeRequest: null,
             limitRecovery: thread.limitRecovery ?? null,
             snoozedUntil: thread.snoozedUntil ?? null,
+            providerInstanceId: thread.providerInstanceId,
+            modelSelection: thread.modelSelection,
           });
         }
         return candidates;

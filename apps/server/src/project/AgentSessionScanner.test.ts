@@ -140,7 +140,7 @@ function makeRecordLimitTranscript(cwd: string, overflow: boolean): string {
       }),
     ].join("\n") +
     "\n" +
-    "{}\n".repeat(99_998);
+    "{}\n".repeat(AgentSessionScanner.MAX_IMPORT_RECORDS - 2);
   return overflow
     ? records +
         "\n" +
@@ -1226,7 +1226,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         const codexHomePath = yield* makeTempDir("t3code-record-budget-codex-");
         const workspace = yield* makeTempDir("t3code-record-budget-workspace-");
         for (const [sessionId, padding, mtimeMs] of [
-          ["excessive", "\n".repeat(100_001), nowMs],
+          ["excessive", "\n".repeat(AgentSessionScanner.MAX_IMPORT_RECORDS + 1), nowMs],
           ["older", "", nowMs - 1_000],
         ] as const) {
           yield* writeTranscript({

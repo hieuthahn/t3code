@@ -6,7 +6,7 @@ import type {
   SnapShotSource,
 } from "@t3tools/contracts";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
-import { CircleAlertIcon, PaperclipIcon, PlayIcon, XIcon } from "lucide-react";
+import { CircleAlertIcon, PaperclipIcon, PlayIcon, ScreenShareIcon, XIcon } from "lucide-react";
 import { type ComponentProps, useLayoutEffect, useRef } from "react";
 
 import {
@@ -15,7 +15,9 @@ import {
   type DraftId,
   composerFileNeedsReattach,
 } from "../../composerDraftStore";
+import { isElectron } from "../../env";
 import { retryAttachmentUpload, useAttachmentUploadStore } from "../../lib/attachmentUploadQueue";
+import { captureBrowserWindow, supportsBrowserWindowCapture } from "../../lib/browserWindowCapture";
 import { formatAttachmentUploadProgress } from "../../lib/attachmentUploadState";
 import { isHeicImageFile } from "../../lib/imageCompression";
 import {
@@ -31,6 +33,7 @@ import { AttachmentFilePreview } from "../files/AttachmentFilePreview";
 import { AttachmentImage } from "../media/AttachmentImage";
 import { Button } from "../ui/button";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
+import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ComposerImageThumbnail } from "./ComposerImageThumbnail";
 import { composerFloatingLayerProps } from "./composerEventScope";
@@ -710,6 +713,41 @@ export function ComposerAttachButton({
         </TooltipTrigger>
         <TooltipPopup>Attach files</TooltipPopup>
       </Tooltip>
+      {!isElectron && supportsBrowserWindowCapture() ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onPointerDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  void captureBrowserWindow().then((result) => {
+                    if (result.status === "captured") {
+                      return addComposerAttachments([result.file]).then((inserted) => {
+                        if (!inserted) focusComposer();
+                      });
+                    }
+                    if (result.status === "failed") {
+                      toastManager.add({
+                        type: "error",
+                        title: "Couldn't capture the window",
+                        description: result.message,
+                      });
+                    }
+                    return undefined;
+                  });
+                }}
+                aria-label="Capture a window"
+              />
+            }
+          >
+            <ScreenShareIcon />
+          </TooltipTrigger>
+          <TooltipPopup>Capture a window</TooltipPopup>
+        </Tooltip>
+      ) : null}
     </>
   );
 }

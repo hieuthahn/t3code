@@ -35,7 +35,11 @@ const toCandidate = (
   if (usedPercent >= FULL_PERCENT) {
     return undefined;
   }
-  return { instanceId: provider.instanceId, usedPercent, resetsAtMs: windowRefilled ? undefined : resetsAtMs };
+  return {
+    instanceId: provider.instanceId,
+    usedPercent,
+    resetsAtMs: windowRefilled ? undefined : resetsAtMs,
+  };
 };
 
 /**
@@ -50,7 +54,9 @@ export const rankUsageLimitSwitchCandidates = (input: {
   readonly nowMs: number;
   readonly strategy: UsageLimitSwitchStrategy;
 }): ReadonlyArray<UsageLimitSwitchCandidate> => {
-  const current = input.providers.find((provider) => provider.instanceId === input.currentInstanceId);
+  const current = input.providers.find(
+    (provider) => provider.instanceId === input.currentInstanceId,
+  );
   const groupKey = current?.continuation?.groupKey;
   if (current === undefined || groupKey === undefined) {
     return [];
@@ -75,7 +81,7 @@ export const rankUsageLimitSwitchCandidates = (input: {
           resetOrder(left) - resetOrder(right) || headroomOf(right) - headroomOf(left)
       : (left: UsageLimitSwitchCandidate, right: UsageLimitSwitchCandidate) =>
           headroomOf(right) - headroomOf(left) || resetOrder(left) - resetOrder(right);
-  return [...measured.toSorted(byStrategy), ...unmeasured];
+  return [...[...measured].sort(byStrategy), ...unmeasured];
 };
 
 const RESET_MATCH_TOLERANCE_MS = 60_000;

@@ -1182,6 +1182,7 @@ export default function ChatView(props: ChatViewProps) {
     (providerEnvironmentId === undefined
       ? undefined
       : providersByEnvironment.get(providerEnvironmentId)) ?? EMPTY_PROVIDERS;
+  const limitSwitchNowMinute = useNowMinute();
   const limitSwitchTarget = (() => {
     if (
       settings.limitedThreadSwitch !== "ask" ||
@@ -1193,9 +1194,11 @@ export default function ChatView(props: ChatViewProps) {
       return null;
     }
     const limitedRun = latestExecutedRun(serverProjection.runs);
-    const resetAt = latestRootProviderFailure(limitedRun ?? null, serverProjection.turnItems)
-      ?.resetAt;
-    const nowMs = Date.now();
+    const resetAt = latestRootProviderFailure(
+      limitedRun ?? null,
+      serverProjection.turnItems,
+    )?.resetAt;
+    const nowMs = Date.parse(`${limitSwitchNowMinute}:00.000Z`);
     const currentInstanceId = activeThread.modelSelection.instanceId;
     const windowId = limitedWindowIdForReset(
       providerStatuses.find((provider) => provider.instanceId === currentInstanceId),

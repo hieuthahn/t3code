@@ -1174,7 +1174,9 @@ export const ServerSettings = Schema.Struct({
   autoResumeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Beta: guest links for this machine's threads. Off refuses new links and pauses existing ones. */
   guestSharingEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  limitedThreadSwitch: LimitedThreadSwitchMode.pipe(Schema.withDecodingDefault(Effect.succeed("ask" as const))),
+  limitedThreadSwitch: LimitedThreadSwitchMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed("ask" as const)),
+  ),
   sidebarAutoSettleKeepPullRequests: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),

@@ -65,7 +65,8 @@ const makeSweep = Effect.gen(function* () {
       snooze: true,
     });
     for (const thread of candidates) {
-      if (thread.usageLimitResetAt == null || Date.parse(thread.usageLimitResetAt) <= nowMs) continue;
+      if (thread.usageLimitResetAt == null || Date.parse(thread.usageLimitResetAt) <= nowMs)
+        continue;
       yield* Effect.gen(function* () {
         const snapshot = yield* registry.getProviders;
         const windowId = limitedWindowIdForReset(

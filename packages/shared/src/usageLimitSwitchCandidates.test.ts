@@ -2,7 +2,7 @@ import { assert, describe, it } from "@effect/vitest";
 import { ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
-import { limitedWindowIdForReset, rankUsageLimitSwitchCandidates } from "./UsageLimitSwitchCandidates.ts";
+import { limitedWindowIdForReset, rankUsageLimitSwitchCandidates } from "./usageLimitSwitchCandidates.ts";
 
 const NOW = Date.parse("2026-10-20T12:00:00.000Z");
 const iso = (offsetMinutes: number) =>

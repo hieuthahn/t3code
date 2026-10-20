@@ -15,7 +15,7 @@ import * as ThreadManagement from "./ThreadManagementService.ts";
 import {
   limitedWindowIdForReset,
   rankUsageLimitSwitchCandidates,
-} from "./UsageLimitSwitchCandidates.ts";
+} from "@t3tools/shared/usageLimitSwitchCandidates";
 
 const REFRESH_TIMEOUT = "5 seconds";
 

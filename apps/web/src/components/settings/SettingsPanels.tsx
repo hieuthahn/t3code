@@ -18,6 +18,7 @@ import {
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   type ResponseStreamingMode,
   type QuitConfirmationMode,
+  LimitedThreadSwitchMode,
   SidebarProjectSortOrder,
 } from "@t3tools/contracts/settings";
 import { createModelSelection } from "@t3tools/shared/model";
@@ -113,6 +114,13 @@ const SIDEBAR_PROJECT_SORT_ORDER_LABELS: Record<SidebarProjectSortOrder, string>
   manual: "Manual",
 };
 const isSidebarProjectSortOrder = Schema.is(SidebarProjectSortOrder);
+
+const LIMITED_THREAD_SWITCH_LABELS: Record<LimitedThreadSwitchMode, string> = {
+  off: "Off",
+  ask: "Ask first",
+  auto: "Switch automatically",
+};
+const isLimitedThreadSwitchMode = Schema.is(LimitedThreadSwitchMode);
 
 const TIMESTAMP_FORMAT_LABELS = {
   locale: "System default",
@@ -450,6 +458,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.snoozeLimitedThreads !== DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads
       ? ["Snooze limited threads"]
       : []),
+    ...(settings.limitedThreadSwitch !== DEFAULT_UNIFIED_SETTINGS.limitedThreadSwitch
+      ? ["Switch limited threads"]
+      : []),
     ...(settings.wordWrap !== DEFAULT_UNIFIED_SETTINGS.wordWrap ? ["Word wrap"] : []),
     ...(settings.persistComposerContextStrip !==
     DEFAULT_UNIFIED_SETTINGS.persistComposerContextStrip
@@ -608,6 +619,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       autoResumeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
+      limitedThreadSwitch: DEFAULT_UNIFIED_SETTINGS.limitedThreadSwitch,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
@@ -948,6 +960,33 @@ export function GeneralSettingsPanel() {
               }
               aria-label="Auto-resume limited threads"
             />
+          }
+        />
+        <SettingsRow
+          serverScoped
+          {...searchableSetting("limited-thread-switch")}
+          description="When an account hits its usage limit, move the thread to another instance that shares its history. Ask shows a button, Auto switches and continues."
+          settingKeys={["limitedThreadSwitch"]}
+          control={
+            <Select
+              value={settings.limitedThreadSwitch}
+              onValueChange={(value) => {
+                if (isLimitedThreadSwitchMode(value)) {
+                  updateSettings({ limitedThreadSwitch: value });
+                }
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-44" aria-label="Switch limited threads">
+                <SelectValue>{LIMITED_THREAD_SWITCH_LABELS[settings.limitedThreadSwitch]}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {LimitedThreadSwitchMode.literals.map((mode) => (
+                  <SelectItem hideIndicator key={mode} value={mode}>
+                    {LIMITED_THREAD_SWITCH_LABELS[mode]}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
           }
         />
         <SettingsRow

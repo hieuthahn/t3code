@@ -55,11 +55,13 @@ export const ThreadErrorBanner = memo(function ThreadErrorBanner({
   onDismiss,
   errorClass,
   chatGptUsageLimit = false,
+  switchAction,
 }: {
   error: string | null;
   errorClass?: OrchestrationV2ProviderFailureClass | null;
   onDismiss?: () => void;
   chatGptUsageLimit?: boolean;
+  switchAction?: { label: string; disabled: boolean; onSwitch: () => void };
 }) {
   if (!error) return null;
   const variant = errorClass === "usage_limit" ? "warning" : "error";
@@ -81,8 +83,18 @@ export const ThreadErrorBanner = memo(function ThreadErrorBanner({
             <ExpandableText text={error} collapsedText={getThreadErrorBannerMessage(error)} />
           )}
         </AlertDescription>
-        {(chatGptUsageLimit || onDismiss) && (
+        {(chatGptUsageLimit || onDismiss || switchAction) && (
           <AlertAction>
+            {switchAction ? (
+              <Button
+                variant="default"
+                size="sm"
+                disabled={switchAction.disabled}
+                onClick={switchAction.onSwitch}
+              >
+                {switchAction.label}
+              </Button>
+            ) : null}
             {chatGptUsageLimit ? <ChatGptUsageButton variant="default" size="sm" /> : null}
             {onDismiss ? (
               <Button variant="ghost" size="icon-xs" aria-label="Dismiss error" onClick={onDismiss}>

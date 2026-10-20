@@ -188,6 +188,10 @@ import {
   sortProviderInstanceEntries,
 } from "../providerInstances";
 import {
+  limitedWindowIdForReset,
+  rankUsageLimitSwitchCandidates,
+} from "@t3tools/shared/usageLimitSwitchCandidates";
+import {
   useClientSettings,
   useClientSettingsHydrated,
   useEnvironmentSettings,
@@ -1178,6 +1182,36 @@ export default function ChatView(props: ChatViewProps) {
     (providerEnvironmentId === undefined
       ? undefined
       : providersByEnvironment.get(providerEnvironmentId)) ?? EMPTY_PROVIDERS;
+  const limitSwitchTarget = (() => {
+    if (
+      settings.limitedThreadSwitch !== "ask" ||
+      resumableRunId === null ||
+      serverRuntime?.lastErrorClass !== "usage_limit" ||
+      !activeThread ||
+      serverProjection === null
+    ) {
+      return null;
+    }
+    const limitedRun = latestExecutedRun(serverProjection.runs);
+    const resetAt = latestRootProviderFailure(limitedRun ?? null, serverProjection.turnItems)
+      ?.resetAt;
+    const nowMs = Date.now();
+    const currentInstanceId = activeThread.modelSelection.instanceId;
+    const windowId = limitedWindowIdForReset(
+      providerStatuses.find((provider) => provider.instanceId === currentInstanceId),
+      resetAt == null ? nowMs : Date.parse(resetAt),
+    );
+    const target = rankUsageLimitSwitchCandidates({
+      providers: providerStatuses,
+      currentInstanceId,
+      windowId,
+      nowMs,
+      strategy: "soonest-reset",
+    }).find((candidate) => candidate.usedPercent !== undefined);
+    if (target === undefined) return null;
+    const provider = providerStatuses.find((entry) => entry.instanceId === target.instanceId);
+    return { instanceId: target.instanceId, label: provider?.displayName ?? target.instanceId };
+  })();
   const selectedProviderByThreadId = composerActiveProvider ?? null;
   const threadProvider =
     activeThread?.modelSelection.instanceId ??
@@ -2794,7 +2828,7 @@ export default function ChatView(props: ChatViewProps) {
     setPendingServerThreadStartFromOriginByThreadId,
     scheduleComposerFocus,
   });
-  const { onResume, isResuming } = useComposerResume({
+  const { onResume, resumeThread, isResuming } = useComposerResume({
     environmentId,
     routeThreadKey,
     currentRouteThreadKeyRef,
@@ -3247,6 +3281,15 @@ export default function ChatView(props: ChatViewProps) {
               threadErrorBannerKey={threadErrorBannerKey}
               setThreadError={setThreadError}
               setThreadErrorBannerDismissTick={setThreadErrorBannerDismissTick}
+              switchAction={
+                limitSwitchTarget === null
+                  ? undefined
+                  : {
+                      label: `Switch to ${limitSwitchTarget.label} and continue`,
+                      disabled: isResuming || isSendBusy,
+                      onSwitch: () => void resumeThread(limitSwitchTarget.instanceId),
+                    }
+              }
             />
             <div className="relative flex min-h-0 flex-1 flex-col bg-background">
               <ThreadTimeline

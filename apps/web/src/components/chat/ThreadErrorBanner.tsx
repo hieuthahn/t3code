@@ -74,11 +74,13 @@ export const ThreadErrorBanner = memo(function ThreadErrorBanner({
   onDismiss,
   errorClass,
   errorCode,
+  switchAction,
 }: {
   error: string | null;
   errorClass?: OrchestrationV2ProviderFailureClass | null;
   errorCode?: string | null;
   onDismiss?: () => void;
+  switchAction?: { label: string; disabled: boolean; onSwitch: () => void };
 }) {
   if (!error) return null;
   const workspaceLimit = errorCode === CHATGPT_WORKSPACE_USAGE_LIMIT_CODE;
@@ -106,8 +108,18 @@ export const ThreadErrorBanner = memo(function ThreadErrorBanner({
             <ExpandableText text={error} collapsedText={getThreadErrorBannerMessage(error)} />
           )}
         </AlertDescription>
-        {(chatGptLimit || onDismiss) && (
+        {(chatGptLimit || onDismiss || switchAction) && (
           <AlertAction>
+            {switchAction ? (
+              <Button
+                variant="default"
+                size="sm"
+                disabled={switchAction.disabled}
+                onClick={switchAction.onSwitch}
+              >
+                {switchAction.label}
+              </Button>
+            ) : null}
             {workspaceLimit ? (
               <Button variant="default" size="sm" onClick={copyAdminRequest}>
                 Copy request for admin

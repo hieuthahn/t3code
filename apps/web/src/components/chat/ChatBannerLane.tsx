@@ -24,6 +24,7 @@ export function ChatBannerLane(props: {
   threadErrorBannerKey: string | null;
   setThreadError: (threadId: ThreadId | null, error: string | null) => void;
   setThreadErrorBannerDismissTick: Dispatch<SetStateAction<number>>;
+  switchAction?: { label: string; disabled: boolean; onSwitch: () => void } | undefined;
 }) {
   const {
     providerStatus,
@@ -37,6 +38,7 @@ export function ChatBannerLane(props: {
     threadErrorBannerKey,
     setThreadError,
     setThreadErrorBannerDismissTick,
+    switchAction,
   } = props;
   return (
     <div className="chat-banner-lane pointer-events-none absolute top-0 z-30 flex flex-col">
@@ -49,6 +51,7 @@ export function ChatBannerLane(props: {
         error={threadError}
         errorClass={threadErrorClass}
         errorCode={threadErrorCode}
+        {...(switchAction === undefined ? {} : { switchAction })}
         onDismiss={() => {
           setThreadError(threadId, null);
           dismissThreadErrorBannerForSession(threadErrorBannerKey);

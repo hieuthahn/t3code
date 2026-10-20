@@ -359,6 +359,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["usage quota rate limit reset recover continue"],
   },
   {
+    id: "limited-thread-switch",
+    title: "Switch limited threads to another account",
+    to: "/settings/general",
+    searchTerms: ["usage quota rate limit account instance switch rotate claude ask auto"],
+  },
+  {
     id: "new-design",
     title: "New design",
     to: "/settings/beta",

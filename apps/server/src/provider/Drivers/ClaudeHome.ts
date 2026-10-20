@@ -74,12 +74,10 @@ export const makeClaudeContinuationGroupKey = Effect.fn("makeClaudeContinuationG
     const resolvedHomePath = yield* resolveClaudeHomePath(config, environment);
     // A home whose `projects` directory lives inside another home shares that
     // home's session history, so both resolve to the owning home.
-    const owningHomePath = yield* fileSystem
-      .realPath(path.join(resolvedHomePath, "projects"))
-      .pipe(
-        Effect.map((projectsPath) => path.dirname(projectsPath)),
-        Effect.orElseSucceed(() => resolvedHomePath),
-      );
+    const owningHomePath = yield* fileSystem.realPath(path.join(resolvedHomePath, "projects")).pipe(
+      Effect.map((projectsPath) => path.dirname(projectsPath)),
+      Effect.orElseSucceed(() => resolvedHomePath),
+    );
     return `claude:home:${owningHomePath}`;
   },
 );

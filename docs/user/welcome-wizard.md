@@ -89,7 +89,7 @@ does not count toward that limit. It ignores malformed records and skips
 unreadable or unparseable conversations.
 
 Each import attempt reads up to 100 conversation files and 4 GiB per project,
-with up to 100,000 input records. Run import again to continue a large batch.
+with up to 500,000 input records. Run import again to continue a large batch.
 Completed conversations are not imported again. You can continue without the
 remaining history.
 

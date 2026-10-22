@@ -78,7 +78,7 @@ const plan = (input: {
     ...(input.switchNearLimit === undefined ? {} : { switchNearLimit: input.switchNearLimit }),
     ...(input.newThread === undefined ? {} : { newThread: input.newThread }),
     command: input.command ?? command(),
-    thread: input.thread ?? thread,
+    thread: input.thread ?? (input.newThread === undefined ? thread : { ...thread, hasStartedRun: false }),
     providers: [
       provider(
         hieu,

@@ -186,8 +186,11 @@ import {
   sortProviderInstanceEntries,
 } from "../providerInstances";
 import {
+  pinnedAccountWarning,
   rankUsageLimitSwitchCandidates,
+  resolveAccountSwitchThresholds,
 } from "@t3tools/shared/usageLimitSwitchCandidates";
+import { pinnedAccountBannerItem } from "./chat/PinnedAccountBanner";
 import {
   useClientSettings,
   useClientSettingsHydrated,
@@ -1224,6 +1227,42 @@ export default function ChatView(props: ChatViewProps) {
     if (target === undefined) return null;
     const provider = providerStatuses.find((entry) => entry.instanceId === target.instanceId);
     return { instanceId: target.instanceId, label: provider?.displayName ?? target.instanceId };
+  })();
+  const [dismissedPinnedWarning, setDismissedPinnedWarning] = useState<string | null>(null);
+  const pinnedWarning = (() => {
+    if (!activeThread || activeThread.modelSelection.accountChoice !== "pinned") return null;
+    const { instanceId, model } = activeThread.modelSelection;
+    const warning = pinnedAccountWarning({
+      providers: providerStatuses,
+      currentInstanceId: instanceId,
+      model,
+      nowMs: Date.parse(`${limitSwitchNowMinute}:00.000Z`),
+      thresholdsFor: resolveAccountSwitchThresholds({
+        defaults: {
+          sessionPercent: settings.earlySwitchSessionThreshold,
+          weeklyPercent: settings.earlySwitchWeeklyThreshold,
+        },
+        instances: settings.providerInstances,
+      }),
+      accountChoice: "pinned",
+      switchPinned: settings.switchPinnedAccounts,
+    });
+    if (warning === null) return null;
+    const key = `${routeThreadKey}:${instanceId}:${warning.pressure.windowId}`;
+    if (dismissedPinnedWarning === key) return null;
+    const labelOf = (id: typeof instanceId) =>
+      providerStatuses.find((entry) => entry.instanceId === id)?.displayName ?? id;
+    const window = providerStatuses
+      .find((entry) => entry.instanceId === instanceId)
+      ?.usageLimits?.windows.find((entry) => entry.id === warning.pressure.windowId);
+    return {
+      key,
+      warning,
+      model,
+      accountLabel: labelOf(instanceId),
+      targetLabel: warning.target ? labelOf(warning.target.instanceId) : null,
+      windowLabel: window?.label ?? "usage",
+    };
   })();
   const selectedProviderByThreadId = composerActiveProvider ?? null;
   const threadProvider =
@@ -2665,7 +2704,31 @@ export default function ChatView(props: ChatViewProps) {
     const backgroundWorkItems = [childInputBanner, goalBanner, backgroundWorkBanner].filter(
       (item) => item !== null,
     );
-    const usageLimitsItems = usageLimitsBanner === null ? [] : [usageLimitsBanner];
+    const usageLimitsItems = [
+      ...(usageLimitsBanner === null ? [] : [usageLimitsBanner]),
+      ...(pinnedWarning === null
+        ? []
+        : [
+            pinnedAccountBannerItem({
+              id: `pinned-account:${pinnedWarning.key}`,
+              accountLabel: pinnedWarning.accountLabel,
+              windowLabel: pinnedWarning.windowLabel,
+              usedPercent: pinnedWarning.warning.pressure.usedPercent,
+              thresholdPercent: pinnedWarning.warning.pressure.thresholdPercent,
+              targetLabel: pinnedWarning.targetLabel,
+              onSwitch: () => {
+                const target = pinnedWarning.warning.target;
+                setDismissedPinnedWarning(pinnedWarning.key);
+                if (target) {
+                  onProviderModelSelectStable(target.instanceId, pinnedWarning.model, {
+                    accountChoice: "auto",
+                  });
+                }
+              },
+              onDismiss: () => setDismissedPinnedWarning(pinnedWarning.key),
+            }),
+          ]),
+    ];
     const projectCloneItems = projectCloneBannerItem === null ? [] : [projectCloneBannerItem];
     if (!localCheckoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
       return [

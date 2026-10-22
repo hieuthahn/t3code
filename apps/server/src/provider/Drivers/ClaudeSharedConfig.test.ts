@@ -7,7 +7,7 @@ import * as Path from "effect/Path";
 import {
   applyClaudeSharedConfig,
   planClaudeSharedConfig,
-  syncClaudeSharedMcpServers,
+  syncClaudeSharedConfig,
 } from "./ClaudeSharedConfig.ts";
 
 const makeHomes = Effect.gen(function* () {
@@ -30,7 +30,7 @@ it.layer(NodeServices.layer)("ClaudeSharedConfig", (it) => {
   it.effect("links only entries the default home has", () =>
     Effect.gen(function* () {
       const { fs, path, sourceDir, targetDir } = yield* makeHomes;
-      const actions = yield* planClaudeSharedConfig({ enabled: true, sourceDir, targetDir });
+      const actions = yield* planClaudeSharedConfig({ sourceDir, targetDir });
       assert.deepEqual(kinds(actions), {
         "settings.json": "link",
         skills: "link",
@@ -41,7 +41,7 @@ it.layer(NodeServices.layer)("ClaudeSharedConfig", (it) => {
         yield* fs.readLink(path.join(targetDir, "skills")),
         path.join(sourceDir, "skills"),
       );
-      const again = yield* planClaudeSharedConfig({ enabled: true, sourceDir, targetDir });
+      const again = yield* planClaudeSharedConfig({ sourceDir, targetDir });
       assert.deepEqual(kinds(again), {});
     }),
   );
@@ -50,7 +50,7 @@ it.layer(NodeServices.layer)("ClaudeSharedConfig", (it) => {
     Effect.gen(function* () {
       const { fs, path, sourceDir, targetDir } = yield* makeHomes;
       yield* fs.writeFileString(path.join(targetDir, "settings.json"), '{"own":true}');
-      const actions = yield* planClaudeSharedConfig({ enabled: true, sourceDir, targetDir });
+      const actions = yield* planClaudeSharedConfig({ sourceDir, targetDir });
       assert.strictEqual(kinds(actions)["settings.json"], "conflict");
       yield* applyClaudeSharedConfig(actions);
       assert.strictEqual(
@@ -60,25 +60,27 @@ it.layer(NodeServices.layer)("ClaudeSharedConfig", (it) => {
     }),
   );
 
-  it.effect("removes only its own links when sharing is turned off", () =>
+  it.effect("keeps a link another tool made to the same entry through a different path", () =>
     Effect.gen(function* () {
       const { fs, path, tempDir, sourceDir, targetDir } = yield* makeHomes;
-      yield* applyClaudeSharedConfig(
-        yield* planClaudeSharedConfig({ enabled: true, sourceDir, targetDir }),
+      const alias = path.join(tempDir, "main-alias");
+      yield* fs.symlink(sourceDir, alias);
+      yield* fs.symlink(path.join(alias, "skills"), path.join(targetDir, "skills"));
+      const actions = yield* planClaudeSharedConfig({ sourceDir, targetDir });
+      assert.deepEqual(kinds(actions), { "settings.json": "link", plugins: "link" });
+    }),
+  );
+
+  it.effect("leaves every entry alone when sharing is off", () =>
+    Effect.gen(function* () {
+      const { fs, path, sourceDir, targetDir } = yield* makeHomes;
+      yield* fs.symlink(path.join(sourceDir, "skills"), path.join(targetDir, "skills"));
+      yield* syncClaudeSharedConfig({ enabled: false, sourceDir, targetDir });
+      assert.strictEqual(
+        yield* fs.readLink(path.join(targetDir, "skills")),
+        path.join(sourceDir, "skills"),
       );
-      const foreign = path.join(tempDir, "foreign-agents");
-      yield* fs.makeDirectory(foreign);
-      yield* fs.symlink(foreign, path.join(targetDir, "agents"));
-      const actions = yield* planClaudeSharedConfig({ enabled: false, sourceDir, targetDir });
-      assert.deepEqual(kinds(actions), {
-        "settings.json": "unlink",
-        skills: "unlink",
-        plugins: "unlink",
-      });
-      yield* applyClaudeSharedConfig(actions);
-      assert.isFalse(yield* fs.exists(path.join(targetDir, "skills")));
-      assert.isTrue(yield* fs.exists(path.join(sourceDir, "skills")));
-      assert.strictEqual(yield* fs.readLink(path.join(targetDir, "agents")), foreign);
+      assert.isFalse(yield* fs.exists(path.join(targetDir, "settings.json")));
     }),
   );
 
@@ -86,54 +88,10 @@ it.layer(NodeServices.layer)("ClaudeSharedConfig", (it) => {
     Effect.gen(function* () {
       const { sourceDir } = yield* makeHomes;
       const actions = yield* planClaudeSharedConfig({
-        enabled: true,
         sourceDir,
         targetDir: sourceDir,
       });
       assert.deepEqual(kinds(actions), {});
-    }),
-  );
-
-  it.effect("copies MCP servers and keeps the rest of the account config", () =>
-    Effect.gen(function* () {
-      const { fs, path, tempDir, targetDir } = yield* makeHomes;
-      const sourceConfigFile = path.join(tempDir, "main.claude.json");
-      const targetConfigFile = path.join(targetDir, ".claude.json");
-      yield* fs.writeFileString(
-        sourceConfigFile,
-        JSON.stringify({ mcpServers: { docs: { command: "docs-mcp" } }, oauthAccount: "main" }),
-      );
-      yield* fs.writeFileString(
-        targetConfigFile,
-        JSON.stringify({ oauthAccount: "account", mcpServers: {} }),
-      );
-      assert.strictEqual(
-        yield* syncClaudeSharedMcpServers({ sourceConfigFile, targetConfigFile }),
-        "updated",
-      );
-      assert.deepEqual(JSON.parse(yield* fs.readFileString(targetConfigFile)), {
-        oauthAccount: "account",
-        mcpServers: { docs: { command: "docs-mcp" } },
-      });
-      assert.strictEqual(
-        yield* syncClaudeSharedMcpServers({ sourceConfigFile, targetConfigFile }),
-        "unchanged",
-      );
-    }),
-  );
-
-  it.effect("skips MCP sync before the account has logged in", () =>
-    Effect.gen(function* () {
-      const { fs, path, tempDir, targetDir } = yield* makeHomes;
-      const sourceConfigFile = path.join(tempDir, "main.claude.json");
-      yield* fs.writeFileString(sourceConfigFile, JSON.stringify({ mcpServers: {} }));
-      assert.strictEqual(
-        yield* syncClaudeSharedMcpServers({
-          sourceConfigFile,
-          targetConfigFile: path.join(targetDir, ".claude.json"),
-        }),
-        "skipped",
-      );
     }),
   );
 });

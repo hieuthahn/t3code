@@ -27,6 +27,8 @@ export const ModelListRow = memo(function ModelListRow(props: {
   instanceId: ProviderInstanceId;
   driverKind: ProviderDriverKind;
   providerDisplayName: string;
+  /** Accounts a merged row stands for; the row runs on providerDisplayName's account. */
+  accountCount?: number | undefined;
   providerAccentColor?: string | undefined;
   acpRegistryAgentId?: string | undefined;
   acpRegistryIconUrl?: string | undefined;
@@ -48,7 +50,11 @@ export const ModelListRow = memo(function ModelListRow(props: {
     shortName: props.shortName,
     subProvider: props.subProvider,
   };
-  const providerLabel = getProviderRowLabel(props.providerDisplayName, props.subProvider);
+  const accountLabel = getProviderRowLabel(props.providerDisplayName, props.subProvider);
+  const providerLabel =
+    props.accountCount !== undefined && props.accountCount > 1
+      ? `${accountLabel} · ${props.accountCount} accounts`
+      : accountLabel;
 
   const row = (
     <ComboboxItem

@@ -9,7 +9,7 @@ import type {
 
 export type HandoffTimelineRun = Pick<
   OrchestrationV2Run,
-  "id" | "ordinal" | "providerInstanceId" | "modelSelection"
+  "id" | "ordinal" | "providerInstanceId" | "modelSelection" | "status"
 >;
 
 export type HandoffEndpoints = ReturnType<typeof resolveHandoffEndpoints>;

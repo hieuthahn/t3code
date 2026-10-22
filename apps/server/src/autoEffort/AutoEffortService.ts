@@ -67,6 +67,13 @@ export class AutoEffortService extends Context.Service<AutoEffortService, AutoEf
 ) {}
 
 type JudgedBy = "asked" | "follow-up" | "jev" | "haiku" | "fallback";
+
+const JUDGED_BY_LABELS: Record<Exclude<JudgedBy, "fallback">, string> = {
+  asked: "as asked",
+  "follow-up": "kept for a follow-up",
+  jev: "by Jev",
+  haiku: "by Haiku",
+};
 interface Judged {
   readonly verdict: EffortVerdict;
   readonly by: JudgedBy;
@@ -216,9 +223,10 @@ const make = Effect.gen(function* () {
     }
     yield* Ref.update(lastJudged, (map) => new Map(map).set(request.threadId, effort.value));
     const why = Option.isSome(judged) ? judged.value.verdict.why : undefined;
+    const source = by === "fallback" ? undefined : JUDGED_BY_LABELS[by];
     return {
       modelSelection: withEffort(request.modelSelection, optionId, effort.value),
-      notice: `Auto effort: ${effort.value}${why ? ` · ${why}` : ""}`,
+      notice: [`Auto effort: ${effort.value}`, source, why].filter(Boolean).join(" · "),
     };
   });
 

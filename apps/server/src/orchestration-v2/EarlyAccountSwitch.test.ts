@@ -64,8 +64,10 @@ const plan = (input: {
   readonly thread?: EarlySwitchThread;
   readonly currentPercent: number;
   readonly lastSwitchAtMs?: number;
+  readonly switchPinned?: boolean;
 }) =>
   planEarlySwitch({
+    switchPinned: input.switchPinned ?? false,
     command: input.command ?? command(),
     thread: input.thread ?? thread,
     providers: [provider(hieu, input.currentPercent), provider(dung, 20)],
@@ -97,6 +99,23 @@ describe("planEarlySwitch", () => {
     assert.isNull(plan({ currentPercent: 95, lastSwitchAtMs: NOW - 29 * 60_000 }).choice);
     assert.equal(
       plan({ currentPercent: 95, lastSwitchAtMs: NOW - 31 * 60_000 }).command.modelSelection
+        ?.instanceId,
+      dung,
+    );
+  });
+
+  it("keeps a pinned thread on its account unless pinned threads may switch", () => {
+    const pinned = command({
+      modelSelection: { instanceId: hieu, model: "claude-opus-5-5", accountChoice: "pinned" },
+    });
+    assert.isNull(plan({ command: pinned, currentPercent: 99 }).choice);
+    const pinnedThread: EarlySwitchThread = {
+      ...thread,
+      modelSelection: { ...thread.modelSelection, accountChoice: "pinned" },
+    };
+    assert.isNull(plan({ thread: pinnedThread, currentPercent: 99 }).choice);
+    assert.equal(
+      plan({ command: pinned, currentPercent: 99, switchPinned: true }).command.modelSelection
         ?.instanceId,
       dung,
     );

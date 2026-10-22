@@ -1185,6 +1185,95 @@ describe("orchestration v2 provider switching", () => {
       ),
   );
 
+  it.live("records a pinned account choice on the thread without restarting its session", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const cwd = yield* checkpointWorkspace("pinned-account-choice");
+        const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
+        const generation = yield* Ref.make(0);
+        const layerRegistry = ProviderAdapterRegistry.layerFromAdapters([
+          makeTestAdapter({
+            instanceId: CLAUDE_MODEL_SELECTION.instanceId,
+            driver: CLAUDE_DRIVER,
+            capabilities: ClaudeProviderCapabilitiesV2,
+            modelSelection: CLAUDE_MODEL_SELECTION,
+            responseByRunOrdinal: {},
+            capturedTurns,
+            nativeThreadGeneration: generation,
+          }),
+        ]);
+        yield* Effect.gen(function* () {
+          const orchestrator = yield* Orchestrator.OrchestratorV2;
+          const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+          const runToEnd = Effect.fn("runToEnd")(function* (
+            ordinal: number,
+            modelSelection: typeof CLAUDE_MODEL_SELECTION,
+          ) {
+            yield* orchestrator.dispatch({
+              type: "message.dispatch",
+              commandId: CommandId.make(`pinned-choice:${ordinal}`),
+              threadId,
+              messageId: MessageId.make(`pinned-choice:${ordinal}`),
+              createdBy: "user",
+              creationSource: "web",
+              text: `Request ${ordinal}`,
+              attachments: [],
+              modelSelection,
+              dispatchMode: { type: "start_immediately" },
+            });
+            yield* orchestrator.streamStoredEvents.pipe(
+              Stream.filter(
+                ({ event }) =>
+                  event.type === "run.updated" &&
+                  event.payload.ordinal === ordinal &&
+                  (event.payload.status === "completed" || event.payload.status === "failed"),
+              ),
+              Stream.runHead,
+            );
+            yield* worker.drain();
+          });
+          yield* orchestrator.dispatch({
+            type: "thread.create",
+            commandId: CommandId.make("pinned-choice:create"),
+            threadId,
+            projectId,
+            createdBy: "user",
+            creationSource: "web",
+            title: "Pinned account choice",
+            modelSelection: CLAUDE_MODEL_SELECTION,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+          });
+          yield* runToEnd(1, CLAUDE_MODEL_SELECTION);
+          yield* runToEnd(2, { ...CLAUDE_MODEL_SELECTION, accountChoice: "pinned" });
+
+          const projection = yield* orchestrator.getThreadProjection(threadId);
+          assert.equal(projection.thread.modelSelection.accountChoice, "pinned");
+          const turns = yield* Ref.get(capturedTurns);
+          assert.equal(turns.length, 2);
+          assert.equal(turns[1]?.nativeThreadId, turns[0]?.nativeThreadId);
+          assert.equal(yield* Ref.get(generation), 1);
+        }).pipe(
+          Effect.provide(
+            ProviderReplayHarness.layerWithRegistry(
+              {
+                name: "pinned-account-choice",
+                runtimePolicyOverride: {
+                  cwd,
+                  approvalPolicy: "never",
+                  sandboxPolicy: { type: "readOnly" },
+                },
+              },
+              layerRegistry,
+            ),
+          ),
+        );
+      }),
+    ),
+  );
+
   it.live("starts a fresh native thread after a turn leaves the native thread broken", () =>
     Effect.scoped(
       Effect.gen(function* () {

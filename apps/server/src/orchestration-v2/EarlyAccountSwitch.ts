@@ -49,13 +49,18 @@ export const isEarlySwitchCandidate = (
  */
 export const planEarlySwitch = (input: {
   readonly command: MessageDispatch;
+  readonly switchPinned: boolean;
   readonly thread: EarlySwitchThread;
   readonly providers: ReadonlyArray<ServerProvider>;
   readonly thresholdsFor: (instanceId: ProviderInstanceId) => AccountSwitchThresholds;
   readonly lastSwitchAtMs: number | undefined;
   readonly nowMs: number;
 }): { readonly command: MessageDispatch; readonly choice: AccountChoice | null } => {
-  if (!isEarlySwitchCandidate(input.command, input.thread)) {
+  if (
+    !isEarlySwitchCandidate(input.command, input.thread) ||
+    (!input.switchPinned &&
+      (input.command.modelSelection ?? input.thread.modelSelection).accountChoice === "pinned")
+  ) {
     return { command: input.command, choice: null };
   }
   if (
@@ -112,6 +117,7 @@ export const make = Effect.gen(function* () {
     const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
     const plan = planEarlySwitch({
       command,
+      switchPinned: preferences.switchPinnedAccounts,
       thread,
       providers: yield* registry.getProviders,
       thresholdsFor: resolveAccountSwitchThresholds({

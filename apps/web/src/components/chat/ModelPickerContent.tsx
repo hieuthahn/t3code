@@ -1140,10 +1140,10 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               onOpenProviderSetup={onOpenProviderSetup}
             />
             {groupAccounts.length > 1 || props.onMultiSelectModeChange ? (
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t px-2 py-1.5">
+              <div className="flex flex-col items-start gap-1.5 border-t px-2 py-1.5">
                 {groupAccounts.length > 1 ? (
-                  <>
-                    <span className="text-xs text-muted-foreground">Account</span>
+                  <div className="flex w-full min-w-0 items-start gap-2">
+                    <span className="shrink-0 py-1 text-xs text-muted-foreground">Account</span>
                     <ToggleGroup
                       size="xs"
                       className="min-w-0 flex-wrap"
@@ -1167,13 +1167,12 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                         </Toggle>
                       ))}
                     </ToggleGroup>
-                  </>
+                  </div>
                 ) : null}
                 {props.onMultiSelectModeChange ? (
                   <ToggleButton
                     size="xs"
                     variant="outline"
-                    className="ml-auto"
                     pressed={multiSelectMode}
                     onPressedChange={props.onMultiSelectModeChange}
                   >

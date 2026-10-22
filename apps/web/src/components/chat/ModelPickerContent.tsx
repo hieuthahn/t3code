@@ -58,6 +58,11 @@ import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import { TooltipProvider } from "../ui/tooltip";
 import { InlineButton } from "../ui/button";
 import {
+  modelPickerSetupSummary,
+  resolveModelPickerSetupNotices,
+  type ModelPickerSetupNoticeVariant,
+} from "./modelPickerSetupNotices";
+import {
   isProviderInstancePickerReady,
   isProviderInstancePickerVisible,
   type ProviderInstanceEntry,
@@ -161,6 +166,7 @@ function adjacentModelPickerProvider(input: {
 }
 
 const EMPTY_MODEL_JUMP_LABELS = new Map<string, string>();
+const NO_SETUP_NOTICES = { entries: [], variant: "full" } as const;
 const MODEL_LIST_ESTIMATED_ITEM_SIZE = 52;
 
 function ModelListSeparator() {
@@ -189,16 +195,45 @@ function modelJumpLabelsByKey(
 
 function ModelPickerProviderNotices({
   setupEntries,
+  variant,
+  emptyLabel,
   updateRequiredNotices,
   onRequestClose,
   onOpenProviderSetup,
 }: {
   setupEntries: ReadonlyArray<ProviderInstanceEntry>;
+  variant: ModelPickerSetupNoticeVariant;
+  emptyLabel: string;
   updateRequiredNotices: ReadonlyArray<{ instanceId: ProviderInstanceId; notice: string }>;
   onRequestClose: (() => void) | undefined;
   onOpenProviderSetup: ((instanceId: ProviderInstanceId) => void) | undefined;
 }) {
   const navigate = useNavigate();
+  const openSetup = (instanceId: ProviderInstanceId) => {
+    onRequestClose?.();
+    onOpenProviderSetup?.(instanceId);
+  };
+  if (variant === "compact") {
+    return (
+      <>
+        <ComboboxEmpty className="empty:h-0">{emptyLabel}</ComboboxEmpty>
+        {setupEntries.length > 0 ? (
+          <div className="shrink-0 border-t border-border/70 px-3 py-1.5">
+            {setupEntries.map((entry) => (
+              <p
+                key={entry.instanceId}
+                data-testid="model-picker-setup-line"
+                className="truncate py-0.5 text-xs leading-snug text-muted-foreground"
+              >
+                {modelPickerSetupSummary(entry)}{" "}
+                <InlineButton onClick={() => openSetup(entry.instanceId)}>Set up</InlineButton>
+              </p>
+            ))}
+          </div>
+        ) : null}
+      </>
+    );
+  }
   return (
     <>
       {setupEntries.length > 0 ? (
@@ -208,20 +243,14 @@ function ModelPickerProviderNotices({
               <p className="line-clamp-3 text-muted-foreground">
                 {getProviderStatusMessage(entry.snapshot)}
               </p>
-              <InlineButton
-                className="mt-1"
-                onClick={() => {
-                  onRequestClose?.();
-                  onOpenProviderSetup?.(entry.instanceId);
-                }}
-              >
+              <InlineButton className="mt-1" onClick={() => openSetup(entry.instanceId)}>
                 {setupEntries.length > 1 ? `Set up ${entry.displayName}` : "Open provider setup"}
               </InlineButton>
             </div>
           ))}
         </div>
       ) : (
-        <ComboboxEmpty className="empty:h-0">No models found</ComboboxEmpty>
+        <ComboboxEmpty className="empty:h-0">{emptyLabel}</ComboboxEmpty>
       )}
       {updateRequiredNotices.map(({ instanceId, notice }) => (
         <p
@@ -685,20 +714,18 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
 
   const selectedEntry =
     selectedInstanceId === "favorites" ? undefined : entryByInstanceId.get(selectedInstanceId);
-  const providerSetupEntries =
+  const providerSetupNotices =
     !isSearching && canOpenProviderSetup
-      ? instanceEntries.filter(
-          (entry) =>
+      ? resolveModelPickerSetupNotices({
+          entries: instanceEntries,
+          needsSetup: (entry) =>
             matchesLockedProvider(entry) &&
-            shouldOfferModelPickerSetup(
-              entry,
-              modelOptionsByInstance.get(entry.instanceId) ?? [],
-            ) &&
-            (selectedEntry
-              ? entry.instanceId === selectedEntry.instanceId
-              : filteredModels.length === 0),
-        )
-      : [];
+            shouldOfferModelPickerSetup(entry, modelOptionsByInstance.get(entry.instanceId) ?? []),
+          selectedInstanceId,
+          selectedInstanceKnown: selectedEntry !== undefined,
+          filteredModelCount: filteredModels.length,
+        })
+      : NO_SETUP_NOTICES;
 
   const updateRequiredNotices = instanceEntries.flatMap((entry) => {
     const shown = isSearching
@@ -1003,7 +1030,13 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               }}
             />
             <ModelPickerProviderNotices
-              setupEntries={providerSetupEntries}
+              setupEntries={providerSetupNotices.entries}
+              variant={providerSetupNotices.variant}
+              emptyLabel={
+                selectedInstanceId === "favorites" && !isSearching
+                  ? "No favorite models yet. Star a model to keep it here."
+                  : "No models found"
+              }
               updateRequiredNotices={updateRequiredNotices}
               onRequestClose={onRequestClose}
               onOpenProviderSetup={onOpenProviderSetup}

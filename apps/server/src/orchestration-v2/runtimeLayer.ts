@@ -1,5 +1,6 @@
 import * as UsageLimitRecoveryWorker from "./UsageLimitRecoveryWorker.ts";
 import * as UsageLimitSwitchWorker from "./UsageLimitSwitchWorker.ts";
+import * as EarlyAccountSwitch from "./EarlyAccountSwitch.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as Layer from "effect/Layer";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
@@ -252,6 +253,7 @@ const layerAgentSessionImporterProvided = AgentSessionImporter.layer.pipe(
 const layerThreadManagementProvided = ThreadManagementService.layerWithLegacyImporter.pipe(
   Layer.provide(
     Layer.mergeAll(
+      EarlyAccountSwitch.layer,
       layerOrchestratorProvided,
       layerLegacyV1ThreadImporterProvided,
       layerCommandReceiptStoreProvided,

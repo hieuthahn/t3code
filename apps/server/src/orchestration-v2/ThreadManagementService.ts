@@ -57,6 +57,7 @@ import { DispatchModeLimit, exceededDispatchModeLimit } from "./DispatchModeLimi
 import { projectTurnItemForDetail } from "./WireProjection.ts";
 import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as EarlyAccountSwitch from "./EarlyAccountSwitch.ts";
 
 export type ThreadManagementSendMode = "auto" | "queue" | "steer" | "restart";
 
@@ -530,6 +531,7 @@ const make = Effect.gen(function* () {
   const legacyImporter = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const receipts = yield* CommandReceiptStore.CommandReceiptStoreV2;
+  const earlyAccountSwitch = yield* Effect.serviceOption(EarlyAccountSwitch.EarlyAccountSwitch);
 
   const assertProviderInstanceEnabled: ThreadManagementServiceShape["assertProviderInstanceEnabled"] =
     (input) =>
@@ -685,10 +687,30 @@ const make = Effect.gen(function* () {
     }
   };
 
+  const chooseDispatchAccount = (
+    command: OrchestrationV2ServerCommand,
+  ): Effect.Effect<OrchestrationV2ServerCommand> => {
+    if (command.type !== "message.dispatch" || Option.isNone(earlyAccountSwitch)) {
+      return Effect.succeed(command);
+    }
+    return orchestrator.getThreadRecords(command.threadId, ["runs"]).pipe(
+      Effect.flatMap((projection) =>
+        earlyAccountSwitch.value.rewrite(command, {
+          id: projection.thread.id,
+          modelSelection: projection.thread.modelSelection,
+          hasRuns: projection.runs.length > 0,
+        }),
+      ),
+      Effect.orElseSucceed(() => command),
+    );
+  };
+
   const dispatch: ThreadManagementServiceShape["dispatch"] = (command) =>
     ensureCommandTranscripts(command).pipe(
-      Effect.andThen(assertDispatchTargetEnabled(command)),
-      Effect.andThen(orchestrator.dispatch(command)),
+      Effect.andThen(chooseDispatchAccount(command)),
+      Effect.flatMap((chosen) =>
+        assertDispatchTargetEnabled(chosen).pipe(Effect.andThen(orchestrator.dispatch(chosen))),
+      ),
     );
 
   const getProjectThread: ThreadManagementServiceShape["getProjectThread"] = (input) =>

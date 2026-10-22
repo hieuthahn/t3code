@@ -9,11 +9,13 @@ describe("cleanSuggestion", () => {
     ['"commit this"', "commit this"],
     ["<suggestion>push it</suggestion>", "push it"],
     ["Suggestion: go ahead", "go ahead"],
+    ["yes", "yes"],
+    ["Commit.", "Commit."],
   ])("keeps %j as %j", (reply, expected) => {
     expect(cleanSuggestion(reply)).toBe(expected);
   });
 
-  it.each(["", "   ", "none", "Nothing.", "done", "first line\nsecond line"])(
+  it.each(["", "   ", "none", "Nothing.", "done", "first line\nsecond line", "1", "có", "tests"])(
     "drops %j",
     (reply) => {
       expect(cleanSuggestion(reply)).toBeUndefined();

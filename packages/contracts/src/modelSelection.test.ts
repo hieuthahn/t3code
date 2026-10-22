@@ -70,3 +70,22 @@ it.effect(
       assert.deepStrictEqual(encoded.options, decoded.options);
     }),
 );
+
+it.effect("ModelSelection keeps a pinned account choice through decode and encode", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeModelSelection({
+      instanceId: "claudeAgent_dung",
+      model: "claude-sonnet-5-5",
+      accountChoice: "pinned",
+    });
+    assert.strictEqual(parsed.accountChoice, "pinned");
+    const encoded = yield* encodeModelSelection(parsed);
+    assert.deepStrictEqual(encoded, {
+      instanceId: "claudeAgent_dung",
+      model: "claude-sonnet-5-5",
+      accountChoice: "pinned",
+    });
+    const legacy = yield* decodeModelSelection({ instanceId: "claudeAgent", model: "m" });
+    assert.isUndefined(legacy.accountChoice);
+  }),
+);

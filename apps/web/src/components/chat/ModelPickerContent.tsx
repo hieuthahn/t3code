@@ -222,10 +222,13 @@ function ModelPickerProviderNotices({
               <p
                 key={entry.instanceId}
                 data-testid="model-picker-setup-line"
-                className="truncate py-0.5 text-xs leading-snug text-muted-foreground"
+                title={modelPickerSetupSummary(entry)}
+                className="flex min-w-0 items-center gap-1.5 py-0.5 text-xs leading-snug text-muted-foreground"
               >
-                {modelPickerSetupSummary(entry)}{" "}
-                <InlineButton onClick={() => openSetup(entry.instanceId)}>Set up</InlineButton>
+                <span className="min-w-0 truncate">{modelPickerSetupSummary(entry)}</span>
+                <InlineButton className="shrink-0" onClick={() => openSetup(entry.instanceId)}>
+                  Set up
+                </InlineButton>
               </p>
             ))}
           </div>

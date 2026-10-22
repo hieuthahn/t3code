@@ -331,6 +331,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["usage quota rate limit account instance switch rotate claude ask auto"],
   },
   {
+    id: "auto-effort-default",
+    title: "Auto effort by default",
+    to: "/settings/general",
+    searchTerms: ["reasoning effort auto default judge thinking per message"],
+  },
+  {
     id: "auto-effort-judge",
     title: "Auto effort judge",
     to: "/settings/general",

@@ -276,6 +276,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     check: () => ipcRenderer.invoke(IpcChannels.FORK_UPDATE_CHECK_CHANNEL),
     apply: () => ipcRenderer.invoke(IpcChannels.FORK_UPDATE_APPLY_CHANNEL),
     setPaused: (paused) => ipcRenderer.invoke(IpcChannels.FORK_UPDATE_SET_PAUSED_CHANNEL, paused),
+    setTrack: (track) => ipcRenderer.invoke(IpcChannels.FORK_UPDATE_SET_TRACK_CHANNEL, track),
   },
   cliCommand: {
     getState: () => ipcRenderer.invoke(IpcChannels.CLI_COMMAND_GET_STATE_CHANNEL),

@@ -7,6 +7,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as ProviderAuthFlow from "@t3tools/provider-core/server/providerAuthFlow";
 import type { ProviderAuthController } from "@t3tools/provider-core/server/auth";
 import * as Crypto from "effect/Crypto";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
@@ -15,6 +16,8 @@ import { makeClaudeEnvironment } from "./Drivers/ClaudeHome.ts";
 
 const BROWSER_METHOD_ID = "claude-browser";
 const INTERACTION_ID = "claude-login";
+const EXIT_AFTER_CODE_TIMEOUT = "90 seconds";
+const OUTPUT_LINES_KEPT = 20;
 
 const methods: ReadonlyArray<ProviderAuthMethod> = [
   {
@@ -44,6 +47,14 @@ export const extractClaudeAuthorizeUrl = (text: string): string | undefined => {
   }
   return undefined;
 };
+
+/** Hide OAuth parameters and token-shaped values before CLI output reaches a log or the UI. */
+export const redactClaudeAuthOutput = (text: string): string =>
+  text
+    // eslint-disable-next-line no-control-regex -- terminal escapes wrap the link the CLI prints
+    .replace(/\u001b\][^\u0007]*\u0007|\u001b\[[0-9;?]*[A-Za-z]/g, "")
+    .replace(/(https:\/\/[^\s?]+)\?\S*/g, "$1?<redacted>")
+    .replace(/[A-Za-z0-9_-]{32,}(?:[#.][A-Za-z0-9_-]{8,})*/g, "<redacted>");
 
 export interface ClaudeAuthOptions {
   readonly instanceId: ProviderInstanceId;
@@ -88,52 +99,87 @@ export const makeClaudeAuth = Effect.fn("makeClaudeAuth")(function* (options: Cl
   const authenticate: Parameters<typeof ProviderAuthFlow.make>[0]["authenticate"] = Effect.fn(
     "ClaudeAuth.authenticate",
   )(function* (_methodId, context) {
-    {
-      const child = yield* spawn(["auth", "login"]);
-      yield* Effect.addFinalizer(() => child.kill().pipe(Effect.ignore));
-      const decoder = new TextDecoder();
-      let published = false;
-      let buffered = "";
-      const encoder = new TextEncoder();
-      const submitCode = (code: string) =>
-        Stream.run(Stream.make(encoder.encode(`${code.trim()}\n`)), child.stdin).pipe(
-          Effect.mapError((cause) =>
-            failure("complete", "Could not send the code to the Claude CLI.", cause),
-          ),
+    const child = yield* spawn(["auth", "login"]);
+    yield* Effect.addFinalizer(() => child.kill().pipe(Effect.ignore));
+    const decoder = new TextDecoder();
+    const encoder = new TextEncoder();
+    const codeSent = yield* Deferred.make<void>();
+    const outputLines: Array<string> = [];
+    let published = false;
+    let buffered = "";
+    let pending = "";
+    const recordOutput = (text: string) => {
+      pending += text;
+      const lines = pending.split(/\r?\n/);
+      pending = lines.pop() ?? "";
+      const kept = lines.map(redactClaudeAuthOutput).filter((line) => line.trim().length > 0);
+      outputLines.push(...kept);
+      outputLines.splice(0, Math.max(0, outputLines.length - OUTPUT_LINES_KEPT));
+    };
+    const lastOutputLine = () => {
+      const tail = redactClaudeAuthOutput(pending).trim();
+      return tail.length > 0 ? tail : outputLines.at(-1);
+    };
+    const submitCode = (code: string) =>
+      Stream.run(Stream.make(encoder.encode(`${code.trim()}\n`)), child.stdin).pipe(
+        Effect.mapError((cause) =>
+          failure("complete", "Could not send the code to the Claude CLI.", cause),
+        ),
+        Effect.tap(() => Deferred.succeed(codeSent, undefined)),
+      );
+    yield* Stream.merge(child.stdout, child.stderr).pipe(
+      Stream.runForEach((chunk) => {
+        const text = decoder.decode(chunk, { stream: true });
+        recordOutput(text);
+        if (published) return Effect.void;
+        buffered += text;
+        const url = extractClaudeAuthorizeUrl(buffered);
+        if (url === undefined) return Effect.void;
+        published = true;
+        return context.setInteraction(
+          {
+            type: "browser",
+            id: INTERACTION_ID,
+            url,
+            requiresConsent: false,
+            acceptsCallback: true,
+          },
+          undefined,
+          submitCode,
         );
-      yield* Stream.merge(child.stdout, child.stderr).pipe(
-        Stream.runForEach((chunk) => {
-          if (published) return Effect.void;
-          buffered += decoder.decode(chunk, { stream: true });
-          const url = extractClaudeAuthorizeUrl(buffered);
-          if (url === undefined) return Effect.void;
-          published = true;
-          return context.setInteraction(
-            {
-              type: "browser",
-              id: INTERACTION_ID,
-              url,
-              requiresConsent: false,
-              acceptsCallback: true,
-            },
-            undefined,
-            submitCode,
+      }),
+      Effect.ignore,
+      Effect.forkScoped,
+    );
+    const exitAfterCodeTimeout = Deferred.await(codeSent).pipe(
+      Effect.andThen(Effect.sleep(EXIT_AFTER_CODE_TIMEOUT)),
+      Effect.andThen(
+        Effect.suspend(() => {
+          const last = lastOutputLine();
+          return failure(
+            "wait",
+            `The Claude CLI did not finish ${EXIT_AFTER_CODE_TIMEOUT} after the code was sent${
+              last ? ` (last output: ${last})` : ""
+            }. Start again.`,
           );
         }),
-        Effect.ignore,
-        Effect.forkScoped,
+      ),
+    );
+    const exitCode = yield* child.exitCode.pipe(
+      Effect.mapError((cause) =>
+        failure("wait", "The Claude sign-in stopped unexpectedly.", cause),
+      ),
+      Effect.raceFirst(exitAfterCodeTimeout),
+    );
+    if (exitCode !== 0) {
+      const last = lastOutputLine();
+      return yield* failure(
+        "wait",
+        last ? `Claude sign-in failed: ${last}` : "Claude sign-in did not complete. Start again.",
       );
-      const exitCode = yield* child.exitCode.pipe(
-        Effect.mapError((cause) =>
-          failure("wait", "The Claude sign-in stopped unexpectedly.", cause),
-        ),
-      );
-      if (exitCode !== 0) {
-        return yield* failure("wait", "Claude sign-in did not complete. Start again.");
-      }
-      yield* context.verifying;
-      yield* options.onChanged(true);
     }
+    yield* context.verifying;
+    yield* options.onChanged(true);
   });
 
   const logout = Effect.scoped(

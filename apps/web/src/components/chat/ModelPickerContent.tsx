@@ -1120,10 +1120,11 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               onOpenProviderSetup={onOpenProviderSetup}
             />
             {groupAccounts.length > 1 && onToggleModel === undefined ? (
-              <div className="flex flex-wrap items-center gap-2 border-t px-2 py-1.5">
+              <div className="flex items-center gap-2 border-t px-2 py-1.5">
                 <span className="text-xs text-muted-foreground">Account</span>
                 <ToggleGroup
                   size="xs"
+                  className="min-w-0 flex-wrap"
                   aria-label="Account for this thread"
                   value={[accountPick]}
                   onValueChange={(next) => {

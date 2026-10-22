@@ -22,7 +22,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { ChevronRightIcon, ListChecksIcon } from "lucide-react";
+import { ChevronRightIcon, ListChecksIcon, LogInIcon } from "lucide-react";
 import { ModelListRow } from "./ModelListRow";
 import { ModelPickerSidebar } from "./ModelPickerSidebar";
 import { getProviderStatusMessage, hasProviderSetup } from "./ProviderStatusBanner";
@@ -57,6 +57,9 @@ import {
 import { useNowMinute } from "~/hooks/useNowMinute";
 import {
   type MergedModel,
+  accountBarOffersSignIn,
+  accountEmailLabel,
+  accountGroupName,
   mergeModelPickerAccountModels,
   mergeModelPickerAccountTabs,
   resolveModelPickerAccountAction,
@@ -66,7 +69,7 @@ import {
 import { modelRowClickIntent } from "./modelPickerMultiple";
 import { cn } from "~/lib/utils";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
-import { TooltipProvider } from "../ui/tooltip";
+import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { InlineButton } from "../ui/button";
 import { Toggle as ToggleButton } from "../ui/toggle";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
@@ -504,6 +507,8 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       ? instanceEntries.filter((entry) => entry.continuationGroupKey === activeGroupKey)
       : [];
   const groupAccountLabels = shortAccountLabels(groupAccounts.map((entry) => entry.displayName));
+  const isSignedOut = (entry: ProviderInstanceEntry) =>
+    entry.snapshot?.auth.status === "unauthenticated";
   const [accountPick, setAccountPick] = useState<ProviderInstanceId | "auto">(
     props.activeAccountPinned === true && props.activeInstanceId !== undefined
       ? props.activeInstanceId
@@ -723,6 +728,15 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     }
     return [...available, ...disabled];
   })();
+  const accountGroupNames = new Map<ProviderInstanceId, string>();
+  if (mergeAccounts) {
+    for (const entry of instanceEntries) {
+      if (entry.continuationGroupKey === undefined) continue;
+      const members = instanceEntries.filter((other) => sameAccountGroup(other, entry));
+      const name = accountGroupName(members.map((member) => member.displayName));
+      if (name !== undefined) accountGroupNames.set(entry.instanceId, name);
+    }
+  }
   const sidebarTabs = mergeAccounts
     ? mergeModelPickerAccountTabs({
         entries: sidebarInstanceEntries,
@@ -816,6 +830,11 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
           entries: instanceEntries,
           needsSetup: (entry) =>
             matchesLockedProvider(entry) &&
+            !accountBarOffersSignIn({
+              instanceId: entry.instanceId,
+              signedOut: isSignedOut(entry),
+              barInstanceIds: groupAccounts.map((account) => account.instanceId),
+            }) &&
             shouldOfferModelPickerSetup(entry, modelOptionsByInstance.get(entry.instanceId) ?? []),
           selectedInstanceId,
           selectedInstanceKnown: selectedEntry !== undefined,
@@ -1095,7 +1114,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                     instanceId={model.instanceId}
                     driverKind={model.driverKind}
                     providerDisplayName={model.instanceDisplayName}
-                    accountCount={model.memberInstanceIds.length}
+                    accountGroupName={accountGroupNames.get(model.instanceId)}
                     providerAccentColor={model.instanceAccentColor}
                     acpRegistryAgentId={model.acpRegistryAgentId}
                     acpRegistryIconUrl={model.acpRegistryIconUrl}
@@ -1144,22 +1163,57 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                       aria-label="Account for this thread"
                       value={[accountPick]}
                       onValueChange={(next) => {
-                        const value = next[0];
-                        if (value !== undefined)
-                          setAccountPick(value as ProviderInstanceId | "auto");
+                        const value = next[0] as ProviderInstanceId | "auto" | undefined;
+                        if (value === undefined) return;
+                        const signedOut = groupAccounts.find(
+                          (entry) => entry.instanceId === value && isSignedOut(entry),
+                        );
+                        if (signedOut === undefined) {
+                          setAccountPick(value);
+                          return;
+                        }
+                        onRequestClose?.();
+                        onOpenProviderSetup?.(signedOut.instanceId);
                       }}
                     >
-                      <Toggle value="auto">Auto</Toggle>
-                      {groupAccounts.map((entry, index) => (
-                        <Toggle
-                          key={entry.instanceId}
-                          value={entry.instanceId}
-                          title={entry.displayName}
-                          disabled={entry.snapshot?.auth.status === "unauthenticated"}
-                        >
-                          {groupAccountLabels[index]}
-                        </Toggle>
-                      ))}
+                      <Tooltip>
+                        <TooltipTrigger render={<Toggle value="auto">Auto</Toggle>} />
+                        <TooltipPopup side="top">
+                          Each new thread starts on the signed-in account with the most quota left.
+                        </TooltipPopup>
+                      </Tooltip>
+                      {groupAccounts.map((entry, index) => {
+                        const email = accountEmailLabel({
+                          displayName: entry.displayName,
+                          authEmail: entry.snapshot?.auth.email,
+                        });
+                        const signedOut = isSignedOut(entry);
+                        return (
+                          <Tooltip key={entry.instanceId}>
+                            <TooltipTrigger
+                              render={
+                                <Toggle
+                                  value={entry.instanceId}
+                                  disabled={signedOut && !canOpenProviderSetup}
+                                  aria-label={
+                                    signedOut
+                                      ? `${groupAccountLabels[index]}, signed out`
+                                      : undefined
+                                  }
+                                >
+                                  {groupAccountLabels[index]}
+                                  {signedOut ? <LogInIcon aria-hidden="true" /> : null}
+                                </Toggle>
+                              }
+                            />
+                            <TooltipPopup side="top">
+                              {signedOut
+                                ? `${email} is signed out.${canOpenProviderSetup ? " Click to sign in." : ""}`
+                                : email}
+                            </TooltipPopup>
+                          </Tooltip>
+                        );
+                      })}
                     </ToggleGroup>
                   </div>
                 ) : null}

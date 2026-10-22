@@ -79,6 +79,7 @@ import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { ScopedSwitch } from "./ScopedSwitch";
+import { AccountSwitchThresholds } from "./AccountSwitchThresholds";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
@@ -478,6 +479,11 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.modelPickerMergeAccounts !== DEFAULT_UNIFIED_SETTINGS.modelPickerMergeAccounts
       ? ["Merge accounts in the model picker"]
       : []),
+    ...(settings.earlyAccountSwitch !== DEFAULT_UNIFIED_SETTINGS.earlyAccountSwitch ||
+    settings.earlySwitchSessionThreshold !== DEFAULT_UNIFIED_SETTINGS.earlySwitchSessionThreshold ||
+    settings.earlySwitchWeeklyThreshold !== DEFAULT_UNIFIED_SETTINGS.earlySwitchWeeklyThreshold
+      ? ["Switch accounts before the limit"]
+      : []),
     ...(settings.autoEffortDefault !== DEFAULT_UNIFIED_SETTINGS.autoEffortDefault
       ? ["Auto effort by default"]
       : []),
@@ -647,6 +653,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       limitedThreadSwitch: DEFAULT_UNIFIED_SETTINGS.limitedThreadSwitch,
       autoEffortJudge: DEFAULT_UNIFIED_SETTINGS.autoEffortJudge,
       modelPickerMergeAccounts: DEFAULT_UNIFIED_SETTINGS.modelPickerMergeAccounts,
+      earlyAccountSwitch: DEFAULT_UNIFIED_SETTINGS.earlyAccountSwitch,
+      earlySwitchSessionThreshold: DEFAULT_UNIFIED_SETTINGS.earlySwitchSessionThreshold,
+      earlySwitchWeeklyThreshold: DEFAULT_UNIFIED_SETTINGS.earlySwitchWeeklyThreshold,
       autoEffortDefault: DEFAULT_UNIFIED_SETTINGS.autoEffortDefault,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
@@ -1039,6 +1048,33 @@ export function GeneralSettingsPanel() {
             />
           }
         />
+        <SettingsRow
+          serverScoped
+          {...searchableSetting("early-account-switch")}
+          description="Before a new message, move the thread to another account that shares its history once its account passes a threshold below. The other account must sit 20 points under each threshold."
+          settingKeys={[
+            "earlyAccountSwitch",
+            "earlySwitchSessionThreshold",
+            "earlySwitchWeeklyThreshold",
+          ]}
+          control={
+            <ScopedSwitch
+              settingKeys={["earlyAccountSwitch"]}
+              checked={settings.earlyAccountSwitch}
+              onCheckedChange={(checked) =>
+                updateSettings({ earlyAccountSwitch: Boolean(checked) })
+              }
+              aria-label="Switch accounts before the limit"
+            />
+          }
+        >
+          <AccountSwitchThresholds
+            sessionPercent={settings.earlySwitchSessionThreshold}
+            weeklyPercent={settings.earlySwitchWeeklyThreshold}
+            disabled={!settings.earlyAccountSwitch}
+            onChange={updateSettings}
+          />
+        </SettingsRow>
         <SettingsRow
           serverScoped
           {...searchableSetting("auto-effort-default")}

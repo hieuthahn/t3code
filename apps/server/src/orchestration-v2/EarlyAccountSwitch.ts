@@ -15,6 +15,7 @@ import {
   type AccountChoice,
   type AccountSwitchThresholds,
   chooseAccountForTurn,
+  resolveAccountSwitchThresholds,
 } from "@t3tools/shared/usageLimitSwitchCandidates";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -50,7 +51,7 @@ export const planEarlySwitch = (input: {
   readonly command: MessageDispatch;
   readonly thread: EarlySwitchThread;
   readonly providers: ReadonlyArray<ServerProvider>;
-  readonly thresholds: AccountSwitchThresholds;
+  readonly thresholdsFor: (instanceId: ProviderInstanceId) => AccountSwitchThresholds;
   readonly lastSwitchAtMs: number | undefined;
   readonly nowMs: number;
 }): { readonly command: MessageDispatch; readonly choice: AccountChoice | null } => {
@@ -69,7 +70,7 @@ export const planEarlySwitch = (input: {
     currentInstanceId: selection.instanceId,
     model: selection.model,
     nowMs: input.nowMs,
-    thresholds: input.thresholds,
+    thresholdsFor: input.thresholdsFor,
   });
   if (!choice.switched) return { command: input.command, choice };
   return {
@@ -113,10 +114,13 @@ export const make = Effect.gen(function* () {
       command,
       thread,
       providers: yield* registry.getProviders,
-      thresholds: {
-        sessionPercent: preferences.earlySwitchSessionThreshold,
-        weeklyPercent: preferences.earlySwitchWeeklyThreshold,
-      },
+      thresholdsFor: resolveAccountSwitchThresholds({
+        defaults: {
+          sessionPercent: preferences.earlySwitchSessionThreshold,
+          weeklyPercent: preferences.earlySwitchWeeklyThreshold,
+        },
+        instances: preferences.providerInstances,
+      }),
       lastSwitchAtMs: (yield* Ref.get(lastSwitchRef)).get(thread.id),
       nowMs,
     });

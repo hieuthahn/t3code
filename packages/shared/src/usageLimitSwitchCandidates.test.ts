@@ -4,6 +4,7 @@ import * as DateTime from "effect/DateTime";
 
 import {
   chooseAccountForTurn,
+  pickNewThreadAccount,
   pickRepresentativeAccount,
   pinnedAccountWarning,
   rankUsageLimitSwitchCandidates,
@@ -394,5 +395,74 @@ describe("pinnedAccountWarning", () => {
   it("stays quiet for auto threads and when pinned threads may switch on their own", () => {
     assert.isNull(warn(pressured, { accountChoice: "auto" }));
     assert.isNull(warn(pressured, { switchPinned: true }));
+  });
+});
+
+describe("pickNewThreadAccount", () => {
+  const thresholds = { sessionPercent: 90, weeklyPercent: 80 };
+  const pick = (
+    providers: ReadonlyArray<ServerProvider>,
+    recentAssignments: ReadonlyMap<ProviderInstanceId, number> = new Map(),
+  ) =>
+    pickNewThreadAccount({
+      providers,
+      proposedInstanceId: id("a"),
+      model: "claude-opus-5-5",
+      nowMs: NOW,
+      thresholdsFor: () => thresholds,
+      recentAssignments,
+    });
+  const at = (instanceId: string, session: number, weekly = 10, extra = {}) =>
+    makeProvider({
+      instanceId,
+      usage: [
+        { usedPercent: session, resetsInMinutes: 60 },
+        { id: "seven_day", kind: "weekly", usedPercent: weekly, resetsInMinutes: 3000 },
+      ],
+      ...extra,
+    });
+
+  it("keeps the proposed account when it has the most headroom", () => {
+    assert.equal(pick([at("a", 10), at("b", 40)]), id("a"));
+  });
+
+  it("moves to the account with more headroom against its own thresholds", () => {
+    assert.equal(pick([at("a", 60), at("b", 20)]), id("b"));
+    assert.equal(pick([at("a", 10, 75), at("b", 30, 10)]), id("b"));
+  });
+
+  it("spreads equal accounts by recent assignments", () => {
+    assert.equal(pick([at("a", 20), at("b", 20)], new Map([[id("a"), 1]])), id("b"));
+    assert.equal(pick([at("a", 20), at("b", 20)], new Map([[id("b"), 1]])), id("a"));
+  });
+
+  it("skips signed-out accounts and other groups", () => {
+    assert.equal(pick([at("a", 60), at("b", 5, 5, { authStatus: "unauthenticated" })]), id("a"));
+    assert.equal(pick([at("a", 60), at("c", 5, 5, { groupKey: "claude:home:/other" })]), id("a"));
+  });
+
+  it("leaves a signed-out proposal for the next signed-in member", () => {
+    assert.equal(pick([at("a", 5, 5, { authStatus: "unauthenticated" }), at("b", 50)]), id("b"));
+  });
+});
+
+describe("chooseAccountForTurn with a signed-out account", () => {
+  it("moves off a signed-out account even under every threshold", () => {
+    const current = makeProvider({
+      instanceId: "a",
+      authStatus: "unauthenticated",
+      usage: { usedPercent: 10, resetsInMinutes: 60 },
+    });
+    const peer = makeProvider({ instanceId: "b", usage: { usedPercent: 30, resetsInMinutes: 60 } });
+    assert.deepInclude(
+      chooseAccountForTurn({
+        providers: [current, peer],
+        currentInstanceId: id("a"),
+        model: "claude-opus-5-5",
+        nowMs: NOW,
+        thresholdsFor: () => ({ sessionPercent: 90, weeklyPercent: 80 }),
+      }),
+      { instanceId: id("b"), switched: true, reason: "current-signed-out" },
+    );
   });
 });

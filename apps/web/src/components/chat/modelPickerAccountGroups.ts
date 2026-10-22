@@ -126,3 +126,15 @@ export function resolveModelPickerAccountAction(input: {
   if (input.additive && input.canToggle) return { kind: "toggle", instanceId };
   return { kind: "select", instanceId, accountChoice: pinnedId ? "pinned" : "auto" };
 }
+
+/** Shorten account names for the footer toggle: an email's local part, else drop a shared first word. */
+export function shortAccountLabels(displayNames: ReadonlyArray<string>): ReadonlyArray<string> {
+  const words = displayNames.map((name) => name.trim().split(/\s+/));
+  const sharedFirstWord =
+    words.length > 1 && words.every((parts) => parts.length > 1 && parts[0] === words[0]![0]);
+  return words.map((parts, index) => {
+    const lastWord = parts.at(-1) ?? "";
+    if (lastWord.includes("@")) return lastWord.slice(0, lastWord.indexOf("@"));
+    return sharedFirstWord ? parts.slice(1).join(" ") : displayNames[index]!;
+  });
+}

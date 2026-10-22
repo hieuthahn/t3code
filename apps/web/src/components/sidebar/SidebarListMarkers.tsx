@@ -146,7 +146,7 @@ export function SidebarSettledGroupHeader(props: {
     <SortableSidebarMarker
       marker={settledGroupMarker(props.groupId)}
       data-testid="sidebar-settled-group-header"
-      className="ms-2 me-0.5 h-8"
+      className="mx-0.5 h-8"
     >
       <CollapsibleSectionHeader
         onClick={props.onToggle}

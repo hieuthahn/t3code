@@ -122,6 +122,7 @@ export type AccountChoiceReason =
   | "current-unmeasured"
   | "current-unknown"
   | "current-signed-out"
+  | "new-thread"
   | "no-peer-with-headroom"
   | "near-limit";
 

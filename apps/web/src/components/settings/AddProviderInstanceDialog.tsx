@@ -27,6 +27,7 @@ import { ChatGptConnectionButton } from "./ChatGptConnectionButton";
 import { Dialog } from "../ui/dialog";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
+import { Switch } from "../ui/switch";
 import { RadioGroup } from "../ui/radio-group";
 import { toastManager } from "../ui/toast";
 import { providerClients } from "./providerDriverMeta";
@@ -40,7 +41,9 @@ import {
   ACP_REGISTRY_WIZARD_STEPS,
   LOCAL_ACP_WIZARD_STEPS,
   deriveAvailableInstanceId,
+  findCodexHomeConflict,
   resolveAcpRegistryWizardNavigation,
+  resolveCodexAccountConfig,
   resolveWizardNavigation,
   updateProviderIdentityDraft,
   type ProviderIdentityDraft,
@@ -117,6 +120,7 @@ export function AddProviderInstanceDialog({
   const [isPreparingRegistryAgent, setIsPreparingRegistryAgent] = useState(false);
   const [configByDriver, setConfigByDriver] = useState<Record<string, Record<string, unknown>>>({});
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
+  const [codexShareHistory, setCodexShareHistory] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [createdInstanceId, setCreatedInstanceId] = useState<ProviderInstanceId | null>(null);
 
@@ -155,6 +159,21 @@ export function AddProviderInstanceDialog({
   const previewLabel = label.trim() || `${driverOption.label} Workspace`;
 
   const configDraft = configByDriver[driver] ?? EMPTY_CONFIG_DRAFT;
+  const codexAccountConfig =
+    driver === "codex"
+      ? resolveCodexAccountConfig({
+          config: configDraft,
+          instanceId,
+          shareHistory: codexShareHistory,
+        })
+      : null;
+  const codexHomeConflict =
+    codexAccountConfig === null
+      ? null
+      : findCodexHomeConflict({
+          config: codexAccountConfig,
+          instances: settings.providerInstances ?? {},
+        });
   const isLocalAcp = isAcpRegistry && isManualAcpConfiguration && configDraft.source === "local";
   const localCommandPath =
     typeof configDraft.commandPath === "string" ? configDraft.commandPath.trim() : "";
@@ -292,9 +311,10 @@ export function AddProviderInstanceDialog({
     setHasAttemptedSubmit(true);
     if (instanceIdError !== null || (isAcpRegistry && acpSelectionError !== null)) return;
 
+    if (codexHomeConflict !== null) return;
     const config =
       driver === "codex"
-        ? { ...configByDriver[driver], setupMode: "existing" }
+        ? { ...codexAccountConfig, setupMode: "existing" }
         : (configByDriver[driver] ?? {});
     const hasConfig = Object.keys(config).length > 0;
     const normalizedAccentColor = normalizeProviderAccentColor(accentColor);
@@ -619,6 +639,23 @@ export function AddProviderInstanceDialog({
 
               {!isAcpRegistry && driverSettingsFields.length > 0 ? (
                 <SettingsGroup variant="plain" className={cn(wizardStep !== 2 && "hidden")}>
+                  {codexAccountConfig !== null ? (
+                    <SettingsRow
+                      title="Share history with ~/.codex"
+                      description={
+                        codexShareHistory
+                          ? `Signs in from ${String(codexAccountConfig.shadowHomePath)} and shares sessions, config and skills with ~/.codex, so threads can move between accounts. Sign-in stays separate.`
+                          : `Uses ${String(codexAccountConfig.homePath)} on its own, with no shared history.`
+                      }
+                      control={
+                        <Switch
+                          checked={codexShareHistory}
+                          onCheckedChange={(checked) => setCodexShareHistory(Boolean(checked))}
+                          aria-label="Share history with ~/.codex"
+                        />
+                      }
+                    />
+                  ) : null}
                   <ProviderSettingsForm
                     definition={driverOption}
                     value={configDraft}
@@ -626,6 +663,11 @@ export function AddProviderInstanceDialog({
                     variant="settings"
                     onChange={setConfigDraft}
                   />
+                  {codexHomeConflict !== null ? (
+                    <p className="text-2xs text-destructive">
+                      {`Instance '${codexHomeConflict}' already signs in from this folder. Pick another shadow home or CODEX_HOME so each account keeps its own sign-in.`}
+                    </p>
+                  ) : null}
                 </SettingsGroup>
               ) : !isAcpRegistry && wizardStep === 2 ? (
                 <div className="grid gap-2">

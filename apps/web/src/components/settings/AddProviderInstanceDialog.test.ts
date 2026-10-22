@@ -2,6 +2,8 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   deriveAvailableInstanceId,
+  findCodexHomeConflict,
+  resolveCodexAccountConfig,
   getProviderIdentityDraft,
   resolveAcpRegistryWizardNavigation,
   resolveWizardNavigation,
@@ -82,5 +84,57 @@ describe("ACP Registry wizard", () => {
       label: "Gemini CLI",
       instanceIdOverride: "acpRegistry_gemini_cli",
     });
+  });
+});
+
+describe("resolveCodexAccountConfig", () => {
+  it("gives a shared-history account its own shadow home", () => {
+    expect(
+      resolveCodexAccountConfig({ config: {}, instanceId: "codex_work", shareHistory: true }),
+    ).toEqual({
+      shadowHomePath: "~/.codex-t3/codex_work",
+    });
+  });
+
+  it("gives a separate account its own CODEX_HOME", () => {
+    expect(
+      resolveCodexAccountConfig({ config: {}, instanceId: "codex_work", shareHistory: false }),
+    ).toEqual({
+      homePath: "~/.codex-codex_work",
+    });
+  });
+
+  it("keeps paths the user typed", () => {
+    expect(
+      resolveCodexAccountConfig({
+        config: { shadowHomePath: "~/accounts/work" },
+        instanceId: "codex_work",
+        shareHistory: true,
+      }),
+    ).toEqual({ shadowHomePath: "~/accounts/work" });
+  });
+});
+
+describe("findCodexHomeConflict", () => {
+  const instances = {
+    codex_personal: { driver: "codex", config: { shadowHomePath: "~/.codex-t3/personal" } },
+    claudeAgent: { driver: "claudeAgent", config: { homePath: "~/.codex-t3/personal" } },
+  };
+
+  it("names the Codex instance that already signs in from the same home", () => {
+    expect(
+      findCodexHomeConflict({ config: { shadowHomePath: "~/.codex-t3/personal/" }, instances }),
+    ).toBe("codex_personal");
+  });
+
+  it("treats the default Codex home as taken by the default instance", () => {
+    expect(findCodexHomeConflict({ config: {}, instances })).toBe("codex");
+    expect(findCodexHomeConflict({ config: { homePath: "~/.codex" }, instances })).toBe("codex");
+  });
+
+  it("allows a home no other Codex instance uses", () => {
+    expect(
+      findCodexHomeConflict({ config: { shadowHomePath: "~/.codex-t3/work" }, instances }),
+    ).toBeNull();
   });
 });

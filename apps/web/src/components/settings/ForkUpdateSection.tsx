@@ -75,10 +75,33 @@ export function describeForkUpdateRun(state: DesktopForkUpdateState): string | n
   return `Last run: ${run.kind} ${outcome}, ${formatTime(run.finishedAt)}. ${run.message}${conflicts}`.trim();
 }
 
+const gateForTarget = (state: DesktopForkUpdateState) =>
+  state.gate && state.check?.targetTag !== undefined && state.gate.target === state.check.targetTag
+    ? state.gate
+    : null;
+
+export function describeForkUpdateGate(state: DesktopForkUpdateState): string | null {
+  const gate = gateForTarget(state);
+  if (!gate) return null;
+  const summaries = (status: "warn" | "block") =>
+    gate.checks
+      .filter((check) => check.status === status)
+      .map((check) => check.summary)
+      .join(" ");
+  const warnings = summaries("warn");
+  if (gate.verdict === "block") {
+    return `Security gate blocks this update: ${summaries("block")}${warnings ? ` Also review: ${warnings}` : ""}`;
+  }
+  return warnings ? `Security gate passed. Review: ${warnings}` : "Security gate passed.";
+}
+
 export function forkUpdateBlockedReason(state: DesktopForkUpdateState): string | null {
   if (state.applyRunning) return "An update is already running.";
   if (!state.check || !isForkUpdateAvailable(state.check)) {
     return "There is no newer release to update to.";
+  }
+  if (gateForTarget(state)?.verdict === "block") {
+    return "The security gate blocks this update. Read its report, then run t3-update apply --accept-gate.";
   }
   if (state.activeRuns > 0) {
     return `${state.activeRuns} agent ${state.activeRuns === 1 ? "run is" : "runs are"} active.`;
@@ -150,6 +173,7 @@ export function ForkUpdateSection({ fallback }: { fallback: ReactNode }) {
     ? (state.error ?? describeForkUpdateCheck(state))
     : "Loading update status.";
   const lastRun = state ? describeForkUpdateRun(state) : null;
+  const gateSummary = state ? describeForkUpdateGate(state) : null;
   const trackValue = state?.paused ? "paused" : (state?.track ?? "preview");
   const repoAhead = state && !forkBuildMatchesHead(APP_VERSION, state.head);
 
@@ -179,6 +203,7 @@ export function ForkUpdateSection({ fallback }: { fallback: ReactNode }) {
         description={
           <>
             {description}
+            {gateSummary ? <span className="mt-1 block">{gateSummary}</span> : null}
             {lastRun ? <span className="mt-1 block">{lastRun}</span> : null}
           </>
         }

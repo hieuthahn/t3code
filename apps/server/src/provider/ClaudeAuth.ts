@@ -13,6 +13,7 @@ import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { makeClaudeEnvironment } from "./Drivers/ClaudeHome.ts";
+import { extractAuthorizeUrl, redactCliAuthOutput } from "./ProviderCliAuthOutput.ts";
 
 const BROWSER_METHOD_ID = "claude-browser";
 const INTERACTION_ID = "claude-login";
@@ -27,34 +28,6 @@ const methods: ReadonlyArray<ProviderAuthMethod> = [
     type: "agent",
   },
 ];
-
-const isUrlCharacter = (character: string): boolean => {
-  const code = character.charCodeAt(0);
-  return code > 0x20 && code !== 0x7f;
-};
-
-/** Pull the first sign-in link out of CLI output that may wrap it in terminal escapes. */
-export const extractClaudeAuthorizeUrl = (text: string): string | undefined => {
-  let searchFrom = 0;
-  while (searchFrom < text.length) {
-    const start = text.indexOf("https://", searchFrom);
-    if (start === -1) return undefined;
-    let end = start;
-    while (end < text.length && isUrlCharacter(text.charAt(end))) end += 1;
-    const candidate = text.slice(start, end);
-    if (candidate.includes("/oauth/authorize")) return candidate;
-    searchFrom = end;
-  }
-  return undefined;
-};
-
-/** Hide OAuth parameters and token-shaped values before CLI output reaches a log or the UI. */
-export const redactClaudeAuthOutput = (text: string): string =>
-  text
-    // eslint-disable-next-line no-control-regex -- terminal escapes wrap the link the CLI prints
-    .replace(/\u001b\][^\u0007]*\u0007|\u001b\[[0-9;?]*[A-Za-z]/g, "")
-    .replace(/(https:\/\/[^\s?]+)\?\S*/g, "$1?<redacted>")
-    .replace(/[A-Za-z0-9_-]{32,}(?:[#.][A-Za-z0-9_-]{8,})*/g, "<redacted>");
 
 export interface ClaudeAuthOptions {
   readonly instanceId: ProviderInstanceId;
@@ -118,7 +91,7 @@ export const makeClaudeAuth = Effect.fn("makeClaudeAuth")(function* (options: Cl
       pending += text;
       const lines = pending.split(/\r?\n/);
       pending = lines.pop() ?? "";
-      const kept = lines.map(redactClaudeAuthOutput).filter((line) => line.trim().length > 0);
+      const kept = lines.map(redactCliAuthOutput).filter((line) => line.trim().length > 0);
       outputLines.push(...kept);
       outputLines.splice(0, Math.max(0, outputLines.length - OUTPUT_LINES_KEPT));
       return Effect.forEach(kept, (line) => Effect.logInfo("Claude sign-in output.", { line }), {
@@ -126,7 +99,7 @@ export const makeClaudeAuth = Effect.fn("makeClaudeAuth")(function* (options: Cl
       });
     };
     const lastOutputLine = () => {
-      const tail = redactClaudeAuthOutput(pending).trim();
+      const tail = redactCliAuthOutput(pending).trim();
       return tail.length > 0 ? tail : outputLines.at(-1);
     };
     const submitCode = (code: string) =>
@@ -150,7 +123,7 @@ export const makeClaudeAuth = Effect.fn("makeClaudeAuth")(function* (options: Cl
         const logged = recordOutput(text);
         if (published) return logged;
         buffered += text;
-        const url = extractClaudeAuthorizeUrl(buffered);
+        const url = extractAuthorizeUrl(buffered);
         if (url === undefined) return logged;
         published = true;
         return logged.pipe(

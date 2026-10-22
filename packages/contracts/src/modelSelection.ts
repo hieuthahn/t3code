@@ -6,10 +6,15 @@ import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ProviderOptionSelections } from "./model.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
+/** "pinned" keeps a thread on the account the user picked; automatic switches leave it alone. */
+export const ThreadAccountChoice = Schema.Literals(["auto", "pinned"]);
+export type ThreadAccountChoice = typeof ThreadAccountChoice.Type;
+
 const ModelSelectionWire = Schema.Struct({
   instanceId: ProviderInstanceId,
   model: TrimmedNonEmptyString,
   options: Schema.optionalKey(ProviderOptionSelections),
+  accountChoice: Schema.optionalKey(ThreadAccountChoice),
 });
 
 const ModelSelectionSource = Schema.Struct({
@@ -17,6 +22,7 @@ const ModelSelectionSource = Schema.Struct({
   instanceId: Schema.optional(Schema.Unknown),
   model: Schema.Unknown,
   options: Schema.optional(Schema.Unknown),
+  accountChoice: Schema.optional(Schema.Unknown),
 });
 
 export const ModelSelection = ModelSelectionSource.pipe(
@@ -35,6 +41,7 @@ export const ModelSelection = ModelSelectionSource.pipe(
           model: raw.model,
         };
         if (raw.options !== undefined) base.options = raw.options;
+        if (raw.accountChoice !== undefined) base.accountChoice = raw.accountChoice;
         return Effect.succeed(base as typeof ModelSelectionWire.Encoded);
       },
       encode: (value) => {
@@ -43,6 +50,7 @@ export const ModelSelection = ModelSelectionSource.pipe(
           model: value.model,
         };
         if (value.options !== undefined) base.options = value.options;
+        if (value.accountChoice !== undefined) base.accountChoice = value.accountChoice;
         return Effect.succeed(base as typeof ModelSelectionSource.Encoded);
       },
     }),

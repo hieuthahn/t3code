@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   describeForkUpdateCheck,
+  describeForkUpdateGate,
   describeForkUpdateRun,
   forkBuildMatchesHead,
   forkUpdateBlockedReason,
@@ -126,5 +127,51 @@ describe("describeForkUpdateRun", () => {
     });
     expect(text).toContain("apply failed at rebase (exit 4)");
     expect(text).toContain("Conflicts: apps/web/src/components/chat/ChatBannerLane.tsx.");
+  });
+});
+
+describe("describeForkUpdateGate", () => {
+  const gate = (verdict: "pass" | "warn" | "block", target = "v0.1.2-preview.20261022.3511") => ({
+    ...base,
+    gate: {
+      checkedAt: "2026-10-22T05:26:00Z",
+      target,
+      verdict,
+      checks: [
+        {
+          id: "install-scripts",
+          status: verdict === "block" ? ("block" as const) : ("pass" as const),
+          summary: "New or changed install scripts run on pnpm install.",
+          details: ["package.json: postinstall = node x.js"],
+        },
+        {
+          id: "ci",
+          status: verdict === "pass" ? ("pass" as const) : ("warn" as const),
+          summary: "2 CI files changed.",
+          details: [],
+        },
+      ],
+    },
+  });
+
+  it("names what blocks the update and disables Update Now", () => {
+    expect(describeForkUpdateGate(gate("block"))).toBe(
+      "Security gate blocks this update: New or changed install scripts run on pnpm install. Also review: 2 CI files changed.",
+    );
+    expect(forkUpdateBlockedReason(gate("block"))).toBe(
+      "The security gate blocks this update. Read its report, then run t3-update apply --accept-gate.",
+    );
+  });
+
+  it("lists warnings without blocking", () => {
+    expect(describeForkUpdateGate(gate("warn"))).toBe(
+      "Security gate passed. Review: 2 CI files changed.",
+    );
+    expect(forkUpdateBlockedReason(gate("warn"))).toBeNull();
+  });
+
+  it("ignores a report for another tag", () => {
+    expect(describeForkUpdateGate(gate("block", "v0.1.1-preview.20261021.3449"))).toBeNull();
+    expect(forkUpdateBlockedReason(gate("block", "v0.1.1-preview.20261021.3449"))).toBeNull();
   });
 });

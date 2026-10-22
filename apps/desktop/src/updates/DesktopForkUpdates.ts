@@ -1,5 +1,6 @@
 import {
   DesktopForkUpdateCheckSchema,
+  DesktopForkUpdateGateSchema,
   DesktopForkUpdateRunSchema,
   type DesktopForkUpdateState,
   type DesktopForkUpdateTrack,
@@ -25,6 +26,7 @@ const UpdaterStatusJson = Schema.fromJsonString(
     applyRunning: Schema.Boolean,
     check: Schema.NullOr(DesktopForkUpdateCheckSchema),
     lastRun: Schema.NullOr(DesktopForkUpdateRunSchema),
+    gate: Schema.optionalKey(Schema.NullOr(DesktopForkUpdateGateSchema)),
   }),
 );
 const decodeUpdaterStatus = Schema.decodeEffect(UpdaterStatusJson);
@@ -32,6 +34,7 @@ const decodeUpdaterStatus = Schema.decodeEffect(UpdaterStatusJson);
 const EXIT_MESSAGES: Readonly<Record<number, string>> = {
   10: "An update is already running.",
   11: "Agent runs are active. Update when they finish.",
+  15: "The security gate stopped this update. See its report under Version.",
 };
 
 const TIMEOUTS = {

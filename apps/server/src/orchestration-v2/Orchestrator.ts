@@ -5735,7 +5735,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const now = yield* DateTime.now;
     if (
       !modelSelectionsEqual(projection.thread.modelSelection, modelSelection) ||
-      projection.thread.providerInstanceId !== modelSelection.instanceId
+      projection.thread.providerInstanceId !== modelSelection.instanceId ||
+      (projection.thread.modelSelection.accountChoice ?? "auto") !==
+        (modelSelection.accountChoice ?? "auto")
     ) {
       yield* emit(
         events,

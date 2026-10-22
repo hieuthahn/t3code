@@ -3,6 +3,7 @@ import type {
   ProviderInstanceId,
   ProviderInteractionMode,
   RuntimeMode,
+  ThreadAccountChoice,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { BotIcon, PencilRulerIcon } from "lucide-react";
@@ -249,7 +250,7 @@ export function ComposerModelPicker({
   readonly onProviderModelSelect: (
     instanceId: ProviderInstanceId,
     model: string,
-    options?: { focusComposer?: boolean },
+    options?: { focusComposer?: boolean; accountChoice?: ThreadAccountChoice },
   ) => void;
 }) {
   const { instanceEntries, modelOptionsByInstance } = pickerProps;
@@ -290,9 +291,10 @@ export function ComposerModelPicker({
             onToggleModel: toggleModel,
           }
         : {})}
-      onInstanceModelChange={(instanceId, model) => {
+      {...(selectedModelSelection.accountChoice === "pinned" ? { activeAccountPinned: true } : {})}
+      onInstanceModelChange={(instanceId, model, accountChoice) => {
         onMultipleModelSelectionsChange(null);
-        onProviderModelSelect(instanceId, model);
+        onProviderModelSelect(instanceId, model, accountChoice ? { accountChoice } : undefined);
       }}
     />
   );

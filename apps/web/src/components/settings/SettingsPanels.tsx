@@ -491,6 +491,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     settings.earlySwitchWeeklyThreshold !== DEFAULT_UNIFIED_SETTINGS.earlySwitchWeeklyThreshold
       ? ["Switch accounts before the limit"]
       : []),
+    ...(settings.switchPinnedAccounts !== DEFAULT_UNIFIED_SETTINGS.switchPinnedAccounts
+      ? ["Switch pinned accounts too"]
+      : []),
     ...(settings.autoEffortDefault !== DEFAULT_UNIFIED_SETTINGS.autoEffortDefault
       ? ["Auto effort by default"]
       : []),
@@ -666,6 +669,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       earlyAccountSwitch: DEFAULT_UNIFIED_SETTINGS.earlyAccountSwitch,
       earlySwitchSessionThreshold: DEFAULT_UNIFIED_SETTINGS.earlySwitchSessionThreshold,
       earlySwitchWeeklyThreshold: DEFAULT_UNIFIED_SETTINGS.earlySwitchWeeklyThreshold,
+      switchPinnedAccounts: DEFAULT_UNIFIED_SETTINGS.switchPinnedAccounts,
       autoEffortDefault: DEFAULT_UNIFIED_SETTINGS.autoEffortDefault,
       promptSuggestions: DEFAULT_UNIFIED_SETTINGS.promptSuggestions,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
@@ -1092,6 +1096,22 @@ export function GeneralSettingsPanel() {
             }
           />
         </SettingsRow>
+        <SettingsRow
+          serverScoped
+          {...searchableSetting("switch-pinned-accounts")}
+          description="A thread pinned to an account in the model picker stays on it by default. Turn this on to let early and limit switching move pinned threads as well."
+          settingKeys={["switchPinnedAccounts"]}
+          control={
+            <ScopedSwitch
+              settingKeys={["switchPinnedAccounts"]}
+              checked={settings.switchPinnedAccounts}
+              onCheckedChange={(checked) =>
+                updateSettings({ switchPinnedAccounts: Boolean(checked) })
+              }
+              aria-label="Switch pinned accounts too"
+            />
+          }
+        />
         <SettingsRow
           serverScoped
           {...searchableSetting("auto-effort-default")}

@@ -4,6 +4,7 @@ import {
   type EnvironmentId,
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
+  type ThreadAccountChoice,
 } from "@t3tools/contracts";
 import { memo, useEffect, useState } from "react";
 import { Badge } from "../ui/badge";
@@ -52,7 +53,12 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   onOpenChange?: (open: boolean) => void;
   onOpenProviderSetup?: (instanceId: ProviderInstanceId) => void;
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
-  onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
+  onInstanceModelChange: (
+    instanceId: ProviderInstanceId,
+    model: string,
+    accountChoice?: ThreadAccountChoice,
+  ) => void;
+  activeAccountPinned?: boolean;
 }) {
   const composerFloatingLayerProps = useComposerMenuProps();
   const [uncontrolledIsMenuOpen, setUncontrolledIsMenuOpen] = useState(false);
@@ -139,9 +145,13 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     };
   }, [isMenuOpen]);
 
-  const handleInstanceModelChange = (instanceId: ProviderInstanceId, model: string) => {
+  const handleInstanceModelChange = (
+    instanceId: ProviderInstanceId,
+    model: string,
+    accountChoice?: ThreadAccountChoice,
+  ) => {
     if (props.disabled) return;
-    props.onInstanceModelChange(instanceId, model);
+    props.onInstanceModelChange(instanceId, model, accountChoice);
     setIsMenuOpen(false);
   };
 
@@ -303,6 +313,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           {...(props.getModelDisabledReason
             ? { getModelDisabledReason: props.getModelDisabledReason }
             : {})}
+          {...(props.activeAccountPinned ? { activeAccountPinned: true } : {})}
           onInstanceModelChange={handleInstanceModelChange}
         />
         {props.selectedModels === undefined ? (

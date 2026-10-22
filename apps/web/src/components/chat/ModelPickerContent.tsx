@@ -1,6 +1,7 @@
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
   type ProviderInstanceId,
+  type ThreadAccountChoice,
   type EnvironmentId,
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
@@ -64,6 +65,7 @@ import { cn } from "~/lib/utils";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import { TooltipProvider } from "../ui/tooltip";
 import { InlineButton } from "../ui/button";
+import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import {
   modelPickerSetupSummary,
   resolveModelPickerSetupNotices,
@@ -395,7 +397,13 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   onRequestClose?: () => void;
   onOpenProviderSetup?: (instanceId: ProviderInstanceId) => void;
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
-  onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
+  onInstanceModelChange: (
+    instanceId: ProviderInstanceId,
+    model: string,
+    accountChoice?: ThreadAccountChoice,
+  ) => void;
+  /** Whether the thread is pinned to the active account rather than following Auto. */
+  activeAccountPinned?: boolean;
 }) {
   const {
     keybindings: providedKeybindings,
@@ -483,6 +491,16 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const [searchHeight, setSearchHeight] = useState(0);
   const toggleFavorite = useToggleEnvironmentModelFavorite(props.environmentId);
   const mergeAccounts = useModelPickerMergeAccounts(props.environmentId);
+  const activeGroupKey = activeEntry?.continuationGroupKey;
+  const groupAccounts =
+    mergeAccounts && activeGroupKey !== undefined
+      ? instanceEntries.filter((entry) => entry.continuationGroupKey === activeGroupKey)
+      : [];
+  const [accountPick, setAccountPick] = useState<ProviderInstanceId | "auto">(
+    props.activeAccountPinned === true && props.activeInstanceId !== undefined
+      ? props.activeInstanceId
+      : "auto",
+  );
   const nowMinute = useNowMinute();
 
   const focusSearchInput = () => {
@@ -542,8 +560,14 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     if (resolvedModel) {
       if (additive && onToggleModel) {
         onToggleModel(instanceId, resolvedModel);
+        return;
+      }
+      const members =
+        pickerModelByKey.get(modelPickerModelKey(instanceId, modelSlug))?.memberInstanceIds ?? [];
+      if (accountPick !== "auto" && members.includes(accountPick)) {
+        onInstanceModelChange(accountPick, resolvedModel, "pinned");
       } else {
-        onInstanceModelChange(instanceId, resolvedModel);
+        onInstanceModelChange(instanceId, resolvedModel, "auto");
       }
     }
   };
@@ -1095,6 +1119,27 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               onRequestClose={onRequestClose}
               onOpenProviderSetup={onOpenProviderSetup}
             />
+            {groupAccounts.length > 1 && onToggleModel === undefined ? (
+              <div className="flex items-center gap-2 border-t px-2 py-1.5">
+                <span className="text-xs text-muted-foreground">Account</span>
+                <ToggleGroup
+                  size="xs"
+                  aria-label="Account for this thread"
+                  value={[accountPick]}
+                  onValueChange={(next) => {
+                    const value = next[0];
+                    if (value !== undefined) setAccountPick(value as ProviderInstanceId | "auto");
+                  }}
+                >
+                  <Toggle value="auto">Auto</Toggle>
+                  {groupAccounts.map((entry) => (
+                    <Toggle key={entry.instanceId} value={entry.instanceId}>
+                      {entry.displayName}
+                    </Toggle>
+                  ))}
+                </ToggleGroup>
+              </div>
+            ) : null}
           </div>
         </Combobox>
       </div>

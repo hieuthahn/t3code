@@ -50,6 +50,9 @@ import { PullRequestMergeMethod } from "./pullRequest.ts";
 export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"]);
 export const LimitedThreadSwitchMode = Schema.Literals(["off", "ask", "auto"]);
 export type LimitedThreadSwitchMode = typeof LimitedThreadSwitchMode.Type;
+/** Which judge picks a turn's effort when Auto effort is on: auto asks Jev first when keyed. */
+export const AutoEffortJudge = Schema.Literals(["auto", "haiku"]);
+export type AutoEffortJudge = typeof AutoEffortJudge.Type;
 export type TimestampFormat = typeof TimestampFormat.Type;
 const DEFAULT_TIMESTAMP_FORMAT: TimestampFormat = "locale";
 
@@ -1231,6 +1234,9 @@ export const ServerSettings = Schema.Struct({
   limitedThreadSwitch: LimitedThreadSwitchMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("ask" as const)),
   ),
+  autoEffortJudge: AutoEffortJudge.pipe(
+    Schema.withDecodingDefault(Effect.succeed("auto" as const)),
+  ),
   sidebarAutoSettleKeepPullRequests: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
@@ -1564,6 +1570,7 @@ export const ServerSettingsPatch = Schema.Struct({
   sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
   autoResumeLimitedThreads: Schema.optionalKey(Schema.Boolean),
   limitedThreadSwitch: Schema.optionalKey(LimitedThreadSwitchMode),
+  autoEffortJudge: Schema.optionalKey(AutoEffortJudge),
   snoozeLimitedThreads: Schema.optionalKey(Schema.Boolean),
   backgroundActivity: Schema.optionalKey(
     Schema.Struct({

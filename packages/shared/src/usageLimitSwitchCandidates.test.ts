@@ -2,7 +2,11 @@ import { assert, describe, it } from "@effect/vitest";
 import { ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
-import { rankUsageLimitSwitchCandidates } from "./usageLimitSwitchCandidates.ts";
+import {
+  chooseAccountForTurn,
+  pickRepresentativeAccount,
+  rankUsageLimitSwitchCandidates,
+} from "./usageLimitSwitchCandidates.ts";
 
 const NOW = Date.parse("2026-10-20T12:00:00.000Z");
 const iso = (offsetMinutes: number) =>
@@ -11,6 +15,7 @@ const id = (value: string) => ProviderInstanceId.make(value);
 
 interface WindowUsage {
   readonly id?: string;
+  readonly kind?: "session" | "weekly";
   readonly usedPercent: number;
   readonly resetsInMinutes: number;
 }
@@ -48,7 +53,7 @@ const makeProvider = (input: {
       checkedAt: iso(0),
       windows: usage.map((window) => ({
         id: window.id ?? "five_hour",
-        kind: "session",
+        kind: window.kind ?? "session",
         label: "Session",
         usedPercent: window.usedPercent,
         resetsAt: iso(window.resetsInMinutes),
@@ -196,5 +201,121 @@ describe("rankUsageLimitSwitchCandidates", () => {
   it("returns nothing when the current instance has no continuation group", () => {
     const withoutGroup = makeProvider({ instanceId: "a", groupKey: null });
     assert.deepEqual(rank([withoutGroup, providers[1]!]), []);
+  });
+});
+
+describe("chooseAccountForTurn", () => {
+  const thresholds = { sessionPercent: 90, weeklyPercent: 80 };
+  const choose = (providers: ReadonlyArray<ServerProvider>) =>
+    chooseAccountForTurn({
+      providers,
+      currentInstanceId: id("a"),
+      model: "claude-opus-5-5",
+      nowMs: NOW,
+      thresholds,
+    });
+  const roomy = makeProvider({ instanceId: "b", usage: { usedPercent: 30, resetsInMinutes: 60 } });
+
+  it("stays while every window is under its threshold", () => {
+    const current = makeProvider({
+      instanceId: "a",
+      usage: [
+        { usedPercent: 89, resetsInMinutes: 60 },
+        { id: "seven_day", kind: "weekly", usedPercent: 79, resetsInMinutes: 3000 },
+      ],
+    });
+    assert.deepInclude(choose([current, roomy]), {
+      instanceId: id("a"),
+      switched: false,
+      reason: "under-threshold",
+    });
+  });
+
+  it("moves to a roomy peer when the weekly window crosses its own threshold", () => {
+    const current = makeProvider({
+      instanceId: "a",
+      usage: [
+        { usedPercent: 10, resetsInMinutes: 60 },
+        { id: "seven_day", kind: "weekly", usedPercent: 81, resetsInMinutes: 3000 },
+      ],
+    });
+    const choice = choose([current, roomy]);
+    assert.deepInclude(choice, { instanceId: id("b"), switched: true, reason: "near-limit" });
+    assert.deepEqual(choice.pressure, {
+      windowId: "seven_day",
+      usedPercent: 81,
+      thresholdPercent: 80,
+    });
+  });
+
+  it("stays when no peer is twenty points under every threshold", () => {
+    const current = makeProvider({
+      instanceId: "a",
+      usage: { usedPercent: 95, resetsInMinutes: 60 },
+    });
+    const tight = makeProvider({
+      instanceId: "b",
+      usage: { usedPercent: 70, resetsInMinutes: 60 },
+    });
+    const weeklyTight = makeProvider({
+      instanceId: "c",
+      usage: [
+        { usedPercent: 5, resetsInMinutes: 60 },
+        { id: "seven_day", kind: "weekly", usedPercent: 61, resetsInMinutes: 3000 },
+      ],
+    });
+    const unmeasured = makeProvider({ instanceId: "d" });
+    assert.deepInclude(choose([current, tight, weeklyTight, unmeasured]), {
+      instanceId: id("a"),
+      switched: false,
+      reason: "no-peer-with-headroom",
+    });
+  });
+
+  it("stays when the current account has no usage reading", () => {
+    assert.deepInclude(choose([makeProvider({ instanceId: "a" }), roomy]), {
+      instanceId: id("a"),
+      switched: false,
+      reason: "current-unmeasured",
+    });
+    assert.deepInclude(choose([makeProvider({ instanceId: "a", unavailable: true }), roomy]), {
+      reason: "current-unmeasured",
+    });
+  });
+
+  it("ignores a window that already reset", () => {
+    const current = makeProvider({
+      instanceId: "a",
+      usage: { usedPercent: 99, resetsInMinutes: -1 },
+    });
+    assert.deepInclude(choose([current, roomy]), { switched: false, reason: "under-threshold" });
+  });
+});
+
+describe("pickRepresentativeAccount", () => {
+  const members = [
+    makeProvider({ instanceId: "a", usage: { usedPercent: 60, resetsInMinutes: 60 } }),
+    makeProvider({ instanceId: "b", usage: { usedPercent: 10, resetsInMinutes: 60 } }),
+    makeProvider({ instanceId: "c", authStatus: "unauthenticated" }),
+  ];
+  const pick = (preferredInstanceId: ProviderInstanceId | undefined, list = members) =>
+    pickRepresentativeAccount({
+      members: list,
+      preferredInstanceId,
+      model: "claude-opus-5-5",
+      nowMs: NOW,
+    });
+
+  it("keeps the thread's own account", () => {
+    assert.equal(pick(id("a")), id("a"));
+  });
+
+  it("otherwise takes the ready member with the most headroom", () => {
+    assert.equal(pick(undefined), id("b"));
+    assert.equal(pick(id("elsewhere")), id("b"));
+  });
+
+  it("falls back to the first member when none is ready", () => {
+    assert.equal(pick(undefined, [members[2]!]), id("c"));
   });
 });

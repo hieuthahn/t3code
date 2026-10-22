@@ -4,3 +4,13 @@ export function multipleModelsTriggerLabel(labels: ReadonlyArray<string>): strin
   if (labels.length === 1) return labels[0]!;
   return `${labels.length} models`;
 }
+
+/** Decide whether a model row click adds to the selection, and whether it turns the mode on. */
+export function modelRowClickIntent(input: {
+  readonly shiftKey: boolean;
+  readonly multiSelectMode: boolean;
+  readonly canToggle: boolean;
+}): { readonly additive: boolean; readonly entersMode: boolean } {
+  const additive = input.canToggle && (input.shiftKey || input.multiSelectMode);
+  return { additive, entersMode: additive && !input.multiSelectMode };
+}

@@ -32,6 +32,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
   isFavorite: boolean;
   isSelected: boolean;
   showSelection?: boolean;
+  selectionStyle?: "check" | "checkbox";
   showProvider: boolean;
   preferShortName?: boolean;
   useTriggerLabel?: boolean;
@@ -107,7 +108,15 @@ export const ModelListRow = memo(function ModelListRow(props: {
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5">
-        {props.showSelection && props.isSelected ? (
+        {props.showSelection && props.selectionStyle === "checkbox" ? (
+          <span
+            aria-hidden="true"
+            data-checked={props.isSelected ? "" : undefined}
+            className="flex size-4 shrink-0 items-center justify-center rounded-xs border border-input bg-background text-primary-foreground data-checked:border-primary data-checked:bg-primary dark:bg-input/32 dark:data-checked:bg-primary"
+          >
+            {props.isSelected ? <CheckIcon className="size-3" /> : null}
+          </span>
+        ) : props.showSelection && props.isSelected ? (
           <CheckIcon className="size-3.5" aria-hidden="true" />
         ) : null}
         {props.jumpLabel ? <Kbd>{props.jumpLabel}</Kbd> : null}

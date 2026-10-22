@@ -1252,9 +1252,13 @@ describe("orchestration v2 provider switching", () => {
 
           const projection = yield* orchestrator.getThreadProjection(threadId);
           assert.equal(projection.thread.modelSelection.accountChoice, "pinned");
+          yield* runToEnd(3, CLAUDE_MODEL_SELECTION);
+          const unpinned = yield* orchestrator.getThreadProjection(threadId);
+          assert.notEqual(unpinned.thread.modelSelection.accountChoice, "pinned");
           const turns = yield* Ref.get(capturedTurns);
-          assert.equal(turns.length, 2);
+          assert.equal(turns.length, 3);
           assert.equal(turns[1]?.nativeThreadId, turns[0]?.nativeThreadId);
+          assert.equal(turns[2]?.nativeThreadId, turns[0]?.nativeThreadId);
           assert.equal(yield* Ref.get(generation), 1);
         }).pipe(
           Effect.provide(

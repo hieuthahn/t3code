@@ -1247,6 +1247,8 @@ export const ServerSettings = Schema.Struct({
   earlySwitchWeeklyThreshold: AccountSwitchThresholdPercent.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_ACCOUNT_SWITCH_THRESHOLD_PERCENT)),
   ),
+  /** Let automatic switches move a thread off an account the user picked by hand. */
+  switchPinnedAccounts: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   autoEffortJudge: AutoEffortJudge.pipe(
     Schema.withDecodingDefault(Effect.succeed("auto" as const)),
   ),
@@ -1591,6 +1593,7 @@ export const ServerSettingsPatch = Schema.Struct({
   earlyAccountSwitch: Schema.optionalKey(Schema.Boolean),
   earlySwitchSessionThreshold: Schema.optionalKey(AccountSwitchThresholdPercent),
   earlySwitchWeeklyThreshold: Schema.optionalKey(AccountSwitchThresholdPercent),
+  switchPinnedAccounts: Schema.optionalKey(Schema.Boolean),
   autoEffortJudge: Schema.optionalKey(AutoEffortJudge),
   autoEffortDefault: Schema.optionalKey(Schema.Boolean),
   promptSuggestions: Schema.optionalKey(Schema.Boolean),

@@ -43,6 +43,7 @@ import {
   type ProviderMaintenanceCapabilities,
 } from "@t3tools/provider-core/server/maintenanceResolver";
 import type { ProviderSnapshotSource } from "./builtInProviderCatalog.ts";
+import { withAutoEffortDescriptor } from "../autoEffort/autoEffortJudgment.ts";
 
 export type ProviderMaintenanceActionKind = "update";
 
@@ -507,7 +508,7 @@ export const layer = Layer.effect(
 
           const providers = orderProviderSnapshots(
             [...mergedProviders.values()].map((provider) =>
-              classifyCompatibility(provider, manifest),
+              withAutoEffortDescriptor(classifyCompatibility(provider, manifest)),
             ),
           );
           const providersToPersist = providers.filter((provider) =>

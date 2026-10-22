@@ -217,6 +217,26 @@ export const chooseAccountForTurn = (input: {
   };
 };
 
+export interface PinnedAccountWarning {
+  readonly pressure: NonNullable<AccountChoice["pressure"]>;
+  readonly target?: UsageLimitSwitchCandidate;
+}
+
+/** Report a pinned account past its threshold, since switching leaves pinned threads alone. */
+export const pinnedAccountWarning = (
+  input: Parameters<typeof chooseAccountForTurn>[0] & {
+    readonly accountChoice: "auto" | "pinned";
+    readonly switchPinned: boolean;
+  },
+): PinnedAccountWarning | null => {
+  if (input.accountChoice !== "pinned" || input.switchPinned) return null;
+  const choice = chooseAccountForTurn(input);
+  if (choice.pressure === undefined) return null;
+  return choice.target === undefined
+    ? { pressure: choice.pressure }
+    : { pressure: choice.pressure, target: choice.target };
+};
+
 /**
  * Pick the account a merged model row stands for: the thread's own account when it is in the
  * group, else the ready member with the most headroom, else the first member.

@@ -60,6 +60,11 @@ export function assistantText(line: string): string | undefined {
 export const makeClaudeEffortJudge = Effect.fn("makeClaudeEffortJudge")(function* (
   claudeSettings: ClaudeSettings,
   environment?: NodeJS.ProcessEnv,
+  options?: {
+    readonly systemPrompt?: string;
+    /** False starts the first process on the first question instead of at start-up. */
+    readonly warmAtStart?: boolean;
+  },
 ) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const fileSystem = yield* FileSystem.FileSystem;
@@ -83,7 +88,7 @@ export const makeClaudeEffortJudge = Effect.fn("makeClaudeEffortJudge")(function
           "--effort",
           "low",
           "--system-prompt",
-          JUDGE_SYSTEM,
+          options?.systemPrompt ?? JUDGE_SYSTEM,
           "--tools",
           "",
           "--disable-slash-commands",
@@ -153,7 +158,9 @@ export const makeClaudeEffortJudge = Effect.fn("makeClaudeEffortJudge")(function
       () => Scope.close(warm.scope, Exit.void),
     );
 
-  if (claudeSettings.enabled) yield* Effect.forkIn(replaceWarm, instanceScope);
+  if (claudeSettings.enabled && options?.warmAtStart !== false) {
+    yield* Effect.forkIn(replaceWarm, instanceScope);
+  }
 
   return {
     prewarm: replaceWarm,

@@ -2979,6 +2979,9 @@ function resultUserFacingError(result: SDKResultMessage): string | undefined {
 
 const CONTEXT_WINDOW_FULL_ERROR =
   "Claude stopped: the prompt exceeds the model's context window. Run /compact or start a new thread.";
+const CLAUDE_LOST_CONVERSATION_ERROR = "No conversation found with session ID";
+const CLAUDE_LOST_CONVERSATION_MESSAGE =
+  "Claude no longer has this conversation. Send the message again to continue from a summary of this thread.";
 
 function terminalResultError(
   reason: SDKResultMessage["terminal_reason"],
@@ -8584,15 +8587,25 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               resetTimes.length > 0 && resetTimes.every((time) => time !== null)
                 ? resetTimes.reduce((latest, time) => (time! > latest ? time! : latest), "")
                 : null;
+            const lostConversation =
+              !interrupted &&
+              message.subtype === "error_during_execution" &&
+              message.errors.some((error) => error.startsWith(CLAUDE_LOST_CONVERSATION_ERROR));
             const resultFailure = interrupted
               ? null
-              : limitedCompaction !== null
+              : lostConversation
                 ? makeProviderFailure({
-                    class: "usage_limit",
-                    message: limitedCompaction.message ?? failureHint,
-                    code: "compaction_failed",
+                    class: "provider_error",
+                    message: CLAUDE_LOST_CONVERSATION_MESSAGE,
+                    code: "native_thread_not_found",
                   })
-                : providerFailureFromResult(message, completedAt, failureHint, usageLimited);
+                : limitedCompaction !== null
+                  ? makeProviderFailure({
+                      class: "usage_limit",
+                      message: limitedCompaction.message ?? failureHint,
+                      code: "compaction_failed",
+                    })
+                  : providerFailureFromResult(message, completedAt, failureHint, usageLimited);
             const terminalFailure =
               resultFailure?.class === "usage_limit"
                 ? { ...resultFailure, resetAt: resetAt ?? resultFailure.resetAt ?? null }
@@ -8607,6 +8620,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               completedAt,
               result: message,
               ...(terminalFailure === null ? {} : { failure: terminalFailure }),
+              ...(lostConversation ? { threadDisposition: "broken" as const } : {}),
             });
           }
         });

@@ -1255,6 +1255,8 @@ export const ServerSettings = Schema.Struct({
   ),
   /** Whether a thread that never set the Auto effort switch judges its effort per turn. */
   autoEffortDefault: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /** Whether the composer offers a predicted next prompt after each turn. */
+  promptSuggestions: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   sidebarAutoSettleKeepPullRequests: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
@@ -1594,6 +1596,7 @@ export const ServerSettingsPatch = Schema.Struct({
   earlySwitchWeeklyThreshold: Schema.optionalKey(AccountSwitchThresholdPercent),
   autoEffortJudge: Schema.optionalKey(AutoEffortJudge),
   autoEffortDefault: Schema.optionalKey(Schema.Boolean),
+  promptSuggestions: Schema.optionalKey(Schema.Boolean),
   snoozeLimitedThreads: Schema.optionalKey(Schema.Boolean),
   backgroundActivity: Schema.optionalKey(
     Schema.Struct({

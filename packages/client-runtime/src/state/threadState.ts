@@ -14,6 +14,8 @@ export interface EnvironmentThreadState {
    * disconnect path.
    */
   readonly history: ThreadHistoryMeta;
+  /** The predicted next prompt the server sent after the last run; never persisted. */
+  readonly promptSuggestion?: string | null;
 }
 
 export const EMPTY_ENVIRONMENT_THREAD_STATE: EnvironmentThreadState = {

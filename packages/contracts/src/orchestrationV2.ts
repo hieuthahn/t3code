@@ -3420,6 +3420,8 @@ export const OrchestrationV2SubscribeThreadInput = Schema.Struct({
   requestCompletionMarker: Schema.optionalKey(Schema.Boolean),
   acceptBoundedSnapshot: Schema.optionalKey(Schema.Boolean),
   acceptCompactTurnItems: Schema.optionalKey(Schema.Boolean),
+  /** The client handles `prompt-suggestion` items; older clients would fail to decode them. */
+  acceptPromptSuggestions: Schema.optionalKey(Schema.Boolean),
 });
 export type OrchestrationV2SubscribeThreadInput = typeof OrchestrationV2SubscribeThreadInput.Type;
 
@@ -3537,6 +3539,11 @@ export const OrchestrationV2ThreadStreamItem = Schema.Union([
     kind: Schema.Literal("event"),
     sequence: NonNegativeInt,
     event: OrchestrationV2DomainEvent,
+  }),
+  /** The predicted next prompt for the composer, null once a new run starts. Never persisted. */
+  Schema.Struct({
+    kind: Schema.Literal("prompt-suggestion"),
+    suggestion: Schema.NullOr(Schema.String),
   }),
   // After the known arm: union members are tried in order.
   OrchestrationV2UnknownThreadStreamEvent,

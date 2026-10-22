@@ -351,6 +351,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["reasoning effort auto judge haiku jev typesafe thinking"],
   },
   {
+    id: "prompt-suggestions",
+    title: "Prompt suggestions",
+    to: "/settings/general",
+    searchTerms: ["next prompt suggestion ghost text predict tab autocomplete composer"],
+  },
+  {
     id: "working-shelf",
     title: "Working section (beta)",
     to: "/settings/general",

@@ -239,7 +239,7 @@ export function ComposerModelPicker({
   ...pickerProps
 }: Omit<
   ComponentProps<typeof ProviderModelPicker>,
-  "selectedModels" | "onToggleModel" | "onInstanceModelChange"
+  "selectedModels" | "onToggleModel" | "onExitMultipleModels" | "onInstanceModelChange"
 > & {
   readonly multipleModelsEnabled: boolean;
   readonly multipleModelSelections: ReadonlyArray<ModelSelection> | null;
@@ -280,6 +280,12 @@ export function ComposerModelPicker({
       });
     }
   };
+  const keepFirstModel = () => {
+    const first = multipleModelSelections?.[0];
+    if (!first) return;
+    onMultipleModelSelectionsChange(null);
+    onProviderModelSelect(first.instanceId, first.model, { focusComposer: false });
+  };
   return (
     <ProviderModelPicker
       {...pickerProps}
@@ -289,6 +295,7 @@ export function ComposerModelPicker({
               ? { selectedModels: multipleModelSelections }
               : {}),
             onToggleModel: toggleModel,
+            onExitMultipleModels: keepFirstModel,
           }
         : {})}
       {...(selectedModelSelection.accountChoice === "pinned" ? { activeAccountPinned: true } : {})}

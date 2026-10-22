@@ -1043,7 +1043,7 @@ export function GeneralSettingsPanel() {
         <SettingsRow
           serverScoped
           {...searchableSetting("model-picker-merge-accounts")}
-          description="Show each model once for accounts that share a history. The thread keeps its account, and a new pick goes to the signed-in account with the most usage left."
+          description="Show each model once for accounts that share a history. A new thread starts on the signed-in account with the most room left, spread across accounts, and keeps it. Pick an account under the model list to pin a thread to it."
           settingKeys={["modelPickerMergeAccounts"]}
           control={
             <ScopedSwitch

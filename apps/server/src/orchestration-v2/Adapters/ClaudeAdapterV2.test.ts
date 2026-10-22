@@ -251,6 +251,25 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
     assert.isUndefined(options.extraArgs?.["dangerously-skip-permissions"]);
   });
 
+  it("asks for prompt suggestions and keeps them on near the usage limit", () => {
+    const options = (promptSuggestions: boolean) =>
+      ClaudeAdapterV2.makeClaudeQueryOptions({
+        modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+        nativeThreadId: "native-prompt-suggestions",
+        resume: false,
+        cwd: "/workspace",
+        environment: { CLAUDE_CONFIG_DIR: "/accounts/dung" },
+        promptSuggestions,
+      });
+    const on = options(true);
+    assert.isTrue(on.promptSuggestions);
+    assert.equal(on.env?.CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION, "true");
+    assert.equal(on.env?.CLAUDE_CONFIG_DIR, "/accounts/dung");
+    const off = options(false);
+    assert.isUndefined(off.promptSuggestions);
+    assert.isUndefined(off.env?.CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION);
+  });
+
   it("gives delegated children Claude's subagent prompt cache TTL", () => {
     const lineage = (relationshipToParent: "fork" | "subagent" | null) => ({
       lineage: {

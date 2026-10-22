@@ -1,4 +1,8 @@
-import type { ProviderInstanceId, ServerProvider } from "@t3tools/contracts";
+import type {
+  ProviderInstanceAccountSwitch,
+  ProviderInstanceId,
+  ServerProvider,
+} from "@t3tools/contracts";
 
 export interface UsageLimitSwitchCandidate {
   readonly instanceId: ProviderInstanceId;
@@ -94,6 +98,22 @@ export interface AccountSwitchThresholds {
   readonly weeklyPercent: number;
 }
 
+/** Build the per-account threshold lookup: each window from the account, else the defaults. */
+export const resolveAccountSwitchThresholds =
+  (input: {
+    readonly defaults: AccountSwitchThresholds;
+    readonly instances: Readonly<
+      Record<string, { readonly accountSwitch?: ProviderInstanceAccountSwitch | undefined }>
+    >;
+  }) =>
+  (instanceId: ProviderInstanceId): AccountSwitchThresholds => {
+    const own = input.instances[instanceId]?.accountSwitch;
+    return {
+      sessionPercent: own?.sessionPercent ?? input.defaults.sessionPercent,
+      weeklyPercent: own?.weeklyPercent ?? input.defaults.weeklyPercent,
+    };
+  };
+
 /** A peer must sit this many points under each threshold before it takes a thread over. */
 export const TARGET_HEADROOM_GAP_PERCENT = 20;
 
@@ -140,7 +160,7 @@ export const chooseAccountForTurn = (input: {
   readonly currentInstanceId: ProviderInstanceId;
   readonly model: string;
   readonly nowMs: number;
-  readonly thresholds: AccountSwitchThresholds;
+  readonly thresholdsFor: (instanceId: ProviderInstanceId) => AccountSwitchThresholds;
   readonly recentAssignments?: ReadonlyMap<ProviderInstanceId, number>;
 }): AccountChoice => {
   const stay = (reason: AccountChoiceReason): AccountChoice => ({
@@ -154,23 +174,24 @@ export const chooseAccountForTurn = (input: {
   if (current === undefined) return stay("current-unknown");
   const currentWindows = liveWindows(current, input.nowMs);
   if (currentWindows === undefined) return stay("current-unmeasured");
+  const currentThresholds = input.thresholdsFor(input.currentInstanceId);
   const pressured = currentWindows
     .map((window) => ({
       windowId: window.id,
       usedPercent: window.usedPercent,
-      thresholdPercent: thresholdFor(window.kind, input.thresholds),
+      thresholdPercent: thresholdFor(window.kind, currentThresholds),
     }))
     .filter((window) => window.usedPercent >= window.thresholdPercent)
     .sort((left, right) => right.usedPercent - left.usedPercent)[0];
   if (pressured === undefined) return stay("under-threshold");
   const roomy = (provider: ServerProvider): boolean => {
     const windows = liveWindows(provider, input.nowMs);
+    const own = input.thresholdsFor(provider.instanceId);
     return (
       windows !== undefined &&
       windows.every(
         (window) =>
-          window.usedPercent <
-          thresholdFor(window.kind, input.thresholds) - TARGET_HEADROOM_GAP_PERCENT,
+          window.usedPercent < thresholdFor(window.kind, own) - TARGET_HEADROOM_GAP_PERCENT,
       )
     );
   };

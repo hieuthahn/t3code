@@ -6,6 +6,7 @@ import {
   chooseAccountForTurn,
   pickRepresentativeAccount,
   rankUsageLimitSwitchCandidates,
+  resolveAccountSwitchThresholds,
 } from "./usageLimitSwitchCandidates.ts";
 
 const NOW = Date.parse("2026-10-20T12:00:00.000Z");
@@ -206,13 +207,16 @@ describe("rankUsageLimitSwitchCandidates", () => {
 
 describe("chooseAccountForTurn", () => {
   const thresholds = { sessionPercent: 90, weeklyPercent: 80 };
-  const choose = (providers: ReadonlyArray<ServerProvider>) =>
+  const choose = (
+    providers: ReadonlyArray<ServerProvider>,
+    thresholdsFor: (instanceId: ProviderInstanceId) => typeof thresholds = () => thresholds,
+  ) =>
     chooseAccountForTurn({
       providers,
       currentInstanceId: id("a"),
       model: "claude-opus-5-5",
       nowMs: NOW,
-      thresholds,
+      thresholdsFor,
     });
   const roomy = makeProvider({ instanceId: "b", usage: { usedPercent: 30, resetsInMinutes: 60 } });
 
@@ -283,6 +287,20 @@ describe("chooseAccountForTurn", () => {
     });
   });
 
+  it("measures the current account and each peer against its own thresholds", () => {
+    const current = makeProvider({
+      instanceId: "a",
+      usage: { usedPercent: 60, resetsInMinutes: 60 },
+    });
+    const peer = makeProvider({ instanceId: "b", usage: { usedPercent: 45, resetsInMinutes: 60 } });
+    const own = (instanceId: ProviderInstanceId) =>
+      instanceId === id("a")
+        ? { sessionPercent: 55, weeklyPercent: 80 }
+        : { sessionPercent: 70, weeklyPercent: 80 };
+    assert.deepInclude(choose([current, peer], own), { instanceId: id("b"), switched: true });
+    assert.deepInclude(choose([current, peer]), { switched: false, reason: "under-threshold" });
+  });
+
   it("ignores a window that already reset", () => {
     const current = makeProvider({
       instanceId: "a",
@@ -317,5 +335,23 @@ describe("pickRepresentativeAccount", () => {
 
   it("falls back to the first member when none is ready", () => {
     assert.equal(pick(undefined, [members[2]!]), id("c"));
+  });
+});
+
+describe("resolveAccountSwitchThresholds", () => {
+  const thresholdsFor = resolveAccountSwitchThresholds({
+    defaults: { sessionPercent: 90, weeklyPercent: 85 },
+    instances: {
+      [id("a")]: { accountSwitch: { sessionPercent: 70 } },
+      [id("b")]: { accountSwitch: { sessionPercent: 60, weeklyPercent: 75 } },
+      [id("c")]: {},
+    },
+  });
+
+  it("takes each window from the account, else from the defaults", () => {
+    assert.deepEqual(thresholdsFor(id("a")), { sessionPercent: 70, weeklyPercent: 85 });
+    assert.deepEqual(thresholdsFor(id("b")), { sessionPercent: 60, weeklyPercent: 75 });
+    assert.deepEqual(thresholdsFor(id("c")), { sessionPercent: 90, weeklyPercent: 85 });
+    assert.deepEqual(thresholdsFor(id("unknown")), { sessionPercent: 90, weeklyPercent: 85 });
   });
 });

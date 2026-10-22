@@ -41,6 +41,8 @@ import {
   PreviewZoomFactor,
 } from "./preview.ts";
 import {
+  AccountSwitchThresholdPercent,
+  DEFAULT_ACCOUNT_SWITCH_THRESHOLD_PERCENT,
   ProviderInstanceConfig,
   ProviderInstanceId,
   ProviderDriverKind,
@@ -51,11 +53,6 @@ export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"])
 export const LimitedThreadSwitchMode = Schema.Literals(["off", "ask", "auto"]);
 export type LimitedThreadSwitchMode = typeof LimitedThreadSwitchMode.Type;
 
-export const AccountSwitchThresholdPercent = Schema.Int.check(
-  Schema.isBetween({ minimum: 50, maximum: 100 }),
-);
-export type AccountSwitchThresholdPercent = typeof AccountSwitchThresholdPercent.Type;
-export const DEFAULT_ACCOUNT_SWITCH_THRESHOLD_PERCENT = 90;
 /** Which judge picks a turn's effort when Auto effort is on: auto asks Jev first when keyed. */
 export const AutoEffortJudge = Schema.Literals(["auto", "haiku"]);
 export type AutoEffortJudge = typeof AutoEffortJudge.Type;
@@ -704,7 +701,7 @@ export const ClaudeSettings = makeProviderSettingsSchema(
       }),
     ),
     shareMainConfig: Schema.Boolean.pipe(
-      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.withDecodingDefault(Effect.succeed(true)),
       Schema.annotateKey({
         title: "Share config with the default Claude home",
         description:

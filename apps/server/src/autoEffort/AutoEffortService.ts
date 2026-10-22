@@ -13,6 +13,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
+import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
@@ -173,7 +174,13 @@ const make = Effect.gen(function* () {
   const resolve = Effect.fn("AutoEffortService.resolve")(function* (request: AutoEffortRequest) {
     const unchanged = { modelSelection: request.modelSelection, notice: undefined };
     const optionId = effortOptionId(request.driver);
-    if (optionId === undefined || !isAutoEffortOn(request.modelSelection)) return unchanged;
+    const defaultOn = yield* serverSettings.getSettings.pipe(
+      Effect.map((settings) => settings.autoEffortDefault),
+      Effect.orElseSucceed(() => true),
+    );
+    if (optionId === undefined || !isAutoEffortOn(request.modelSelection, defaultOn)) {
+      return unchanged;
+    }
     const startedAt = yield* Clock.currentTimeMillis;
     const providers = yield* providerRegistry.getProviders;
     const provider = providers.find(
@@ -234,3 +241,22 @@ const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(AutoEffortService, make);
+
+/** Keeps the Auto effort switch's default on every model in step with the setting. */
+export const layerDefaultSync = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const serverSettings = yield* ServerSettings.ServerSettingsService;
+    const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
+    const initial = yield* serverSettings.getSettings.pipe(
+      Effect.map((settings) => settings.autoEffortDefault),
+      Effect.orElseSucceed(() => true),
+    );
+    yield* providerRegistry.setAutoEffortDefault(initial);
+    yield* serverSettings.streamChanges.pipe(
+      Stream.map((settings) => settings.autoEffortDefault),
+      Stream.changes,
+      Stream.runForEach(providerRegistry.setAutoEffortDefault),
+      Effect.forkScoped,
+    );
+  }),
+);

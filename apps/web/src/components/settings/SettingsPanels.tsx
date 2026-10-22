@@ -475,6 +475,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.limitedThreadSwitch !== DEFAULT_UNIFIED_SETTINGS.limitedThreadSwitch
       ? ["Switch limited threads"]
       : []),
+    ...(settings.autoEffortDefault !== DEFAULT_UNIFIED_SETTINGS.autoEffortDefault
+      ? ["Auto effort by default"]
+      : []),
     ...(settings.autoEffortJudge !== DEFAULT_UNIFIED_SETTINGS.autoEffortJudge
       ? ["Auto effort judge"]
       : []),
@@ -640,6 +643,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
       limitedThreadSwitch: DEFAULT_UNIFIED_SETTINGS.limitedThreadSwitch,
       autoEffortJudge: DEFAULT_UNIFIED_SETTINGS.autoEffortJudge,
+      autoEffortDefault: DEFAULT_UNIFIED_SETTINGS.autoEffortDefault,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
@@ -1013,6 +1017,20 @@ export function GeneralSettingsPanel() {
                 ))}
               </SelectPopup>
             </Select>
+          }
+        />
+        <SettingsRow
+          serverScoped
+          {...searchableSetting("auto-effort-default")}
+          description="Judge the effort of every message in Claude and Codex threads that have not set Auto effort themselves. Turn it off per thread from the effort menu, or pick an effort there."
+          settingKeys={["autoEffortDefault"]}
+          control={
+            <ScopedSwitch
+              settingKeys={["autoEffortDefault"]}
+              checked={settings.autoEffortDefault}
+              onCheckedChange={(checked) => updateSettings({ autoEffortDefault: Boolean(checked) })}
+              aria-label="Auto effort by default"
+            />
           }
         />
         <SettingsRow

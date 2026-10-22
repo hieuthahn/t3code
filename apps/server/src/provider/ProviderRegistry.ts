@@ -52,6 +52,9 @@ export class ProviderRegistry extends Context.Service<
   {
     readonly getProviders: Effect.Effect<ReadonlyArray<ServerProvider>>;
 
+    /** Sets whether models offer the Auto effort switch on for threads that never set it. */
+    readonly setAutoEffortDefault: (on: boolean) => Effect.Effect<void>;
+
     readonly refresh: (
       provider?: ProviderDriverKind,
     ) => Effect.Effect<ReadonlyArray<ServerProvider>>;
@@ -353,6 +356,7 @@ export const layer = Layer.effect(
       PubSub.unbounded<ReadonlyArray<ServerProvider>>(),
       PubSub.shutdown,
     );
+    const autoEffortDefaultRef = yield* Ref.make(true);
 
     const bootInstances = yield* instanceRegistry.listInstances;
     const bootSources = bootInstances.map(buildSnapshotSource);
@@ -480,6 +484,7 @@ export const layer = Layer.effect(
       },
     ) {
       const manifest = yield* manifestService.current;
+      const autoEffortDefault = yield* Ref.get(autoEffortDefaultRef);
       const nextProvidersWithUpdateState = yield* Effect.forEach(
         nextProviders,
         applyProviderUpdateState,
@@ -508,7 +513,10 @@ export const layer = Layer.effect(
 
           const providers = orderProviderSnapshots(
             [...mergedProviders.values()].map((provider) =>
-              withAutoEffortDescriptor(classifyCompatibility(provider, manifest)),
+              withAutoEffortDescriptor(
+                classifyCompatibility(provider, manifest),
+                autoEffortDefault,
+              ),
             ),
           );
           const providersToPersist = providers.filter((provider) =>
@@ -1011,6 +1019,15 @@ export const layer = Layer.effect(
 
     return {
       getProviders: Ref.get(providersRef),
+      setAutoEffortDefault: (on) =>
+        Ref.set(autoEffortDefaultRef, on).pipe(
+          Effect.andThen(
+            updateProviders((providers) =>
+              providers.map((provider) => withAutoEffortDescriptor(provider, on)),
+            ),
+          ),
+          Effect.asVoid,
+        ),
       refresh: (provider?: ProviderDriverKind) =>
         refresh(provider).pipe(Effect.catchCause(recoverRefreshFailure)),
       refreshInstance: (instanceId: ProviderInstanceId) =>

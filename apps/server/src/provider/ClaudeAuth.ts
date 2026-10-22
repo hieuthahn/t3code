@@ -11,6 +11,8 @@ import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
+import { makeClaudeEnvironment } from "./Drivers/ClaudeHome.ts";
+
 const BROWSER_METHOD_ID = "claude-browser";
 const INTERACTION_ID = "claude-login";
 
@@ -46,6 +48,7 @@ export const extractClaudeAuthorizeUrl = (text: string): string | undefined => {
 export interface ClaudeAuthOptions {
   readonly instanceId: ProviderInstanceId;
   readonly binaryPath: string;
+  readonly homePath: string;
   readonly configDir: string;
   readonly environment: NodeJS.ProcessEnv;
   readonly onChanged: (signedIn: boolean) => Effect.Effect<void>;
@@ -62,10 +65,14 @@ export const makeClaudeAuth = Effect.fn("makeClaudeAuth")(function* (options: Cl
       detail,
       ...(cause === undefined ? {} : { cause }),
     });
+  const claudeEnvironment = yield* makeClaudeEnvironment(
+    { homePath: options.homePath },
+    options.environment,
+  );
   // Without BROWSER the CLI opens the system browser, which may be signed in to the wrong account.
   const environment: NodeJS.ProcessEnv = {
-    ...options.environment,
-    ...(platform === "win32" || options.environment.BROWSER ? {} : { BROWSER: "true" }),
+    ...claudeEnvironment,
+    ...(platform === "win32" || claudeEnvironment.BROWSER ? {} : { BROWSER: "true" }),
   };
   const spawn = (args: ReadonlyArray<string>) =>
     spawner

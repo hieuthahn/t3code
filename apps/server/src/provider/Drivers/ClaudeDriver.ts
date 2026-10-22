@@ -331,6 +331,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
     const auth = yield* makeClaudeAuth({
       instanceId,
       binaryPath: effectiveConfig.binaryPath,
+      homePath: effectiveConfig.homePath,
       configDir,
       environment: processEnv,
       onChanged: () =>

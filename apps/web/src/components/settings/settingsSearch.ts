@@ -384,6 +384,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["beta share guest invite link teammate watch t3 connect tunnel"],
   },
   {
+    id: "settled-project-groups",
+    title: "Group settled threads by project",
+    to: "/settings/general",
+    searchTerms: ["sidebar settled shelf folder project scratch nested worktree"],
+  },
+  {
     id: "auto-settle-inactive-threads",
     title: "Auto-settle inactive threads",
     to: "/settings/general",

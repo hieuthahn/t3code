@@ -452,6 +452,10 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.sidebarWorkingShelfEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled
       ? ["Working section"]
       : []),
+    ...(settings.sidebarSettledProjectGroupsEnabled !==
+    DEFAULT_UNIFIED_SETTINGS.sidebarSettledProjectGroupsEnabled
+      ? ["Settled project groups"]
+      : []),
     ...(settings.sidebarAutoSettleAfterDays !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
       ? ["Auto-settle inactive threads"]
       : []),
@@ -624,6 +628,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
       sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
+      sidebarSettledProjectGroupsEnabled:
+        DEFAULT_UNIFIED_SETTINGS.sidebarSettledProjectGroupsEnabled,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleKeepPullRequests: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
@@ -1015,6 +1021,34 @@ export function GeneralSettingsPanel() {
                 updateSettings({ snoozeLimitedThreads: Boolean(checked) })
               }
               aria-label="Snooze until limits reset"
+            />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("settled-project-groups")}
+          description="Group the Settled section by project. Scratch workspaces share one group, and nested worktrees join their parent project."
+          resetAction={
+            settings.sidebarSettledProjectGroupsEnabled !==
+            DEFAULT_UNIFIED_SETTINGS.sidebarSettledProjectGroupsEnabled ? (
+              <SettingResetButton
+                label="settled project groups"
+                onClick={() =>
+                  updateSettings({
+                    sidebarSettledProjectGroupsEnabled:
+                      DEFAULT_UNIFIED_SETTINGS.sidebarSettledProjectGroupsEnabled,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.sidebarSettledProjectGroupsEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ sidebarSettledProjectGroupsEnabled: Boolean(checked) })
+              }
+              aria-label="Group settled threads by project"
             />
           }
         />

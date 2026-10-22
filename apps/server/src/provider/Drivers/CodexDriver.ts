@@ -51,6 +51,7 @@ import {
   resolveCodexHomeLayout,
 } from "./CodexHomeLayout.ts";
 import { makeManagedCodexProvider } from "./CodexManagedProvider.ts";
+import { makeCodexCliAuth } from "../CodexCliAuth.ts";
 import { codexUsageReader } from "./codexUsage.ts";
 import * as CodexInstallation from "../CodexInstallation.ts";
 import * as CodexManagedTokenBroker from "../CodexManagedTokenBroker.ts";
@@ -144,6 +145,12 @@ export const CodexDriver: ProviderDriver<
       accentColor,
       continuationGroupKey: continuationIdentity.continuationKey,
     });
+    // Signing out the shared default home would sign the user's terminal CLI out too.
+    const ownAuthHome = homeLayout.effectiveHomePath;
+    const stampSetup = (provider: Parameters<typeof stampIdentity>[0]) =>
+      ownAuthHome === undefined
+        ? stampIdentity(provider)
+        : { ...stampIdentity(provider), setup: { canAuthenticate: true, canInstall: false } };
     yield* materializeCodexShadowHome(homeLayout).pipe(
       Effect.mapError(
         (cause) =>
@@ -204,7 +211,7 @@ export const CodexDriver: ProviderDriver<
         Effect.zipWith(
           checkCodexProviderStatus(effectiveConfig, undefined, processEnv),
           currentCatalog,
-          (draft, catalog) => stampIdentity(applyCodexModelCatalog(draft, catalog)),
+          (draft, catalog) => stampSetup(applyCodexModelCatalog(draft, catalog)),
           { concurrent: true },
         ),
       ),
@@ -222,7 +229,7 @@ export const CodexDriver: ProviderDriver<
         Effect.zipWith(
           makePendingCodexProvider(settings.provider),
           currentCatalog,
-          (draft, catalog) => stampIdentity(applyCodexModelCatalog(draft, catalog)),
+          (draft, catalog) => stampSetup(applyCodexModelCatalog(draft, catalog)),
         ),
       checkProvider,
       enrichSnapshot: ({ settings, snapshot, publishSnapshot }) =>
@@ -247,6 +254,16 @@ export const CodexDriver: ProviderDriver<
           }),
       ),
     );
+    const auth =
+      ownAuthHome === undefined
+        ? undefined
+        : yield* makeCodexCliAuth({
+            instanceId,
+            binaryPath: effectiveConfig.binaryPath,
+            codexHome: ownAuthHome,
+            environment: processEnv,
+            onChanged: () => snapshot.refresh.pipe(Effect.ignore),
+          }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
     const textGeneration = yield* makeCodexTextGeneration(
       effectiveConfig,
       processEnv,
@@ -351,6 +368,7 @@ export const CodexDriver: ProviderDriver<
       consumeResetCredit,
       orchestrationAdapter,
       textGeneration,
+      ...(auth === undefined ? {} : { auth }),
     } satisfies ProviderInstance;
   }),
 };

@@ -38,6 +38,12 @@ import {
   setUpdateChannel,
 } from "./methods/updates.ts";
 import {
+  applyForkUpdate,
+  checkForkUpdate,
+  getForkUpdateState,
+  setForkUpdatePaused,
+} from "./methods/forkUpdates.ts";
+import {
   getAppBranding,
   getLocalEnvironmentBootstraps,
   getLocalEnvironmentBearerToken,
@@ -160,6 +166,10 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(downloadUpdate);
   yield* ipc.handle(installUpdate);
   yield* ipc.handle(checkForUpdate);
+  yield* ipc.handle(getForkUpdateState);
+  yield* ipc.handle(checkForkUpdate);
+  yield* ipc.handle(applyForkUpdate);
+  yield* ipc.handle(setForkUpdatePaused);
   yield* ipc.handle(getCliCommandState);
   yield* ipc.handle(installCliCommand);
   yield* ipc.handle(uninstallCliCommand);

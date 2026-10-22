@@ -171,6 +171,17 @@ describe("planEarlySwitch for new threads", () => {
     assert.isNull(result.choice);
   });
 
+  it("balances a launched thread whose first run waits for its workspace", () => {
+    const result = plan({
+      currentPercent: 50,
+      newThread: fresh,
+      command: command({
+        dispatchMode: { type: "defer_start", workspaceStrategy: { type: "root" } },
+      } as Partial<MessageDispatch>),
+    });
+    assert.equal(result.command.modelSelection?.instanceId, dung);
+  });
+
   it("leaves a thread with earlier turns to the threshold rule", () => {
     const result = plan({ currentPercent: 50 });
     assert.isUndefined(result.command.modelSelection);

@@ -44,7 +44,6 @@ const provider = (instanceId: ProviderInstanceId, usedPercent: number): ServerPr
 const thread: EarlySwitchThread = {
   id: ThreadId.make("thread-1"),
   modelSelection: { instanceId: hieu, model: "claude-opus-5-5" },
-  hasRuns: true,
 };
 
 const command = (overrides: Partial<MessageDispatch> = {}): MessageDispatch =>
@@ -103,7 +102,7 @@ describe("planEarlySwitch", () => {
     );
   });
 
-  it("leaves continuations, steers, other accounts, server turns and new threads alone", () => {
+  it("leaves continuations, steers, other accounts and server turns alone", () => {
     const untouched = [
       command({ manualContinuationOfRunId: RunId.make("run-1") }),
       command({ dispatchMode: { type: "steer_active", targetRunId: RunId.make("run-1") } }),
@@ -113,6 +112,5 @@ describe("planEarlySwitch", () => {
     for (const candidate of untouched) {
       assert.isNull(plan({ command: candidate, currentPercent: 99 }).choice);
     }
-    assert.isNull(plan({ thread: { ...thread, hasRuns: false }, currentPercent: 99 }).choice);
   });
 });

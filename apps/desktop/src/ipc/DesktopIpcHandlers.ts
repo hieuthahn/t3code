@@ -42,6 +42,7 @@ import {
   checkForkUpdate,
   getForkUpdateState,
   setForkUpdatePaused,
+  setForkUpdateTrack,
 } from "./methods/forkUpdates.ts";
 import {
   getAppBranding,
@@ -170,6 +171,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(checkForkUpdate);
   yield* ipc.handle(applyForkUpdate);
   yield* ipc.handle(setForkUpdatePaused);
+  yield* ipc.handle(setForkUpdateTrack);
   yield* ipc.handle(getCliCommandState);
   yield* ipc.handle(installCliCommand);
   yield* ipc.handle(uninstallCliCommand);

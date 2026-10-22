@@ -1,4 +1,9 @@
-import type { DesktopForkUpdateState, DesktopForkUpdatesBridge } from "@t3tools/contracts";
+import type {
+  DesktopForkUpdateCheck,
+  DesktopForkUpdateState,
+  DesktopForkUpdateTrack,
+  DesktopForkUpdatesBridge,
+} from "@t3tools/contracts";
 import { type ReactNode, useEffect, useState } from "react";
 
 import { APP_VERSION } from "../../branding";
@@ -11,6 +16,13 @@ import { searchableSetting } from "./settingsSearch";
 
 const POLL_WHILE_APPLYING_MS = 5_000;
 
+const TRACK_LABELS: Readonly<Record<DesktopForkUpdateTrack | "paused", string>> = {
+  preview: "Preview releases",
+  stable: "Stable releases",
+  nightly: "Nightly builds",
+  paused: "Paused",
+};
+
 const formatTime = (iso: string) => {
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
@@ -21,6 +33,18 @@ const listFiles = (files: ReadonlyArray<string>) =>
     ? files.join(", ")
     : `${files.slice(0, 3).join(", ")} and ${files.length - 3} more`;
 
+const updateAvailable = (check: DesktopForkUpdateCheck) =>
+  check.updateAvailable ?? check.newCommits > 0;
+
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
+
+/** True unless the repo has moved past the commit this build carries in its `+fork.<sha>` suffix. */
+export function forkBuildMatchesHead(version: string, head: string): boolean {
+  const built = /\+fork\.([0-9a-f]+)$/.exec(version)?.[1];
+  if (!built || !head) return true;
+  return built.startsWith(head) || head.startsWith(built);
+}
+
 export function describeForkUpdateCheck(state: DesktopForkUpdateState): string {
   if (state.applyRunning) {
     return "An update is running. T3 Code quits and reopens on the new build when it finishes.";
@@ -28,9 +52,11 @@ export function describeForkUpdateCheck(state: DesktopForkUpdateState): string {
   const check = state.check;
   if (!check) return "Not checked against upstream yet.";
   const checkedAt = formatTime(check.checkedAt);
-  if (check.newCommits === 0) return `Up to date with upstream main, checked ${checkedAt}.`;
+  const target = check.targetTag ?? `upstream ${check.upstreamHead}`;
+  if (!updateAvailable(check)) return `Up to date with ${target}, checked ${checkedAt}.`;
+  const dropped = check.droppedCommits ?? 0;
   const parts = [
-    `${check.newCommits} new upstream ${check.newCommits === 1 ? "commit" : "commits"} (upstream ${check.upstreamHead}), checked ${checkedAt}.`,
+    `${target} is available: ${plural(check.newCommits, "new upstream commit")}${dropped > 0 ? `, ${plural(dropped, "commit")} of the current base left out` : ""}, checked ${checkedAt}.`,
   ];
   if (check.conflictFiles.length > 0) {
     parts.push(`The rebase will stop on conflicts in ${listFiles(check.conflictFiles)}.`);
@@ -54,7 +80,9 @@ export function describeForkUpdateRun(state: DesktopForkUpdateState): string | n
 
 export function forkUpdateBlockedReason(state: DesktopForkUpdateState): string | null {
   if (state.applyRunning) return "An update is already running.";
-  if (!state.check || state.check.newCommits === 0) return "There is nothing new upstream.";
+  if (!state.check || !updateAvailable(state.check)) {
+    return "There is no newer release to update to.";
+  }
   if (state.activeRuns > 0) {
     return `${state.activeRuns} agent ${state.activeRuns === 1 ? "run is" : "runs are"} active.`;
   }
@@ -63,7 +91,7 @@ export function forkUpdateBlockedReason(state: DesktopForkUpdateState): string |
 
 function useForkUpdates(bridge: DesktopForkUpdatesBridge | undefined) {
   const [state, setState] = useState<DesktopForkUpdateState | null>(null);
-  const [pending, setPending] = useState<"check" | "apply" | "pause" | null>(null);
+  const [pending, setPending] = useState<"check" | "apply" | "track" | null>(null);
 
   useEffect(() => {
     if (!bridge) return;
@@ -84,7 +112,7 @@ function useForkUpdates(bridge: DesktopForkUpdatesBridge | undefined) {
   }, [bridge, state?.applyRunning]);
 
   const run = (
-    kind: "check" | "apply" | "pause",
+    kind: "check" | "apply" | "track",
     action: () => Promise<DesktopForkUpdateState>,
   ) => {
     if (pending) return;
@@ -113,7 +141,7 @@ function useForkUpdates(bridge: DesktopForkUpdatesBridge | undefined) {
   return { state, pending, run };
 }
 
-/** About rows for a fork build: checks and applies upstream through `t3-update`. */
+/** About rows for a fork build: checks and applies upstream release tags through `t3-update`. */
 export function ForkUpdateSection({ fallback }: { fallback: ReactNode }) {
   const bridge = typeof window === "undefined" ? undefined : window.desktopBridge?.forkUpdates;
   const { state, pending, run } = useForkUpdates(bridge);
@@ -125,11 +153,14 @@ export function ForkUpdateSection({ fallback }: { fallback: ReactNode }) {
     ? (state.error ?? describeForkUpdateCheck(state))
     : "Loading update status.";
   const lastRun = state ? describeForkUpdateRun(state) : null;
+  const trackValue = state?.paused ? "paused" : (state?.track ?? "preview");
+  const repoAhead = state && !forkBuildMatchesHead(APP_VERSION, state.head);
 
   const confirmAndApply = async () => {
+    const target = state?.check?.targetTag ?? "upstream";
     const confirmed = await ensureLocalApi()
       .dialogs.confirm(
-        "Update T3 Code from upstream now? The app rebases the fork, runs the checks, rebuilds, then quits and reopens. A failed step rolls everything back.",
+        `Update T3 Code to ${target} now? The app rebases the fork, runs the checks, rebuilds, then quits and reopens. A failed step rolls everything back.`,
       )
       .catch(() => false);
     if (confirmed) run("apply", bridge.apply);
@@ -144,7 +175,7 @@ export function ForkUpdateSection({ fallback }: { fallback: ReactNode }) {
             <span>Version</span>
             <code className="text-2xs font-medium text-muted-foreground">
               {APP_VERSION}
-              {state?.head ? ` · ${state.head}` : ""}
+              {repoAhead ? ` · repo at ${state.head}` : ""}
             </code>
           </span>
         }
@@ -180,14 +211,17 @@ export function ForkUpdateSection({ fallback }: { fallback: ReactNode }) {
         description={
           state?.paused
             ? "Paused. The 08:00 and 20:00 runs skip; Update now still works."
-            : "The 08:00 and 20:00 runs update from upstream main when no agent run is active."
+            : `The 08:00 and 20:00 runs move the fork to the newest of the ${TRACK_LABELS[trackValue].toLowerCase()} when no agent run is active.`
         }
         control={
           <Select
-            value={state?.paused ? "paused" : "follow"}
+            value={trackValue}
             onValueChange={(value) => {
-              const paused = value === "paused";
-              if (paused !== state?.paused) run("pause", () => bridge.setPaused(paused));
+              if (value === trackValue) return;
+              if (value === "paused") run("track", () => bridge.setPaused(true));
+              else if (value === "preview" || value === "stable" || value === "nightly") {
+                run("track", () => bridge.setTrack(value));
+              }
             }}
           >
             <SelectTrigger
@@ -196,15 +230,14 @@ export function ForkUpdateSection({ fallback }: { fallback: ReactNode }) {
               aria-label="Update track"
               disabled={pending !== null || state === null}
             >
-              <SelectValue>{state?.paused ? "Paused" : "Follow upstream main"}</SelectValue>
+              <SelectValue>{TRACK_LABELS[trackValue]}</SelectValue>
             </SelectTrigger>
             <SelectPopup align="end" alignItemWithTrigger={false}>
-              <SelectItem hideIndicator value="follow">
-                Follow upstream main
-              </SelectItem>
-              <SelectItem hideIndicator value="paused">
-                Paused
-              </SelectItem>
+              {(["preview", "stable", "nightly", "paused"] as const).map((value) => (
+                <SelectItem key={value} hideIndicator value={value}>
+                  {TRACK_LABELS[value]}
+                </SelectItem>
+              ))}
             </SelectPopup>
           </Select>
         }

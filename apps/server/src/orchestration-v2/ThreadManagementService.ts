@@ -693,13 +693,18 @@ const make = Effect.gen(function* () {
     if (command.type !== "message.dispatch" || Option.isNone(earlyAccountSwitch)) {
       return Effect.succeed(command);
     }
-    return orchestrator.getThreadRecords(command.threadId, ["runs"]).pipe(
-      Effect.flatMap((projection) =>
-        earlyAccountSwitch.value.rewrite(command, {
-          id: projection.thread.id,
-          modelSelection: projection.thread.modelSelection,
-          hasRuns: projection.runs.length > 0,
-        }),
+    return serverSettings.getSettings.pipe(
+      Effect.flatMap((current) =>
+        current.earlyAccountSwitch
+          ? orchestrator.getThreadRecords(command.threadId, []).pipe(
+              Effect.flatMap((projection) =>
+                earlyAccountSwitch.value.rewrite(command, {
+                  id: projection.thread.id,
+                  modelSelection: projection.thread.modelSelection,
+                }),
+              ),
+            )
+          : Effect.succeed(command),
       ),
       Effect.orElseSucceed(() => command),
     );

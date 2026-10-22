@@ -186,7 +186,6 @@ import {
   sortProviderInstanceEntries,
 } from "../providerInstances";
 import {
-  limitedWindowIdForReset,
   rankUsageLimitSwitchCandidates,
 } from "@t3tools/shared/usageLimitSwitchCandidates";
 import {
@@ -1215,23 +1214,12 @@ export default function ChatView(props: ChatViewProps) {
     ) {
       return null;
     }
-    const limitedRun = latestExecutedRun(serverProjection.runs);
-    const resetAt = latestRootProviderFailure(
-      limitedRun ?? null,
-      serverProjection.turnItems,
-    )?.resetAt;
     const nowMs = Date.parse(`${limitSwitchNowMinute}:00.000Z`);
-    const currentInstanceId = activeThread.modelSelection.instanceId;
-    const windowId = limitedWindowIdForReset(
-      providerStatuses.find((provider) => provider.instanceId === currentInstanceId),
-      resetAt == null ? nowMs : Date.parse(resetAt),
-    );
     const target = rankUsageLimitSwitchCandidates({
       providers: providerStatuses,
-      currentInstanceId,
-      windowId,
+      currentInstanceId: activeThread.modelSelection.instanceId,
       nowMs,
-      strategy: "soonest-reset",
+      model: activeThread.modelSelection.model,
     }).find((candidate) => candidate.usedPercent !== undefined);
     if (target === undefined) return null;
     const provider = providerStatuses.find((entry) => entry.instanceId === target.instanceId);

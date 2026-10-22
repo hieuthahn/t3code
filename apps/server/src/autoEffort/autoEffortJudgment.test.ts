@@ -1,4 +1,5 @@
 import {
+  type ModelSelection,
   ProviderDriverKind,
   ProviderInstanceId,
   type ServerProvider,
@@ -9,6 +10,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   AUTO_EFFORT_OPTION_ID,
   clampToSupported,
+  isAutoEffortOn,
   isFollowUp,
   jevRequestBody,
   judgeQuestion,
@@ -64,30 +66,60 @@ describe("withAutoEffortDescriptor", () => {
   it("offers the switch on Claude and Codex models that pick an effort", () => {
     const claude = withAutoEffortDescriptor(
       provider("claudeAgent", [effortModel("opus", "effort", ["low", "high"])]),
+      true,
     );
     const codex = withAutoEffortDescriptor(
       provider("codex", [effortModel("luna", "reasoningEffort", ["low", "high"])]),
+      true,
     );
     for (const decorated of [claude, codex]) {
       expect(
         decorated.models[0]?.capabilities?.optionDescriptors?.find(
           (descriptor) => descriptor.id === AUTO_EFFORT_OPTION_ID,
         ),
-      ).toMatchObject({ type: "boolean", currentValue: false });
+      ).toMatchObject({ type: "boolean", currentValue: true });
     }
   });
 
   it("leaves other drivers and effortless models alone, and does not add it twice", () => {
     const cursor = provider("cursor", [effortModel("composer", "effort", ["low"])]);
-    expect(withAutoEffortDescriptor(cursor)).toBe(cursor);
+    expect(withAutoEffortDescriptor(cursor, true)).toBe(cursor);
     const haiku = provider("claudeAgent", [
       { ...effortModel("haiku", "effort", []), capabilities: {} },
     ]);
-    expect(withAutoEffortDescriptor(haiku)).toBe(haiku);
+    expect(withAutoEffortDescriptor(haiku, true)).toBe(haiku);
     const once = withAutoEffortDescriptor(
       provider("claudeAgent", [effortModel("opus", "effort", ["low"])]),
+      true,
     );
-    expect(withAutoEffortDescriptor(once)).toBe(once);
+    expect(withAutoEffortDescriptor(once, true)).toBe(once);
+  });
+});
+
+describe("the Auto effort default", () => {
+  it("moves the switch's default when the setting changes, keeping one switch", () => {
+    const on = withAutoEffortDescriptor(
+      provider("claudeAgent", [effortModel("opus", "effort", ["low"])]),
+      true,
+    );
+    const off = withAutoEffortDescriptor(on, false);
+    const switches = off.models[0]?.capabilities?.optionDescriptors?.filter(
+      (descriptor) => descriptor.id === AUTO_EFFORT_OPTION_ID,
+    );
+    expect(switches).toEqual([expect.objectContaining({ currentValue: false })]);
+  });
+
+  it("lets a thread's own switch win over the default", () => {
+    const selection = (options: NonNullable<ModelSelection["options"]>): ModelSelection => ({
+      instanceId: ProviderInstanceId.make("claude"),
+      model: "opus",
+      options,
+    });
+    expect(isAutoEffortOn(selection([{ id: "effort", value: "high" }]), true)).toBe(true);
+    expect(isAutoEffortOn(selection([{ id: "effort", value: "high" }]), false)).toBe(false);
+    expect(isAutoEffortOn(selection([{ id: AUTO_EFFORT_OPTION_ID, value: false }]), true)).toBe(
+      false,
+    );
   });
 });
 

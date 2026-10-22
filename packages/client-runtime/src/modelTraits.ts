@@ -13,6 +13,7 @@ import {
 import { REASONING_EFFORT_OPTION_IDS } from "./state/threadExecution.ts";
 
 export const ULTRATHINK_PROMPT_PREFIX = "Ultrathink:\n";
+const AUTO_EFFORT_OPTION_ID = "autoEffort";
 
 export const REASONING_SELECT_DESCRIPTOR_IDS: ReadonlySet<string> = new Set([
   ...REASONING_EFFORT_OPTION_IDS,
@@ -92,13 +93,17 @@ export function getTraitSelectChange(
   }
   const isPrimary = descriptor.id === selected.primarySelectDescriptor?.id;
   if (isPrimary && selected.ultrathinkInBodyText) return null;
+  // A level picked by hand is the thread's choice, so it takes over from the per-turn judge.
+  const descriptors = REASONING_EFFORT_OPTION_IDS.includes(descriptor.id)
+    ? replaceDescriptorCurrentValue(selected.descriptors, AUTO_EFFORT_OPTION_ID, false)
+    : selected.descriptors;
   return {
     prompt:
       isPrimary && selected.ultrathinkPromptControlled
         ? prompt.replace(/^Ultrathink:\s*/i, "")
         : prompt,
     modelOptions: buildProviderOptionSelectionsFromDescriptors(
-      replaceDescriptorCurrentValue(selected.descriptors, descriptor.id, value),
+      replaceDescriptorCurrentValue(descriptors, descriptor.id, value),
     ),
   };
 }
@@ -118,7 +123,7 @@ export function buildTraitsTriggerDisplay(input: {
   const labels: Array<string> = [];
   for (const descriptor of input.descriptors) {
     // The server's per-turn judge reads this switch; the effort shown beside it is the fallback.
-    if (descriptor.id === "autoEffort" && descriptor.type === "boolean") {
+    if (descriptor.id === AUTO_EFFORT_OPTION_ID && descriptor.type === "boolean") {
       autoEffort = descriptor.currentValue === true;
       continue;
     }

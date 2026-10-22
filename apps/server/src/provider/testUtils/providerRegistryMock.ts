@@ -9,6 +9,7 @@ const makeProviderRegistryMock = (
   providers: ReadonlyArray<ServerProvider> = [],
 ): ProviderRegistry.ProviderRegistry["Service"] => ({
   getProviders: Effect.succeed(providers),
+  setAutoEffortDefault: () => Effect.void,
   refresh: () => Effect.succeed(providers),
   refreshInstance: () => Effect.succeed(providers),
   refreshAfterUpdate: () => Effect.succeed(providers),

@@ -27,12 +27,16 @@ export function effortOptionId(driver: ProviderDriverKind): string | undefined {
   return undefined;
 }
 
-export function isAutoEffortOn(selection: ModelSelection): boolean {
-  return getModelSelectionBooleanOptionValue(selection, AUTO_EFFORT_OPTION_ID) === true;
+/** The thread's own switch, else the server's default for threads that never set it. */
+export function isAutoEffortOn(selection: ModelSelection, defaultOn: boolean): boolean {
+  return getModelSelectionBooleanOptionValue(selection, AUTO_EFFORT_OPTION_ID) ?? defaultOn;
 }
 
 /** Offers the Auto effort switch on every model whose driver judges effort per turn. */
-export function withAutoEffortDescriptor(provider: ServerProvider): ServerProvider {
+export function withAutoEffortDescriptor(
+  provider: ServerProvider,
+  defaultOn: boolean,
+): ServerProvider {
   const optionId = effortOptionId(provider.driver);
   if (optionId === undefined) return provider;
   let changed = false;
@@ -40,22 +44,29 @@ export function withAutoEffortDescriptor(provider: ServerProvider): ServerProvid
     const descriptors = model.capabilities?.optionDescriptors;
     if (
       descriptors === undefined ||
-      !descriptors.some((descriptor) => descriptor.id === optionId) ||
-      descriptors.some((descriptor) => descriptor.id === AUTO_EFFORT_OPTION_ID)
+      !descriptors.some((descriptor) => descriptor.id === optionId)
     ) {
       return model;
     }
+    const existing = descriptors.find((descriptor) => descriptor.id === AUTO_EFFORT_OPTION_ID);
+    if (existing?.type === "boolean" && existing.currentValue === defaultOn) return model;
     changed = true;
     const autoEffort: ProviderOptionDescriptor = {
       id: AUTO_EFFORT_OPTION_ID,
       label: "Auto effort",
       description: "Judge the effort for each message; the effort above is the fallback.",
       type: "boolean",
-      currentValue: false,
+      currentValue: defaultOn,
     };
     return {
       ...model,
-      capabilities: { ...model.capabilities, optionDescriptors: [...descriptors, autoEffort] },
+      capabilities: {
+        ...model.capabilities,
+        optionDescriptors: [
+          ...descriptors.filter((descriptor) => descriptor.id !== AUTO_EFFORT_OPTION_ID),
+          autoEffort,
+        ],
+      },
     };
   });
   return changed ? { ...provider, models } : provider;

@@ -5,6 +5,7 @@ import * as DateTime from "effect/DateTime";
 import {
   chooseAccountForTurn,
   pickRepresentativeAccount,
+  pinnedAccountWarning,
   rankUsageLimitSwitchCandidates,
   resolveAccountSwitchThresholds,
 } from "./usageLimitSwitchCandidates.ts";
@@ -353,5 +354,45 @@ describe("resolveAccountSwitchThresholds", () => {
     assert.deepEqual(thresholdsFor(id("b")), { sessionPercent: 60, weeklyPercent: 75 });
     assert.deepEqual(thresholdsFor(id("c")), { sessionPercent: 90, weeklyPercent: 85 });
     assert.deepEqual(thresholdsFor(id("unknown")), { sessionPercent: 90, weeklyPercent: 85 });
+  });
+});
+
+describe("pinnedAccountWarning", () => {
+  const thresholds = { sessionPercent: 90, weeklyPercent: 80 };
+  const warn = (
+    current: ServerProvider,
+    options: { readonly accountChoice?: "auto" | "pinned"; readonly switchPinned?: boolean } = {},
+  ) =>
+    pinnedAccountWarning({
+      providers: [
+        current,
+        makeProvider({ instanceId: "b", usage: { usedPercent: 30, resetsInMinutes: 60 } }),
+      ],
+      currentInstanceId: id("a"),
+      model: "claude-opus-5-5",
+      nowMs: NOW,
+      thresholdsFor: () => thresholds,
+      accountChoice: options.accountChoice ?? "pinned",
+      switchPinned: options.switchPinned ?? false,
+    });
+  const pressured = makeProvider({
+    instanceId: "a",
+    usage: { usedPercent: 93, resetsInMinutes: 60 },
+  });
+
+  it("warns when a pinned account passes its threshold and names a roomier peer", () => {
+    const warning = warn(pressured);
+    assert.deepInclude(warning?.pressure, { usedPercent: 93, thresholdPercent: 90 });
+    assert.equal(warning?.target?.instanceId, id("b"));
+  });
+
+  it("stays quiet under the threshold", () => {
+    const calm = makeProvider({ instanceId: "a", usage: { usedPercent: 50, resetsInMinutes: 60 } });
+    assert.isNull(warn(calm));
+  });
+
+  it("stays quiet for auto threads and when pinned threads may switch on their own", () => {
+    assert.isNull(warn(pressured, { accountChoice: "auto" }));
+    assert.isNull(warn(pressured, { switchPinned: true }));
   });
 });

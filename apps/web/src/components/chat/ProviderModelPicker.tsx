@@ -12,6 +12,7 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
 import { ModelPickerContent, resolveModelPickerSelectedModel } from "./ModelPickerContent";
+import { multipleModelsTriggerLabel } from "./modelPickerMultiple";
 import { ChatGptSharingControl } from "./ChatGptSharingControl";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import {
@@ -34,6 +35,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   model: string;
   selectedModels?: ReadonlyArray<{ instanceId: ProviderInstanceId; model: string }>;
   onToggleModel?: (instanceId: ProviderInstanceId, model: string) => void;
+  onExitMultipleModels?: () => void;
   lockedProvider: ProviderDriverKind | null;
   lockedContinuationGroupKey?: string | null;
   instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
@@ -64,6 +66,17 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   const [uncontrolledIsMenuOpen, setUncontrolledIsMenuOpen] = useState(false);
   const isMenuOpen = props.open ?? uncontrolledIsMenuOpen;
   const size = props.size ?? "sm";
+  const [multiSelectModeRequested, setMultiSelectModeRequested] = useState(false);
+  const [menuWasOpen, setMenuWasOpen] = useState(isMenuOpen);
+  if (menuWasOpen !== isMenuOpen) {
+    setMenuWasOpen(isMenuOpen);
+    if (!isMenuOpen) setMultiSelectModeRequested(false);
+  }
+  const multiSelectMode = multiSelectModeRequested || (props.selectedModels?.length ?? 0) > 1;
+  const handleMultiSelectModeChange = (enabled: boolean) => {
+    setMultiSelectModeRequested(enabled);
+    if (!enabled) props.onExitMultipleModels?.();
+  };
 
   const activeEntry =
     props.instanceEntries.find((entry) => entry.instanceId === props.activeInstanceId) ?? null;
@@ -176,12 +189,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     };
   });
   const multipleLabel = selectedEntries
-    ? selectedEntries.length === 0
-      ? "Choose models"
-      : `${selectedEntries
-          .slice(0, 2)
-          .map((selection) => selection.label)
-          .join(", ")}${selectedEntries.length > 2 ? `, ${selectedEntries.length - 2} more` : ""}`
+    ? multipleModelsTriggerLabel(selectedEntries.map((selection) => selection.label))
     : undefined;
   const allModelNames = selectedEntries
     ? selectedEntries.map((selection) => selection.label).join(", ") || "Choose models"
@@ -300,6 +308,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
                 onToggleModel: (instanceId: ProviderInstanceId, model: string) => {
                   if (!props.disabled) props.onToggleModel?.(instanceId, model);
                 },
+                multiSelectMode,
+                onMultiSelectModeChange: handleMultiSelectModeChange,
               }
             : {})}
           lockedProvider={props.lockedProvider}

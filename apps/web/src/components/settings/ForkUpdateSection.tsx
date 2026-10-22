@@ -1,8 +1,8 @@
-import type {
-  DesktopForkUpdateCheck,
-  DesktopForkUpdateState,
-  DesktopForkUpdateTrack,
-  DesktopForkUpdatesBridge,
+import {
+  type DesktopForkUpdateState,
+  type DesktopForkUpdateTrack,
+  type DesktopForkUpdatesBridge,
+  isForkUpdateAvailable,
 } from "@t3tools/contracts";
 import { type ReactNode, useEffect, useState } from "react";
 
@@ -33,9 +33,6 @@ const listFiles = (files: ReadonlyArray<string>) =>
     ? files.join(", ")
     : `${files.slice(0, 3).join(", ")} and ${files.length - 3} more`;
 
-const updateAvailable = (check: DesktopForkUpdateCheck) =>
-  check.updateAvailable ?? check.newCommits > 0;
-
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
 /** True unless the repo has moved past the commit this build carries in its `+fork.<sha>` suffix. */
@@ -53,7 +50,7 @@ export function describeForkUpdateCheck(state: DesktopForkUpdateState): string {
   if (!check) return "Not checked against upstream yet.";
   const checkedAt = formatTime(check.checkedAt);
   const target = check.targetTag ?? `upstream ${check.upstreamHead}`;
-  if (!updateAvailable(check)) return `Up to date with ${target}, checked ${checkedAt}.`;
+  if (!isForkUpdateAvailable(check)) return `Up to date with ${target}, checked ${checkedAt}.`;
   const dropped = check.droppedCommits ?? 0;
   const parts = [
     `${target} is available: ${plural(check.newCommits, "new upstream commit")}${dropped > 0 ? `, ${plural(dropped, "commit")} of the current base left out` : ""}, checked ${checkedAt}.`,
@@ -80,7 +77,7 @@ export function describeForkUpdateRun(state: DesktopForkUpdateState): string | n
 
 export function forkUpdateBlockedReason(state: DesktopForkUpdateState): string | null {
   if (state.applyRunning) return "An update is already running.";
-  if (!state.check || !updateAvailable(state.check)) {
+  if (!state.check || !isForkUpdateAvailable(state.check)) {
     return "There is no newer release to update to.";
   }
   if (state.activeRuns > 0) {

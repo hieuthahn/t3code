@@ -2,6 +2,9 @@ import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  accountBarOffersSignIn,
+  accountEmailLabel,
+  accountGroupName,
   mergeModelPickerAccountModels,
   mergeModelPickerAccountTabs,
   resolveModelPickerAccountAction,
@@ -57,11 +60,22 @@ describe("mergeModelPickerAccountTabs", () => {
       activeInstanceId: id("dung"),
     });
     expect(result.entries.map((tab) => [tab.instanceId, tab.displayName])).toEqual([
-      [id("dung"), "dung (3 accounts)"],
+      [id("dung"), "dung · 3 accounts"],
       [id("solo"), "solo"],
     ]);
     expect(result.tabByInstanceId.get(id("hieu"))).toBe(id("dung"));
     expect(result.tabByInstanceId.get(id("solo"))).toBe(id("solo"));
+  });
+
+  it("names a merged tab by the word its accounts share instead of one account's email", () => {
+    const result = mergeModelPickerAccountTabs({
+      entries: [
+        { ...entry("hieu"), displayName: "Claude hieu.nguyen@openreach.tech" },
+        { ...entry("viet"), displayName: "Claude viet.nguyen@openreach.tech" },
+      ],
+      activeInstanceId: id("hieu"),
+    });
+    expect(result.entries.map((tab) => tab.displayName)).toEqual(["Claude · 2 accounts"]);
   });
 });
 
@@ -158,11 +172,39 @@ describe("resolveModelPickerAccountAction", () => {
   });
 });
 
+describe("accountGroupName", () => {
+  it("names the group by the first word every account shares", () => {
+    expect(accountGroupName(["Claude hieu@x.tech", "Claude dung@x.tech"])).toBe("Claude");
+  });
+
+  it("gives no name when the accounts share no first word", () => {
+    expect(accountGroupName(["Codex", "Work Codex"])).toBeUndefined();
+    expect(accountGroupName(["Claude hieu@x.tech"])).toBeUndefined();
+  });
+});
+
 describe("shortAccountLabels", () => {
-  it("keeps an email's local part", () => {
-    expect(shortAccountLabels(["Claude hieu.nguyen@openreach.tech", "Claude dung@x.tech"])).toEqual(
-      ["hieu.nguyen", "dung"],
-    );
+  it("keeps an email's first name when that tells the accounts apart", () => {
+    expect(
+      shortAccountLabels([
+        "Claude hieu.nguyen@openreach.tech",
+        "Claude dung.nguyen@openreach.tech",
+        "Claude viet@openreach.tech",
+      ]),
+    ).toEqual(["hieu", "dung", "viet"]);
+  });
+
+  it("falls back to the local part when first names collide", () => {
+    expect(
+      shortAccountLabels(["Claude hieu.nguyen@openreach.tech", "Claude hieu.tran@openreach.tech"]),
+    ).toEqual(["hieu.nguyen", "hieu.tran"]);
+  });
+
+  it("shows the whole address when two accounts share a name on different domains", () => {
+    expect(shortAccountLabels(["Claude hieu@openreach.tech", "Claude hieu@gmail.com"])).toEqual([
+      "hieu@openreach.tech",
+      "hieu@gmail.com",
+    ]);
   });
 
   it("drops the driver word every account shares", () => {
@@ -174,5 +216,46 @@ describe("shortAccountLabels", () => {
 
   it("keeps names whole when nothing is shared", () => {
     expect(shortAccountLabels(["Codex", "Work Codex"])).toEqual(["Codex", "Work Codex"]);
+  });
+});
+
+describe("accountEmailLabel", () => {
+  it("prefers the email the account signed in with", () => {
+    expect(
+      accountEmailLabel({ displayName: "Codex hieuthahn", authEmail: "hieuthahn@gmail.com" }),
+    ).toBe("hieuthahn@gmail.com");
+  });
+
+  it("falls back to the email in the name, then to the name", () => {
+    expect(accountEmailLabel({ displayName: "Claude viet.nguyen@openreach.tech" })).toBe(
+      "viet.nguyen@openreach.tech",
+    );
+    expect(accountEmailLabel({ displayName: "Codex hieuthahn1" })).toBe("Codex hieuthahn1");
+  });
+});
+
+describe("accountBarOffersSignIn", () => {
+  const barInstanceIds = [id("hieu"), id("viet")];
+
+  it("leaves a signed-out account on the bar to the bar", () => {
+    expect(
+      accountBarOffersSignIn({ instanceId: id("viet"), signedOut: true, barInstanceIds }),
+    ).toBe(true);
+  });
+
+  it("keeps the notice for signed-in accounts, accounts off the bar, and a bar of one", () => {
+    expect(
+      accountBarOffersSignIn({ instanceId: id("hieu"), signedOut: false, barInstanceIds }),
+    ).toBe(false);
+    expect(
+      accountBarOffersSignIn({ instanceId: id("solo"), signedOut: true, barInstanceIds }),
+    ).toBe(false);
+    expect(
+      accountBarOffersSignIn({
+        instanceId: id("viet"),
+        signedOut: true,
+        barInstanceIds: [id("viet")],
+      }),
+    ).toBe(false);
   });
 });

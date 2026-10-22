@@ -49,9 +49,10 @@ export function mergeModelPickerAccountTabs<T extends GroupableEntry>(input: {
   for (const group of members.values()) {
     const tab = group.find((entry) => entry.instanceId === input.activeInstanceId) ?? group[0]!;
     for (const entry of group) tabByInstanceId.set(entry.instanceId, tab.instanceId);
+    const groupName = accountGroupName(group.map((entry) => entry.displayName));
     entries.push(
       group.length > 1
-        ? { ...tab, displayName: `${tab.displayName} (${group.length} accounts)` }
+        ? { ...tab, displayName: `${groupName ?? tab.displayName} · ${group.length} accounts` }
         : tab,
     );
   }
@@ -127,14 +128,65 @@ export function resolveModelPickerAccountAction(input: {
   return { kind: "select", instanceId, accountChoice: pinnedId ? "pinned" : "auto" };
 }
 
-/** Shorten account names for the footer toggle: an email's local part, else drop a shared first word. */
-export function shortAccountLabels(displayNames: ReadonlyArray<string>): ReadonlyArray<string> {
+/** Name a group of accounts by the first word every name shares, such as the driver's name. */
+export function accountGroupName(displayNames: ReadonlyArray<string>): string | undefined {
   const words = displayNames.map((name) => name.trim().split(/\s+/));
-  const sharedFirstWord =
-    words.length > 1 && words.every((parts) => parts.length > 1 && parts[0] === words[0]![0]);
-  return words.map((parts, index) => {
+  const first = words[0]?.[0];
+  return first !== undefined &&
+    words.length > 1 &&
+    words.every((parts) => parts.length > 1 && parts[0] === first)
+    ? first
+    : undefined;
+}
+
+/**
+ * Shorten account names for the footer toggle to the shortest form that still tells them apart:
+ * an email's first name, then its local part, then the whole address.
+ */
+export function shortAccountLabels(displayNames: ReadonlyArray<string>): ReadonlyArray<string> {
+  const sharedFirstWord = accountGroupName(displayNames) !== undefined;
+  const forms = displayNames.map((name) => {
+    const parts = name.trim().split(/\s+/);
     const lastWord = parts.at(-1) ?? "";
-    if (lastWord.includes("@")) return lastWord.slice(0, lastWord.indexOf("@"));
-    return sharedFirstWord ? parts.slice(1).join(" ") : displayNames[index]!;
+    const at = lastWord.indexOf("@");
+    if (at > 0) {
+      const localPart = lastWord.slice(0, at);
+      return [localPart.split(".")[0]!, localPart, lastWord, name];
+    }
+    return sharedFirstWord ? [parts.slice(1).join(" "), name] : [name];
   });
+  const depth = Math.max(...forms.map((form) => form.length));
+  for (let level = 0; level < depth; level += 1) {
+    const labels = forms.map((form) => form[Math.min(level, form.length - 1)]!);
+    if (new Set(labels).size === labels.length) return labels;
+  }
+  return displayNames;
+}
+
+/** Name an account by its signed-in email, else the email in its name, else the name itself. */
+export function accountEmailLabel(input: {
+  readonly displayName: string;
+  readonly authEmail?: string | undefined;
+}): string {
+  const email = input.authEmail?.trim();
+  if (email) return email;
+  return (
+    input.displayName
+      .trim()
+      .split(/\s+/)
+      .find((word) => word.includes("@")) ?? input.displayName
+  );
+}
+
+/** Tell whether the footer's account bar offers this account's sign-in, so no separate notice is due. */
+export function accountBarOffersSignIn(input: {
+  readonly instanceId: ProviderInstanceId;
+  readonly signedOut: boolean;
+  readonly barInstanceIds: ReadonlyArray<ProviderInstanceId>;
+}): boolean {
+  return (
+    input.signedOut &&
+    input.barInstanceIds.length > 1 &&
+    input.barInstanceIds.includes(input.instanceId)
+  );
 }

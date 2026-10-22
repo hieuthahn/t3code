@@ -89,10 +89,37 @@ describe("limitSwitchCommand", () => {
       ),
     );
     assert.isNotNull(
-      limitSwitchCommand(makeThread({ snoozedUntil: DateTime.makeUnsafe(NOW - 60_000) }), target, NOW),
+      limitSwitchCommand(
+        makeThread({ snoozedUntil: DateTime.makeUnsafe(NOW - 60_000) }),
+        target,
+        NOW,
+      ),
     );
     assert.isNull(
-      limitSwitchCommand(makeThread({ usageLimitResetAt: "2026-10-20T11:00:00.000Z" }), target, NOW),
+      limitSwitchCommand(
+        makeThread({ usageLimitResetAt: "2026-10-20T11:00:00.000Z" }),
+        target,
+        NOW,
+      ),
+    );
+  });
+});
+
+describe("pinned threads", () => {
+  it("leaves a pinned thread for the user unless pinned threads may switch", () => {
+    const pinned = makeThread({
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("claude-a"),
+        model: "claude-haiku-5-5",
+        accountChoice: "pinned",
+      },
+    });
+    const target = ProviderInstanceId.make("claude-b");
+    assert.isNull(limitSwitchCommand(pinned, target, NOW));
+    const command = limitSwitchCommand(pinned, target, NOW, { switchPinned: true });
+    assert.equal(
+      command?.type === "message.dispatch" ? command.modelSelection?.instanceId : null,
+      target,
     );
   });
 });
@@ -104,17 +131,27 @@ describe("limit switch ledger", () => {
   const thread2 = ThreadId.make("thread-2");
 
   it("counts only assignments from the last ten minutes", () => {
-    let ledger = recordLimitSwitch(emptyLimitSwitchLedger, { instanceId: claudeB, threadId: thread1 }, NOW);
+    let ledger = recordLimitSwitch(
+      emptyLimitSwitchLedger,
+      { instanceId: claudeB, threadId: thread1 },
+      NOW,
+    );
     ledger = recordLimitSwitch(ledger, { instanceId: claudeB, threadId: thread2 }, NOW + 60_000);
     ledger = recordLimitSwitch(ledger, { instanceId: claudeC, threadId: thread1 }, NOW + 120_000);
-    assert.deepEqual([...recentAssignmentCounts(ledger, NOW + 120_000)], [
-      [claudeB, 2],
-      [claudeC, 1],
-    ]);
-    assert.deepEqual([...recentAssignmentCounts(ledger, NOW + 10 * 60_000 + 30_000)], [
-      [claudeB, 1],
-      [claudeC, 1],
-    ]);
+    assert.deepEqual(
+      [...recentAssignmentCounts(ledger, NOW + 120_000)],
+      [
+        [claudeB, 2],
+        [claudeC, 1],
+      ],
+    );
+    assert.deepEqual(
+      [...recentAssignmentCounts(ledger, NOW + 10 * 60_000 + 30_000)],
+      [
+        [claudeB, 1],
+        [claudeC, 1],
+      ],
+    );
   });
 
   it("caps a thread at three switches an hour", () => {
@@ -133,10 +170,10 @@ describe("limit switch ledger", () => {
   });
 
   it("refreshes each peer at most once a minute", () => {
-    assert.deepEqual(instancesDueForRefresh(emptyLimitSwitchLedger, [claudeB, claudeB, claudeC], NOW), [
-      claudeB,
-      claudeC,
-    ]);
+    assert.deepEqual(
+      instancesDueForRefresh(emptyLimitSwitchLedger, [claudeB, claudeB, claudeC], NOW),
+      [claudeB, claudeC],
+    );
     const ledger = recordRefreshes(emptyLimitSwitchLedger, [claudeB], NOW);
     assert.deepEqual(instancesDueForRefresh(ledger, [claudeB, claudeC], NOW + 30_000), [claudeC]);
     assert.deepEqual(instancesDueForRefresh(ledger, [claudeB], NOW + 60_000), [claudeB]);

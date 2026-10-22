@@ -114,8 +114,12 @@ export function limitSwitchCommand(
   thread: ProjectionStore.ProjectionLimitRecoveryCandidate,
   targetInstanceId: ProviderInstanceId,
   nowMs: number,
+  options: { readonly switchPinned?: boolean } = {},
 ): OrchestrationV2Command | null {
   if (!isSwitchable(thread, nowMs) || !thread.latestRunId) return null;
+  if (thread.modelSelection.accountChoice === "pinned" && options.switchPinned !== true) {
+    return null;
+  }
   const identity = `${thread.id}:${thread.latestRunId}:${targetInstanceId}:${Math.floor(nowMs / RETRY_BUCKET_MS)}`;
   return {
     type: "message.dispatch",
@@ -194,7 +198,9 @@ export const makeSweep = Effect.gen(function* () {
           });
           return;
         }
-        const command = limitSwitchCommand(thread, target.instanceId, nowMs);
+        const command = limitSwitchCommand(thread, target.instanceId, nowMs, {
+          switchPinned: preferences.switchPinnedAccounts,
+        });
         if (command === null) return;
         yield* threads.dispatch(command);
         yield* Ref.update(ledgerRef, (current) =>

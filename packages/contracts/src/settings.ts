@@ -694,7 +694,7 @@ export const ClaudeSettings = makeProviderSettingsSchema(
       }),
     ),
     shareMainConfig: Schema.Boolean.pipe(
-      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.withDecodingDefault(Effect.succeed(true)),
       Schema.annotateKey({
         title: "Share config with the default Claude home",
         description:

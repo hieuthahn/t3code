@@ -4844,6 +4844,49 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ),
   );
 
+  it.effect("marks the native thread broken when the CLI no longer has its conversation", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeWakeHarness;
+      const now = yield* DateTime.now;
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now,
+          attemptId: RunAttemptId.make("attempt-claude-lost-conversation"),
+          text: "Continue.",
+          attachments: [],
+        }),
+      );
+      yield* Queue.offer(
+        harness.sdkMessages,
+        makeResultFrame({
+          uuid: "00000000-0000-4000-8000-000000000698",
+          result: "",
+          subtype: "error_during_execution",
+          isError: true,
+          numTurns: 0,
+          terminalReason: null,
+          errors: [`No conversation found with session ID: ${WAKE_NATIVE_SESSION}`],
+        }),
+      );
+
+      const terminal = yield* Queue.take(harness.terminalReceipts);
+      assert.equal(terminal.status, "failed");
+      if (terminal.status !== "failed") return;
+      assert.equal(terminal.threadDisposition, "broken");
+      assert.equal(terminal.failure.code, "native_thread_not_found");
+      assert.equal(
+        terminal.failure.message,
+        "Claude no longer has this conversation. Send the message again to continue from a summary of this thread.",
+      );
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+      ),
+    ),
+  );
+
   it.effect("names an expired Claude login instead of the terminal API error", () =>
     Effect.gen(function* () {
       const configDir = "/synthetic/Claude config";

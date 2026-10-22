@@ -8,7 +8,7 @@ import type { ComponentType } from "react";
 import { createElement, lazy, Suspense, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { projectFaviconUrlAtom } from "../state/assets";
-import { deriveProjectIdentity } from "../projectIdentity";
+import { deriveProjectIdentity, hasExplicitProjectIcon } from "../projectIdentity";
 import { projectIconColorClassName } from "../projectIconColors";
 import { ProjectMonogram } from "./ProjectMonogram";
 import { cn } from "~/lib/utils";
@@ -38,6 +38,8 @@ export function ProjectFavicon(input: {
   project: ProjectFaviconProject;
   className?: string | undefined;
   fallbackIcon?: ComponentType<{ className?: string }>;
+  /** Render nothing, instead of initials from the name, until the project has an icon or favicon. */
+  hideUnsetIcon?: boolean;
 }) {
   const { project } = input;
   const src = useAtomValue(
@@ -47,6 +49,7 @@ export function ProjectFavicon(input: {
       faviconPath: project.faviconPath,
     }),
   );
+  if (input.hideUnsetIcon && !hasExplicitProjectIcon(project.projectIcon, src)) return null;
   if (project.projectIcon?.kind === "monogram") {
     return (
       <ProjectMonogram
@@ -108,6 +111,7 @@ export function ProjectFavicon(input: {
       className={input.className}
       fallbackIcon={FallbackIcon}
       fallbackProjectName={project.title}
+      hideFallback={input.hideUnsetIcon === true}
     />
   );
 }
@@ -152,11 +156,13 @@ function ProjectFaviconImage({
   className,
   fallbackIcon: FallbackIcon,
   fallbackProjectName,
+  hideFallback,
 }: {
   readonly src: string;
   readonly className?: string | undefined;
   readonly fallbackIcon: ComponentType<{ className?: string }>;
   readonly fallbackProjectName?: string | undefined;
+  readonly hideFallback: boolean;
 }) {
   const [displayedSrc, setDisplayedSrc] = useState<string | null>(() =>
     src.startsWith("data:image/") ? src : null,
@@ -168,7 +174,7 @@ function ProjectFaviconImage({
 
   return (
     <>
-      {displayedSrc === null ? (
+      {displayedSrc === null && !hideFallback ? (
         <ProjectFaviconFallback
           className={className}
           icon={FallbackIcon}

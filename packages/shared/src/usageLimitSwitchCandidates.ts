@@ -86,3 +86,138 @@ export const rankUsageLimitSwitchCandidates = (input: {
   const unmeasured = candidates.filter((candidate) => candidate.usedPercent === undefined);
   return [...measured, ...unmeasured];
 };
+
+export interface AccountSwitchThresholds {
+  /** Percent of the session window at which an account counts as near its limit. */
+  readonly sessionPercent: number;
+  /** Percent of every longer window (weekly, monthly, per-model) that counts as near. */
+  readonly weeklyPercent: number;
+}
+
+/** A peer must sit this many points under each threshold before it takes a thread over. */
+export const TARGET_HEADROOM_GAP_PERCENT = 20;
+
+export type AccountChoiceReason =
+  | "under-threshold"
+  | "current-unmeasured"
+  | "current-unknown"
+  | "no-peer-with-headroom"
+  | "near-limit";
+
+export interface AccountChoice {
+  readonly instanceId: ProviderInstanceId;
+  readonly switched: boolean;
+  readonly reason: AccountChoiceReason;
+  /** The window that pushed the current account over, when one did. */
+  readonly pressure?: {
+    readonly windowId: string;
+    readonly usedPercent: number;
+    readonly thresholdPercent: number;
+  };
+  readonly target?: UsageLimitSwitchCandidate;
+}
+
+const thresholdFor = (kind: string, thresholds: AccountSwitchThresholds): number =>
+  kind === "session" ? thresholds.sessionPercent : thresholds.weeklyPercent;
+
+const liveWindows = (provider: ServerProvider, nowMs: number) => {
+  const limits = provider.usageLimits;
+  if (limits === undefined || limits.unavailable !== undefined || limits.windows.length === 0) {
+    return undefined;
+  }
+  return limits.windows.filter((window) => {
+    const resetsAtMs = window.resetsAt === undefined ? undefined : Date.parse(window.resetsAt);
+    return resetsAtMs === undefined || resetsAtMs > nowMs;
+  });
+};
+
+/**
+ * Decide which account a thread's next turn runs on: stay put while every window is under
+ * its threshold, otherwise move to the roomiest peer that is well under in every window.
+ */
+export const chooseAccountForTurn = (input: {
+  readonly providers: ReadonlyArray<ServerProvider>;
+  readonly currentInstanceId: ProviderInstanceId;
+  readonly model: string;
+  readonly nowMs: number;
+  readonly thresholds: AccountSwitchThresholds;
+  readonly recentAssignments?: ReadonlyMap<ProviderInstanceId, number>;
+}): AccountChoice => {
+  const stay = (reason: AccountChoiceReason): AccountChoice => ({
+    instanceId: input.currentInstanceId,
+    switched: false,
+    reason,
+  });
+  const current = input.providers.find(
+    (provider) => provider.instanceId === input.currentInstanceId,
+  );
+  if (current === undefined) return stay("current-unknown");
+  const currentWindows = liveWindows(current, input.nowMs);
+  if (currentWindows === undefined) return stay("current-unmeasured");
+  const pressured = currentWindows
+    .map((window) => ({
+      windowId: window.id,
+      usedPercent: window.usedPercent,
+      thresholdPercent: thresholdFor(window.kind, input.thresholds),
+    }))
+    .filter((window) => window.usedPercent >= window.thresholdPercent)
+    .sort((left, right) => right.usedPercent - left.usedPercent)[0];
+  if (pressured === undefined) return stay("under-threshold");
+  const roomy = (provider: ServerProvider): boolean => {
+    const windows = liveWindows(provider, input.nowMs);
+    return (
+      windows !== undefined &&
+      windows.every(
+        (window) =>
+          window.usedPercent <
+          thresholdFor(window.kind, input.thresholds) - TARGET_HEADROOM_GAP_PERCENT,
+      )
+    );
+  };
+  const target = rankUsageLimitSwitchCandidates({
+    providers: input.providers,
+    currentInstanceId: input.currentInstanceId,
+    nowMs: input.nowMs,
+    model: input.model,
+    ...(input.recentAssignments === undefined
+      ? {}
+      : { recentAssignments: input.recentAssignments }),
+  }).find((candidate) => {
+    const provider = input.providers.find((entry) => entry.instanceId === candidate.instanceId);
+    return provider !== undefined && roomy(provider);
+  });
+  if (target === undefined) return { ...stay("no-peer-with-headroom"), pressure: pressured };
+  return {
+    instanceId: target.instanceId,
+    switched: true,
+    reason: "near-limit",
+    pressure: pressured,
+    target,
+  };
+};
+
+/**
+ * Pick the account a merged model row stands for: the thread's own account when it is in the
+ * group, else the ready member with the most headroom, else the first member.
+ */
+export const pickRepresentativeAccount = (input: {
+  readonly members: ReadonlyArray<ServerProvider>;
+  readonly preferredInstanceId: ProviderInstanceId | undefined;
+  readonly model: string;
+  readonly nowMs: number;
+}): ProviderInstanceId | undefined => {
+  const preferred = input.members.find(
+    (provider) => provider.instanceId === input.preferredInstanceId,
+  );
+  if (preferred !== undefined) return preferred.instanceId;
+  const ready = input.members
+    .filter((provider) => canTakeOver(provider, input.model))
+    .flatMap((provider) => {
+      const candidate = toCandidate(provider, input.nowMs);
+      return candidate === undefined ? [] : [candidate];
+    });
+  const headroom = (candidate: UsageLimitSwitchCandidate) =>
+    candidate.usedPercent === undefined ? -1 : FULL_PERCENT - candidate.usedPercent;
+  const best = ready.sort((left, right) => headroom(right) - headroom(left))[0];
+  return best?.instanceId ?? input.members[0]?.instanceId;
+};

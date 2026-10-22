@@ -488,6 +488,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.autoEffortDefault !== DEFAULT_UNIFIED_SETTINGS.autoEffortDefault
       ? ["Auto effort by default"]
       : []),
+    ...(settings.promptSuggestions !== DEFAULT_UNIFIED_SETTINGS.promptSuggestions
+      ? ["Prompt suggestions"]
+      : []),
     ...(settings.autoEffortJudge !== DEFAULT_UNIFIED_SETTINGS.autoEffortJudge
       ? ["Auto effort judge"]
       : []),
@@ -655,6 +658,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       autoEffortJudge: DEFAULT_UNIFIED_SETTINGS.autoEffortJudge,
       modelPickerMergeAccounts: DEFAULT_UNIFIED_SETTINGS.modelPickerMergeAccounts,
       autoEffortDefault: DEFAULT_UNIFIED_SETTINGS.autoEffortDefault,
+      promptSuggestions: DEFAULT_UNIFIED_SETTINGS.promptSuggestions,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
@@ -1082,6 +1086,20 @@ export function GeneralSettingsPanel() {
                 ))}
               </SelectPopup>
             </Select>
+          }
+        />
+        <SettingsRow
+          serverScoped
+          {...searchableSetting("prompt-suggestions")}
+          description="After a turn, show the likely next prompt in the empty composer. Tab fills it in, Esc hides it. Claude threads use Claude's own suggestion; other threads ask Haiku on a Claude account."
+          settingKeys={["promptSuggestions"]}
+          control={
+            <ScopedSwitch
+              settingKeys={["promptSuggestions"]}
+              checked={settings.promptSuggestions}
+              onCheckedChange={(checked) => updateSettings({ promptSuggestions: Boolean(checked) })}
+              aria-label="Prompt suggestions"
+            />
           }
         />
         <SettingsRow

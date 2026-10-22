@@ -6,6 +6,7 @@ import {
   mergeModelPickerAccountTabs,
   resolveModelPickerAccountAction,
   sameAccountGroup,
+  shortAccountLabels,
 } from "./modelPickerAccountGroups";
 
 const id = ProviderInstanceId.make;
@@ -154,5 +155,24 @@ describe("resolveModelPickerAccountAction", () => {
 
   it("selects instead of toggling when the picker takes one model", () => {
     expect(resolve("dung", true, false).kind).toBe("select");
+  });
+});
+
+describe("shortAccountLabels", () => {
+  it("keeps an email's local part", () => {
+    expect(shortAccountLabels(["Claude hieu.nguyen@openreach.tech", "Claude dung@x.tech"])).toEqual(
+      ["hieu.nguyen", "dung"],
+    );
+  });
+
+  it("drops the driver word every account shares", () => {
+    expect(shortAccountLabels(["Codex hieuthahn", "Codex hieuthahn1"])).toEqual([
+      "hieuthahn",
+      "hieuthahn1",
+    ]);
+  });
+
+  it("keeps names whole when nothing is shared", () => {
+    expect(shortAccountLabels(["Codex", "Work Codex"])).toEqual(["Codex", "Work Codex"]);
   });
 });

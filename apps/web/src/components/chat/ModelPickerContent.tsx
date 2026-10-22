@@ -62,6 +62,7 @@ import {
   mergeModelPickerAccountTabs,
   resolveModelPickerAccountAction,
   sameAccountGroup,
+  shortAccountLabels,
 } from "./modelPickerAccountGroups";
 import { cn } from "~/lib/utils";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
@@ -495,6 +496,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     mergeAccounts && activeGroupKey !== undefined
       ? instanceEntries.filter((entry) => entry.continuationGroupKey === activeGroupKey)
       : [];
+  const groupAccountLabels = shortAccountLabels(groupAccounts.map((entry) => entry.displayName));
   const [accountPick, setAccountPick] = useState<ProviderInstanceId | "auto">(
     props.activeAccountPinned === true && props.activeInstanceId !== undefined
       ? props.activeInstanceId
@@ -1139,14 +1141,14 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                   }}
                 >
                   <Toggle value="auto">Auto</Toggle>
-                  {groupAccounts.map((entry) => (
+                  {groupAccounts.map((entry, index) => (
                     <Toggle
                       key={entry.instanceId}
                       value={entry.instanceId}
                       title={entry.displayName}
                       disabled={entry.snapshot?.auth.status === "unauthenticated"}
                     >
-                      {shortAccountLabel(entry.displayName)}
+                      {groupAccountLabels[index]}
                     </Toggle>
                   ))}
                 </ToggleGroup>
@@ -1158,9 +1160,3 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     </TooltipProvider>
   );
 });
-
-/** Shorten "Claude hieu.nguyen@example.com" to "hieu.nguyen" for the account toggle. */
-function shortAccountLabel(displayName: string): string {
-  const lastWord = displayName.trim().split(/\s+/).at(-1) ?? displayName;
-  return lastWord.includes("@") ? lastWord.slice(0, lastWord.indexOf("@")) : displayName;
-}

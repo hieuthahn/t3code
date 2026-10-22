@@ -1074,7 +1074,16 @@ export function GeneralSettingsPanel() {
             sessionPercent={settings.earlySwitchSessionThreshold}
             weeklyPercent={settings.earlySwitchWeeklyThreshold}
             disabled={!settings.earlyAccountSwitch}
-            onChange={updateSettings}
+            onChange={(patch) =>
+              updateSettings({
+                ...(patch.sessionPercent === undefined
+                  ? {}
+                  : { earlySwitchSessionThreshold: patch.sessionPercent }),
+                ...(patch.weeklyPercent === undefined
+                  ? {}
+                  : { earlySwitchWeeklyThreshold: patch.weeklyPercent }),
+              })
+            }
           />
         </SettingsRow>
         <SettingsRow

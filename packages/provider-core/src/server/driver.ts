@@ -15,6 +15,7 @@ import type {
   ServerProviderWorkspaceSnapshot,
 } from "@t3tools/contracts";
 import type * as Effect from "effect/Effect";
+import type * as Option from "effect/Option";
 import type * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 
@@ -58,6 +59,8 @@ export interface ProviderInstance {
   >;
   readonly orchestrationAdapter: ProviderAdapter.ProviderAdapterV2["Service"];
   readonly textGeneration: ProviderTextGeneration;
+  /** Asks this account's quick judge model a question; none when it could not answer. */
+  readonly judgeEffort?: (question: string) => Effect.Effect<Option.Option<string>>;
   readonly auth?: ProviderAuthController;
   readonly acpSessionManagement?: {
     readonly listSessions: (input: {

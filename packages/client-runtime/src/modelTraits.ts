@@ -114,8 +114,14 @@ export function buildTraitsTriggerDisplay(input: {
   let fastModeFallbackLabel: string | null = null;
   let speedLabel: string | null = null;
   let reasoningLabelIndex = -1;
+  let autoEffort = false;
   const labels: Array<string> = [];
   for (const descriptor of input.descriptors) {
+    // The server's per-turn judge reads this switch; the effort shown beside it is the fallback.
+    if (descriptor.id === "autoEffort" && descriptor.type === "boolean") {
+      autoEffort = descriptor.currentValue === true;
+      continue;
+    }
     if (descriptor.id === "fastMode" && descriptor.type === "boolean") {
       speedLabel = descriptor.currentValue === true ? "Fast" : null;
       fastModeFallbackLabel = speedLabel ?? "Normal";
@@ -167,6 +173,13 @@ export function buildTraitsTriggerDisplay(input: {
     }
   }
 
+  if (autoEffort) {
+    if (reasoningLabelIndex >= 0) {
+      labels[reasoningLabelIndex] = `Auto · ${labels[reasoningLabelIndex]}`;
+    } else {
+      labels.unshift("Auto");
+    }
+  }
   if (labels.length === 0 && fastModeFallbackLabel !== null) {
     return { label: fastModeFallbackLabel };
   }

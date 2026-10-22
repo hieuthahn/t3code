@@ -59,6 +59,7 @@ import {
   type MergedModel,
   mergeModelPickerAccountModels,
   mergeModelPickerAccountTabs,
+  resolveModelPickerAccountAction,
   sameAccountGroup,
 } from "./modelPickerAccountGroups";
 import { cn } from "~/lib/utils";
@@ -558,17 +559,16 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     }
     const resolvedModel = resolveSelectableModel(entry.driverKind, modelSlug, options);
     if (resolvedModel) {
-      if (additive && onToggleModel) {
-        onToggleModel(instanceId, resolvedModel);
-        return;
-      }
-      const members =
-        pickerModelByKey.get(modelPickerModelKey(instanceId, modelSlug))?.memberInstanceIds ?? [];
-      if (accountPick !== "auto" && members.includes(accountPick)) {
-        onInstanceModelChange(accountPick, resolvedModel, "pinned");
-      } else {
-        onInstanceModelChange(instanceId, resolvedModel, "auto");
-      }
+      const action = resolveModelPickerAccountAction({
+        instanceId,
+        memberInstanceIds:
+          pickerModelByKey.get(modelPickerModelKey(instanceId, modelSlug))?.memberInstanceIds ?? [],
+        accountPick,
+        additive,
+        canToggle: onToggleModel !== undefined,
+      });
+      if (action.kind === "toggle") onToggleModel?.(action.instanceId, resolvedModel);
+      else onInstanceModelChange(action.instanceId, resolvedModel, action.accountChoice);
     }
   };
 

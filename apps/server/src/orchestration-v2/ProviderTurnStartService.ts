@@ -1121,6 +1121,18 @@ export const layer: Layer.Layer<
           )
           .map((source) => source.runId),
       );
+      const runningNativeId = runningProviderThread.nativeThreadRef?.nativeId;
+      const nativeIdHasTurnsOnOtherAccount =
+        runningNativeId !== undefined &&
+        projection.attempts.some(
+          (source) =>
+            source.providerThreadId !== providerThread.id &&
+            (source.nativeThreadId === runningNativeId ||
+              (source.nativeThreadId === undefined &&
+                deliveredAttemptIds.has(source.id) &&
+                projection.providerThreads.find((thread) => thread.id === source.providerThreadId)
+                  ?.nativeThreadRef?.nativeId === runningNativeId)),
+        );
       const legacyInputRunIds = new Set(
         acceptedAttempts
           .filter((source) => source.nativeThreadId === undefined)
@@ -1403,6 +1415,7 @@ export const layer: Layer.Layer<
           ) + 1,
         nativeThreadHasTurns:
           nativeInputRunIds.size > 0 ||
+          nativeIdHasTurnsOnOtherAccount ||
           (legacyInputRunIds.size > 0 &&
             sameNativeThread &&
             !acceptedAttempts.some((source) => source.nativeThreadId !== undefined)),

@@ -17,14 +17,18 @@ const NOW = Date.parse("2026-10-20T12:00:00.000Z");
 const hieu = ProviderInstanceId.make("hieu");
 const dung = ProviderInstanceId.make("dung");
 
-const provider = (instanceId: ProviderInstanceId, usedPercent: number): ServerProvider =>
+const provider = (
+  instanceId: ProviderInstanceId,
+  usedPercent: number,
+  authStatus: "authenticated" | "unauthenticated" = "authenticated",
+): ServerProvider =>
   ({
     instanceId,
     driver: "claudeAgent",
     enabled: true,
     installed: true,
     status: "ready",
-    auth: { status: "authenticated" },
+    auth: { status: authStatus },
     models: [{ slug: "claude-opus-5-5", name: "Opus", isCustom: false }],
     continuation: { groupKey: "claude:home:/shared" },
     usageLimits: {
@@ -65,12 +69,24 @@ const plan = (input: {
   readonly currentPercent: number;
   readonly lastSwitchAtMs?: number;
   readonly switchPinned?: boolean;
+  readonly switchNearLimit?: boolean;
+  readonly newThread?: { readonly recentAssignments: ReadonlyMap<ProviderInstanceId, number> };
+  readonly currentSignedOut?: boolean;
 }) =>
   planEarlySwitch({
     switchPinned: input.switchPinned ?? false,
+    ...(input.switchNearLimit === undefined ? {} : { switchNearLimit: input.switchNearLimit }),
+    ...(input.newThread === undefined ? {} : { newThread: input.newThread }),
     command: input.command ?? command(),
-    thread: input.thread ?? thread,
-    providers: [provider(hieu, input.currentPercent), provider(dung, 20)],
+    thread: input.thread ?? (input.newThread === undefined ? thread : { ...thread, hasStartedRun: false }),
+    providers: [
+      provider(
+        hieu,
+        input.currentPercent,
+        input.currentSignedOut === true ? "unauthenticated" : "authenticated",
+      ),
+      provider(dung, 20),
+    ],
     thresholdsFor: () => ({ sessionPercent: 90, weeklyPercent: 90 }),
     lastSwitchAtMs: input.lastSwitchAtMs,
     nowMs: NOW,
@@ -131,5 +147,56 @@ describe("planEarlySwitch", () => {
     for (const candidate of untouched) {
       assert.isNull(plan({ command: candidate, currentPercent: 99 }).choice);
     }
+  });
+});
+
+describe("planEarlySwitch for new threads", () => {
+  const fresh = { recentAssignments: new Map<ProviderInstanceId, number>() };
+
+  it("starts a new thread on the account with more headroom", () => {
+    const result = plan({ currentPercent: 50, newThread: fresh });
+    assert.equal(result.command.modelSelection?.instanceId, dung);
+    assert.equal(result.choice?.reason, "new-thread");
+  });
+
+  it("keeps a new thread whose account was picked by hand", () => {
+    const result = plan({
+      currentPercent: 50,
+      newThread: fresh,
+      command: command({
+        modelSelection: { instanceId: hieu, model: "claude-opus-5-5", accountChoice: "pinned" },
+      }),
+    });
+    assert.equal(result.command.modelSelection?.instanceId ?? hieu, hieu);
+    assert.isNull(result.choice);
+  });
+
+  it("balances a launched thread whose first run waits for its workspace", () => {
+    const result = plan({
+      currentPercent: 50,
+      newThread: fresh,
+      command: command({
+        dispatchMode: { type: "defer_start", workspaceStrategy: { type: "root" } },
+      } as Partial<MessageDispatch>),
+    });
+    assert.equal(result.command.modelSelection?.instanceId, dung);
+  });
+
+  it("leaves a thread with earlier turns to the threshold rule", () => {
+    const result = plan({ currentPercent: 50 });
+    assert.isUndefined(result.command.modelSelection);
+  });
+});
+
+describe("planEarlySwitch with switching near the limit off", () => {
+  it("stays on a pressured account", () => {
+    const result = plan({ currentPercent: 95, switchNearLimit: false });
+    assert.isUndefined(result.command.modelSelection);
+  });
+
+  it("still moves off a signed-out account", () => {
+    const result = plan({ currentPercent: 10, switchNearLimit: false, currentSignedOut: true });
+    assert.equal(result.command.modelSelection?.instanceId, dung);
+    assert.equal(result.choice?.reason, "current-signed-out");
   });
 });

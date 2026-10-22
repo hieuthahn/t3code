@@ -1,3 +1,4 @@
+import { ProviderSignedOutNotice } from "../components/ProviderSignedOutNotice";
 import { PermissionUpdateNotice } from "../components/PermissionUpdateNotice";
 import { type ServerLifecycleWelcomePayload } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
@@ -254,6 +255,7 @@ function RootRouteView() {
           {primaryEnvironmentAuthenticated ? (
             <EventRouter skipInitialBootstrapNavigation={returningFromWelcome} />
           ) : null}
+          {primaryEnvironmentAuthenticated ? <ProviderSignedOutNotice /> : null}
           {isElectron ? <DesktopUpdateLaunchNotice /> : null}
           {appShell}
           {/* Keep the theme editor above the router so drafts survive navigation. */}

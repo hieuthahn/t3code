@@ -2,58 +2,74 @@ import { assert, describe, it } from "@effect/vitest";
 import { ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
-import {
-  limitedWindowIdForReset,
-  rankUsageLimitSwitchCandidates,
-} from "./usageLimitSwitchCandidates.ts";
+import { rankUsageLimitSwitchCandidates } from "./usageLimitSwitchCandidates.ts";
 
 const NOW = Date.parse("2026-10-20T12:00:00.000Z");
 const iso = (offsetMinutes: number) =>
   DateTime.formatIso(DateTime.makeUnsafe(NOW + offsetMinutes * 60_000));
 const id = (value: string) => ProviderInstanceId.make(value);
 
+interface WindowUsage {
+  readonly id?: string;
+  readonly usedPercent: number;
+  readonly resetsInMinutes: number;
+}
+
 const makeProvider = (input: {
   readonly instanceId: string;
   readonly groupKey?: string | null;
   readonly enabled?: boolean;
-  readonly usage?: { readonly usedPercent: number; readonly resetsInMinutes: number };
+  readonly installed?: boolean;
+  readonly authStatus?: "authenticated" | "unauthenticated" | "unknown";
+  readonly status?: "ready" | "warning" | "error" | "disabled";
+  readonly availability?: "available" | "unavailable";
+  readonly models?: ReadonlyArray<string>;
+  readonly usage?: WindowUsage | ReadonlyArray<WindowUsage>;
   readonly unavailable?: boolean;
-}): ServerProvider =>
-  ({
+}): ServerProvider => {
+  const usage = input.usage === undefined ? [] : [input.usage].flat();
+  return {
     instanceId: id(input.instanceId),
     driver: "claudeAgent",
     enabled: input.enabled ?? true,
+    installed: input.installed ?? true,
+    status: input.status ?? "ready",
+    auth: { status: input.authStatus ?? "authenticated" },
+    ...(input.availability === undefined ? {} : { availability: input.availability }),
+    models: (input.models ?? ["claude-opus-5-5"]).map((slug) => ({
+      slug,
+      name: slug,
+      isCustom: false,
+    })),
     ...(input.groupKey === null
       ? {}
       : { continuation: { groupKey: input.groupKey ?? "claude:home:/shared" } }),
     usageLimits: {
       checkedAt: iso(0),
-      windows:
-        input.usage === undefined
-          ? []
-          : [
-              {
-                id: "five_hour",
-                kind: "session",
-                label: "Session",
-                usedPercent: input.usage.usedPercent,
-                resetsAt: iso(input.usage.resetsInMinutes),
-              },
-            ],
+      windows: usage.map((window) => ({
+        id: window.id ?? "five_hour",
+        kind: "session",
+        label: "Session",
+        usedPercent: window.usedPercent,
+        resetsAt: iso(window.resetsInMinutes),
+      })),
       ...(input.unavailable === true ? { unavailable: { reason: "probeFailed" as const } } : {}),
     },
-  }) as unknown as ServerProvider;
+  } as unknown as ServerProvider;
+};
 
 const rank = (
   providers: ReadonlyArray<ServerProvider>,
-  strategy: "soonest-reset" | "most-remaining",
+  options: {
+    readonly model?: string;
+    readonly recentAssignments?: ReadonlyMap<ProviderInstanceId, number>;
+  } = {},
 ) =>
   rankUsageLimitSwitchCandidates({
     providers,
     currentInstanceId: id("a"),
-    windowId: "five_hour",
     nowMs: NOW,
-    strategy,
+    ...options,
   }).map((candidate) => candidate.instanceId);
 
 describe("rankUsageLimitSwitchCandidates", () => {
@@ -64,82 +80,121 @@ describe("rankUsageLimitSwitchCandidates", () => {
   const providers = [
     current,
     makeProvider({ instanceId: "b", usage: { usedPercent: 20, resetsInMinutes: 200 } }),
-    makeProvider({ instanceId: "c", usage: { usedPercent: 70, resetsInMinutes: 30 } }),
+    makeProvider({ instanceId: "c", usage: { usedPercent: 95, resetsInMinutes: 10 } }),
     makeProvider({ instanceId: "d", usage: { usedPercent: 10, resetsInMinutes: 100 } }),
   ];
 
-  it("puts the soonest reset first", () => {
-    assert.deepEqual(rank(providers, "soonest-reset"), [id("c"), id("d"), id("b")]);
+  it("puts the most remaining usage first, even over a sooner reset", () => {
+    assert.deepEqual(rank(providers), [id("d"), id("b"), id("c")]);
   });
 
-  it("puts the most remaining usage first", () => {
-    assert.deepEqual(rank(providers, "most-remaining"), [id("d"), id("b"), id("c")]);
+  it("breaks a headroom tie with the sooner reset", () => {
+    const result = rank([
+      current,
+      makeProvider({ instanceId: "late", usage: { usedPercent: 40, resetsInMinutes: 200 } }),
+      makeProvider({ instanceId: "soon", usage: { usedPercent: 40, resetsInMinutes: 20 } }),
+    ]);
+    assert.deepEqual(result, [id("soon"), id("late")]);
   });
 
-  it("skips other groups, disabled instances, and instances that are full", () => {
-    const result = rank(
-      [
-        current,
-        makeProvider({
-          instanceId: "other",
-          groupKey: "claude:home:/elsewhere",
-          usage: { usedPercent: 0, resetsInMinutes: 10 },
-        }),
-        makeProvider({
-          instanceId: "off",
-          enabled: false,
-          usage: { usedPercent: 0, resetsInMinutes: 10 },
-        }),
-        makeProvider({ instanceId: "full", usage: { usedPercent: 100, resetsInMinutes: 10 } }),
-        makeProvider({ instanceId: "ok", usage: { usedPercent: 50, resetsInMinutes: 10 } }),
-      ],
-      "soonest-reset",
-    );
+  it("ranks by the fullest window and skips a peer full in any window", () => {
+    const result = rank([
+      current,
+      makeProvider({
+        instanceId: "weekly-high",
+        usage: [
+          { id: "five_hour", usedPercent: 5, resetsInMinutes: 100 },
+          { id: "seven_day", usedPercent: 90, resetsInMinutes: 3000 },
+        ],
+      }),
+      makeProvider({
+        instanceId: "weekly-full",
+        usage: [
+          { id: "five_hour", usedPercent: 0, resetsInMinutes: 100 },
+          { id: "seven_day", usedPercent: 100, resetsInMinutes: 3000 },
+        ],
+      }),
+      makeProvider({ instanceId: "even", usage: { usedPercent: 50, resetsInMinutes: 100 } }),
+    ]);
+    assert.deepEqual(result, [id("even"), id("weekly-high")]);
+  });
+
+  it("skips peers that are signed out, missing, erroring, unavailable, or disabled", () => {
+    const usage = { usedPercent: 0, resetsInMinutes: 10 };
+    const result = rank([
+      current,
+      makeProvider({ instanceId: "signed-out", authStatus: "unauthenticated", usage }),
+      makeProvider({ instanceId: "auth-unknown", authStatus: "unknown", usage }),
+      makeProvider({ instanceId: "missing", installed: false, usage }),
+      makeProvider({ instanceId: "broken", status: "error", usage }),
+      makeProvider({ instanceId: "offline", availability: "unavailable", usage }),
+      makeProvider({ instanceId: "off", enabled: false, usage }),
+      makeProvider({ instanceId: "warned", status: "warning", usage }),
+    ]);
+    assert.deepEqual(result, [id("warned")]);
+  });
+
+  it("skips other groups and peers that are full", () => {
+    const result = rank([
+      current,
+      makeProvider({
+        instanceId: "other",
+        groupKey: "claude:home:/elsewhere",
+        usage: { usedPercent: 0, resetsInMinutes: 10 },
+      }),
+      makeProvider({ instanceId: "full", usage: { usedPercent: 100, resetsInMinutes: 10 } }),
+      makeProvider({ instanceId: "ok", usage: { usedPercent: 50, resetsInMinutes: 10 } }),
+    ]);
     assert.deepEqual(result, [id("ok")]);
   });
 
-  it("treats a window that already reset as empty", () => {
+  it("keeps only peers that offer the thread's model, by slug or alias", () => {
+    const usage = { usedPercent: 10, resetsInMinutes: 10 };
     const result = rank(
       [
         current,
-        makeProvider({ instanceId: "stale", usage: { usedPercent: 100, resetsInMinutes: -5 } }),
+        makeProvider({ instanceId: "max", models: ["claude-opus-5-5[1m]"], usage }),
+        makeProvider({ instanceId: "pro", models: ["claude-sonnet-5-5"], usage }),
       ],
-      "most-remaining",
+      { model: "claude-opus-5-5[1m]" },
     );
+    assert.deepEqual(result, [id("max")]);
+  });
+
+  it("counts recent assignments against a peer to spread threads", () => {
+    const usage = { usedPercent: 10, resetsInMinutes: 10 };
+    const spread = [
+      current,
+      makeProvider({ instanceId: "b", usage }),
+      makeProvider({ instanceId: "c", usage: { usedPercent: 15, resetsInMinutes: 10 } }),
+    ];
+    assert.deepEqual(rank(spread), [id("b"), id("c")]);
+    assert.deepEqual(rank(spread, { recentAssignments: new Map([[id("b"), 1]]) }), [
+      id("c"),
+      id("b"),
+    ]);
+  });
+
+  it("treats a window that already reset as empty", () => {
+    const result = rank([
+      current,
+      makeProvider({ instanceId: "stale", usage: { usedPercent: 100, resetsInMinutes: -5 } }),
+    ]);
     assert.deepEqual(result, [id("stale")]);
   });
 
   it("lists instances without a reading after measured ones", () => {
-    const result = rank(
-      [
-        current,
-        makeProvider({ instanceId: "blind", unavailable: true }),
-        makeProvider({ instanceId: "none" }),
-        makeProvider({ instanceId: "seen", usage: { usedPercent: 90, resetsInMinutes: 10 } }),
-      ],
-      "most-remaining",
-    );
+    const result = rank([
+      current,
+      makeProvider({ instanceId: "blind", unavailable: true }),
+      makeProvider({ instanceId: "none" }),
+      makeProvider({ instanceId: "seen", usage: { usedPercent: 90, resetsInMinutes: 10 } }),
+    ]);
     assert.deepEqual(result, [id("seen"), id("blind"), id("none")]);
   });
 
   it("returns nothing when the current instance has no continuation group", () => {
     const withoutGroup = makeProvider({ instanceId: "a", groupKey: null });
-    assert.deepEqual(rank([withoutGroup, providers[1]!], "soonest-reset"), []);
-  });
-});
-
-describe("limitedWindowIdForReset", () => {
-  const limited = makeProvider({
-    instanceId: "a",
-    usage: { usedPercent: 100, resetsInMinutes: 60 },
-  });
-
-  it("names the window whose reset time matches the failure", () => {
-    assert.equal(limitedWindowIdForReset(limited, NOW + 60 * 60_000 + 20_000), "five_hour");
-  });
-
-  it("defaults to the session window when nothing matches or no snapshot exists", () => {
-    assert.equal(limitedWindowIdForReset(limited, NOW + 5 * 60 * 60_000), "five_hour");
-    assert.equal(limitedWindowIdForReset(undefined, NOW), "five_hour");
+    assert.deepEqual(rank([withoutGroup, providers[1]!]), []);
   });
 });

@@ -26,15 +26,13 @@ type MessageDispatch = Extract<OrchestrationV2Command, { readonly type: "message
 export interface EarlySwitchThread {
   readonly id: ThreadId;
   readonly modelSelection: ModelSelection;
-  readonly hasRuns: boolean;
 }
 
-/** Tell whether a dispatch is a fresh user turn on the thread's own account. */
+/** Tell whether a dispatch is a new user turn on the thread's own account. */
 export const isEarlySwitchCandidate = (
   command: MessageDispatch,
   thread: EarlySwitchThread,
 ): boolean =>
-  thread.hasRuns &&
   command.createdBy === "user" &&
   command.dispatchMode.type === "start_immediately" &&
   command.manualContinuationOfRunId === undefined &&
@@ -101,6 +99,7 @@ export const make = Effect.gen(function* () {
   }
   const registry = registryOption.value;
   const lastSwitchRef = yield* Ref.make(new Map<ThreadId, number>());
+  const unmeasuredLoggedRef = yield* Ref.make(new Set<string>());
   const rewrite = Effect.fn("EarlyAccountSwitch.rewrite")(function* (
     command: MessageDispatch,
     thread: EarlySwitchThread,
@@ -125,6 +124,14 @@ export const make = Effect.gen(function* () {
     if (choice === null || choice.reason === "under-threshold") return plan.command;
     const from: ProviderInstanceId = thread.modelSelection.instanceId;
     if (!choice.switched) {
+      if (choice.pressure === undefined) {
+        const key = `${thread.id}\0${from}`;
+        const logged = yield* Ref.modify(unmeasuredLoggedRef, (keys) => [
+          keys.has(key),
+          new Set(keys).add(key),
+        ]);
+        if (logged) return plan.command;
+      }
       yield* Effect.logInfo("orchestration-v2.early-switch.stayed", {
         threadId: thread.id,
         from,

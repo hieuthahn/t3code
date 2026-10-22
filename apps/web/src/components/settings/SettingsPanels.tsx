@@ -20,6 +20,7 @@ import {
   type ResponseStreamingMode,
   type QuitConfirmationMode,
   LimitedThreadSwitchMode,
+  AutoEffortJudge,
   SidebarProjectSortOrder,
 } from "@t3tools/contracts/settings";
 import { createModelSelection } from "@t3tools/shared/model";
@@ -125,6 +126,12 @@ const LIMITED_THREAD_SWITCH_LABELS: Record<LimitedThreadSwitchMode, string> = {
   auto: "Switch automatically",
 };
 const isLimitedThreadSwitchMode = Schema.is(LimitedThreadSwitchMode);
+
+const AUTO_EFFORT_JUDGE_LABELS: Record<AutoEffortJudge, string> = {
+  auto: "Jev, then Haiku",
+  haiku: "Haiku only",
+};
+const isAutoEffortJudge = Schema.is(AutoEffortJudge);
 
 const TIMESTAMP_FORMAT_LABELS = {
   locale: "System default",
@@ -475,6 +482,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.limitedThreadSwitch !== DEFAULT_UNIFIED_SETTINGS.limitedThreadSwitch
       ? ["Switch limited threads"]
       : []),
+    ...(settings.autoEffortJudge !== DEFAULT_UNIFIED_SETTINGS.autoEffortJudge
+      ? ["Auto effort judge"]
+      : []),
     ...(settings.wordWrap !== DEFAULT_UNIFIED_SETTINGS.wordWrap ? ["Word wrap"] : []),
     ...(settings.persistComposerContextStrip !==
     DEFAULT_UNIFIED_SETTINGS.persistComposerContextStrip
@@ -636,6 +646,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       autoResumeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
       limitedThreadSwitch: DEFAULT_UNIFIED_SETTINGS.limitedThreadSwitch,
+      autoEffortJudge: DEFAULT_UNIFIED_SETTINGS.autoEffortJudge,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
@@ -1002,6 +1013,33 @@ export function GeneralSettingsPanel() {
                 {LimitedThreadSwitchMode.literals.map((mode) => (
                   <SelectItem hideIndicator key={mode} value={mode}>
                     {LIMITED_THREAD_SWITCH_LABELS[mode]}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          }
+        />
+        <SettingsRow
+          serverScoped
+          {...searchableSetting("auto-effort-judge")}
+          description="Who picks the effort when Auto effort is on in the composer. Jev answers first when a TypeSafe key is found (TYPESAFE_API_KEY or ~/.config/jev/.env); Haiku decides otherwise, on the thread's Claude account (a Codex thread uses the text-generation Claude account, else the first one)."
+          settingKeys={["autoEffortJudge"]}
+          control={
+            <Select
+              value={settings.autoEffortJudge}
+              onValueChange={(value) => {
+                if (isAutoEffortJudge(value)) {
+                  updateSettings({ autoEffortJudge: value });
+                }
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-44" aria-label="Auto effort judge">
+                <SelectValue>{AUTO_EFFORT_JUDGE_LABELS[settings.autoEffortJudge]}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {AutoEffortJudge.literals.map((judge) => (
+                  <SelectItem hideIndicator key={judge} value={judge}>
+                    {AUTO_EFFORT_JUDGE_LABELS[judge]}
                   </SelectItem>
                 ))}
               </SelectPopup>

@@ -102,3 +102,27 @@ export function sameAccountGroup(
 ): boolean {
   return accountGroupId(left) === accountGroupId(right);
 }
+
+export type ModelPickerAccountAction =
+  | { readonly kind: "toggle"; readonly instanceId: ProviderInstanceId }
+  | {
+      readonly kind: "select";
+      readonly instanceId: ProviderInstanceId;
+      readonly accountChoice: "pinned" | "auto";
+    };
+
+/** Decide which account a model row click lands on, honouring the account picked in the footer. */
+export function resolveModelPickerAccountAction(input: {
+  readonly instanceId: ProviderInstanceId;
+  readonly memberInstanceIds: ReadonlyArray<ProviderInstanceId>;
+  readonly accountPick: ProviderInstanceId | "auto";
+  readonly additive: boolean;
+  readonly canToggle: boolean;
+}): ModelPickerAccountAction {
+  const picked = input.accountPick === "auto" ? undefined : input.accountPick;
+  const pinnedId =
+    picked !== undefined && input.memberInstanceIds.includes(picked) ? picked : undefined;
+  const instanceId = pinnedId ?? input.instanceId;
+  if (input.additive && input.canToggle) return { kind: "toggle", instanceId };
+  return { kind: "select", instanceId, accountChoice: pinnedId ? "pinned" : "auto" };
+}

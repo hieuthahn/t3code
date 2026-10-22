@@ -24,6 +24,7 @@ import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
+import * as AutoEffort from "../autoEffort/AutoEffortService.ts";
 import * as ServerConfig from "../config.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
@@ -131,6 +132,44 @@ export const layer: Layer.Layer<
     const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
     const runtimePolicy = yield* RuntimePolicy.RuntimePolicyV2;
     const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
+    const autoEffortService = yield* Effect.serviceOption(AutoEffort.AutoEffortService);
+
+    const resolveAutoEffort = Effect.fn("ProviderTurnStartService.resolveAutoEffort")(
+      function* (input: {
+        readonly threadId: ThreadId;
+        readonly run: OrchestrationV2Run;
+        readonly runs: ReadonlyArray<OrchestrationV2Run>;
+        readonly driver: ProviderAdapter.ProviderAdapterV2SessionRuntime["driver"];
+        readonly text: string | undefined;
+        readonly attachmentCount: number;
+      }) {
+        const unchanged = { modelSelection: input.run.modelSelection, notice: undefined };
+        if (Option.isNone(autoEffortService) || input.text === undefined) return unchanged;
+        const previousRun = input.runs
+          .filter((candidate) => candidate.ordinal < input.run.ordinal)
+          .at(-1);
+        const history =
+          previousRun === undefined
+            ? []
+            : yield* projectionStore
+                .getTurnStartHistory(input.threadId, [previousRun.id])
+                .pipe(Effect.orElseSucceed(() => []));
+        const lastText = (type: "user_message" | "assistant_message") =>
+          history.findLast(
+            (item): item is Extract<OrchestrationV2TurnItem, { type: typeof type }> =>
+              item.type === type && item.text.trim() !== "",
+          )?.text;
+        return yield* autoEffortService.value.resolve({
+          threadId: input.threadId,
+          driver: input.driver,
+          modelSelection: input.run.modelSelection,
+          text: input.text,
+          attachmentCount: input.attachmentCount,
+          previousUserText: lastText("user_message"),
+          previousAssistantText: lastText("assistant_message"),
+        });
+      },
+    );
 
     // These callbacks outlive startup while a run drains background work. Build
     // them outside start's scope so they cannot retain its full thread history.
@@ -1286,6 +1325,57 @@ export const layer: Layer.Layer<
         !noteContinuation
           ? session
           : makeDeliverySession(session, startWithHandoffs);
+      const autoEffort = yield* resolveAutoEffort({
+        threadId: projection.thread.id,
+        run,
+        runs: projection.runs,
+        driver: session.driver,
+        text: noteContinuation || userText.trimStart().startsWith("/") ? undefined : userText,
+        attachmentCount: message.attachments.length,
+      });
+      if (autoEffort.notice !== undefined) {
+        const noticedAt = yield* DateTime.now;
+        const noticeItem: OrchestrationV2TurnItem = {
+          id: idAllocator.derive.runSignalTurnItem({ runId, signal: "auto-effort" }),
+          threadId: projection.thread.id,
+          runId,
+          nodeId: rootNode.id,
+          providerThreadId: runningProviderThread.id,
+          providerTurnId: null,
+          nativeItemRef: null,
+          parentItemId: null,
+          ordinal:
+            Math.max(
+              0,
+              ...projection.turnItems
+                .filter((item) => item.runId === runId)
+                .map((item) => item.ordinal),
+            ) + 1,
+          type: "system_notice",
+          status: "completed",
+          title: autoEffort.notice,
+          message: autoEffort.notice,
+          startedAt: noticedAt,
+          completedAt: noticedAt,
+          updatedAt: noticedAt,
+        };
+        yield* eventSink
+          .write({
+            events: [
+              {
+                id: yield* idAllocator.allocate.event({ threadId: projection.thread.id }),
+                type: "turn-item.updated",
+                threadId: projection.thread.id,
+                runId,
+                nodeId: rootNode.id,
+                providerInstanceId: run.providerInstanceId,
+                occurredAt: noticedAt,
+                payload: noticeItem,
+              },
+            ],
+          })
+          .pipe(Effect.ignore);
+      }
       return runExecution.startRootRun({
         commandId: CommandId.make(`command:effect:provider-turn.start:${run.id}`),
         appThread: projection.thread,
@@ -1332,7 +1422,7 @@ export const layer: Layer.Layer<
             ? {}
             : { senderThreadId: message.senderThreadId }),
         },
-        modelSelection: run.modelSelection,
+        modelSelection: autoEffort.modelSelection,
         runtimePolicy: resolvedRuntimePolicy,
       });
     });

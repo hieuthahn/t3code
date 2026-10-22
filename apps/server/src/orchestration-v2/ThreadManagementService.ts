@@ -58,6 +58,7 @@ import { projectTurnItemForDetail } from "./WireProjection.ts";
 import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as EarlyAccountSwitch from "./EarlyAccountSwitch.ts";
 
 export type ThreadManagementSendMode = "auto" | "queue" | "steer" | "restart";
 
@@ -546,6 +547,7 @@ const make = Effect.gen(function* () {
   if (Option.isNone(providerRegistry)) {
     yield* Effect.logWarning("orchestration-v2.account-switch.signed-in-check-unavailable");
   }
+  const earlyAccountSwitch = yield* Effect.serviceOption(EarlyAccountSwitch.EarlyAccountSwitch);
 
   const assertProviderInstanceEnabled: ThreadManagementServiceShape["assertProviderInstanceEnabled"] =
     (input) =>
@@ -729,10 +731,35 @@ const make = Effect.gen(function* () {
     }
   };
 
+  const chooseDispatchAccount = (
+    command: OrchestrationV2ServerCommand,
+  ): Effect.Effect<OrchestrationV2ServerCommand> => {
+    if (command.type !== "message.dispatch" || Option.isNone(earlyAccountSwitch)) {
+      return Effect.succeed(command);
+    }
+    return serverSettings.getSettings.pipe(
+      Effect.flatMap((current) =>
+        current.earlyAccountSwitch
+          ? orchestrator.getThreadRecords(command.threadId, []).pipe(
+              Effect.flatMap((projection) =>
+                earlyAccountSwitch.value.rewrite(command, {
+                  id: projection.thread.id,
+                  modelSelection: projection.thread.modelSelection,
+                }),
+              ),
+            )
+          : Effect.succeed(command),
+      ),
+      Effect.orElseSucceed(() => command),
+    );
+  };
+
   const dispatch: ThreadManagementServiceShape["dispatch"] = (command) =>
     ensureCommandTranscripts(command).pipe(
-      Effect.andThen(assertDispatchTargetEnabled(command)),
-      Effect.andThen(orchestrator.dispatch(command)),
+      Effect.andThen(chooseDispatchAccount(command)),
+      Effect.flatMap((chosen) =>
+        assertDispatchTargetEnabled(chosen).pipe(Effect.andThen(orchestrator.dispatch(chosen))),
+      ),
     );
 
   const getProjectThread: ThreadManagementServiceShape["getProjectThread"] = (input) =>

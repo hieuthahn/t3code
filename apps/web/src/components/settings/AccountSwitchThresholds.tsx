@@ -40,8 +40,8 @@ export function AccountSwitchThresholds(props: {
   readonly weeklyPercent: number;
   readonly disabled: boolean;
   readonly onChange: (patch: {
-    readonly earlySwitchSessionThreshold?: number;
-    readonly earlySwitchWeeklyThreshold?: number;
+    readonly sessionPercent?: number;
+    readonly weeklyPercent?: number;
   }) => void;
 }) {
   return (
@@ -50,13 +50,13 @@ export function AccountSwitchThresholds(props: {
         label="5-hour window"
         value={props.sessionPercent}
         disabled={props.disabled}
-        onCommit={(value) => props.onChange({ earlySwitchSessionThreshold: value })}
+        onCommit={(value) => props.onChange({ sessionPercent: value })}
       />
       <ThresholdSlider
         label="Weekly window"
         value={props.weeklyPercent}
         disabled={props.disabled}
-        onCommit={(value) => props.onChange({ earlySwitchWeeklyThreshold: value })}
+        onCommit={(value) => props.onChange({ weeklyPercent: value })}
       />
     </div>
   );

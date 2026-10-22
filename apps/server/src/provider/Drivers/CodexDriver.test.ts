@@ -6,7 +6,13 @@ import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodePath from "node:path";
 import { expect, it } from "@effect/vitest";
-import { EnvironmentId, ProviderInstanceId, ProviderSessionId, ThreadId } from "@t3tools/contracts";
+import {
+  type CodexSettings,
+  EnvironmentId,
+  ProviderInstanceId,
+  ProviderSessionId,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -371,6 +377,44 @@ it.layer(layerTest)("CodexDriver", (it) => {
           lockKey: "codex-native",
           env: { CODEX_HOME: sharedHome },
         });
+      }).pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn),
+        Effect.scoped,
+      ),
+  );
+
+  it.effect.skipIf(windowsHost)(
+    "offers CLI sign-in only to an instance that keeps its own auth.json",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const tempDir = yield* fs
+          .makeTempDirectoryScoped({ prefix: "t3-codex-driver-" })
+          .pipe(Effect.flatMap((directory) => fs.realPath(directory)));
+        const sharedHome = NodePath.join(tempDir, "codex-home");
+        yield* fs.makeDirectory(sharedHome, { recursive: true });
+        const create = (instanceId: string, config: Partial<CodexSettings>) =>
+          CodexDriver.create({
+            instanceId: ProviderInstanceId.make(instanceId),
+            displayName: "Codex test",
+            enabled: false,
+            environment: [],
+            config: { ...CodexDriver.defaultConfig(), ...config },
+          });
+
+        const ownHome = yield* create("codex-own", {
+          homePath: sharedHome,
+          shadowHomePath: NodePath.join(tempDir, "codex-shadow"),
+        });
+        const sharedDefault = yield* create("codex-shared", {});
+
+        expect(ownHome.auth).toBeDefined();
+        expect((yield* ownHome.snapshot.getSnapshot).setup).toEqual({
+          canAuthenticate: true,
+          canInstall: false,
+        });
+        expect(sharedDefault.auth).toBeUndefined();
+        expect((yield* sharedDefault.snapshot.getSnapshot).setup?.canAuthenticate).not.toBe(true);
       }).pipe(
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn),
         Effect.scoped,

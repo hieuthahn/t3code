@@ -188,7 +188,8 @@ import {
 } from "~/lib/composerContextRecords";
 import { rememberCopiedComposerAttachments } from "~/lib/copiedComposerAttachments";
 import { useThreadContextDrop, threadContextDropTargetProps } from "./threadContextDrag";
-import { readThreadShell } from "~/state/entities";
+import { readThreadShell, useThreadPromptSuggestion } from "~/state/entities";
+import { visiblePromptSuggestion } from "./promptSuggestion";
 import { encodeComposerContextFragment } from "@t3tools/shared/composerContextClipboard";
 import type { ComposerContextRecord, ThreadPullRequestLink } from "@t3tools/contracts";
 import { threadContextAttachment } from "~/lib/threadContextAttachment";
@@ -2290,6 +2291,24 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
   const expandMobileComposerStable = useStableCallback(expandMobileComposer);
 
+  const serverPromptSuggestion = useThreadPromptSuggestion(
+    routeKind === "draft" ? null : routeThreadRef,
+  );
+  const [dismissedPromptSuggestion, setDismissedPromptSuggestion] = useState<string | null>(null);
+  const promptSuggestion = visiblePromptSuggestion({
+    suggestion: serverPromptSuggestion,
+    enabled: settings.promptSuggestions,
+    phase,
+    prompt,
+    dismissed: dismissedPromptSuggestion,
+    placeholderTaken:
+      isComposerApprovalState ||
+      activePendingProgress !== null ||
+      (showPlanFollowUpPrompt && activeProposedPlan !== null) ||
+      projectSelectionRequired ||
+      showProviderUnavailable,
+  });
+
   const onComposerCommandKey = (key: string, event: KeyboardEvent, isTaskItem?: boolean) =>
     composerCommandKeyHandler({
       keybindings,
@@ -2327,6 +2346,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       readComposerSnapshot,
       applyPromptReplacement,
       submitComposer,
+      promptSuggestion,
+      dismissPromptSuggestion: setDismissedPromptSuggestion,
     })(key, event, isTaskItem);
 
   const {
@@ -3860,7 +3881,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                               ? "Choose a project above to start a thread"
                               : showProviderUnavailable
                                 ? "Enable a provider in Settings to send a message"
-                                : DEFAULT_COMPOSER_PLACEHOLDER
+                                : promptSuggestion !== null
+                                  ? promptSuggestion
+                                  : DEFAULT_COMPOSER_PLACEHOLDER
                     }
                     disabled={
                       isConnecting ||

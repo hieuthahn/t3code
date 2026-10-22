@@ -350,11 +350,25 @@ const resolveStartupBrowserTarget = Effect.gen(function* () {
  * read it. The URL carries a one-time admin token, so it skips the logger: log
  * records also land in the trace file and any configured OTLP collector.
  */
-export const announceStartupPairingUrl = (pairingUrl: string) =>
-  Effect.logInfo("Authentication required. Open T3 Code using the pairing URL.").pipe(
+export const announceStartupPairingUrl = (
+  pairingUrl: string,
+  options: { readonly stdoutIsTerminal?: boolean } = {},
+) => {
+  const stdoutIsTerminal = options.stdoutIsTerminal ?? process.stdout.isTTY === true;
+  const printed = stdoutIsTerminal
+    ? [`  pairingUrl: ${pairingUrl}`]
+    : [
+        `  pairingUrl: ${hidePairingToken(pairingUrl)}`,
+        "  The token is hidden because stdout is not a terminal. Run `t3 pair` for a new link.",
+      ];
+  return Effect.logInfo("Authentication required. Open T3 Code using the pairing URL.").pipe(
     // Indented to match the annotation line the pretty logger printed before.
-    Effect.andThen(Console.log(`  pairingUrl: ${pairingUrl}`)),
+    Effect.andThen(Effect.forEach(printed, (line) => Console.log(line), { discard: true })),
   );
+};
+
+const hidePairingToken = (pairingUrl: string) =>
+  pairingUrl.replace(/#token=.*$/, "#token=<hidden>");
 
 // No URL here: the browser target carries the pairing token, which
 // announceStartupPairingUrl has already printed to stdout.

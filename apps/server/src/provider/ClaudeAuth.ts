@@ -85,6 +85,10 @@ export const makeClaudeAuth = Effect.fn("makeClaudeAuth")(function* (options: Cl
     ...claudeEnvironment,
     ...(platform === "win32" || claudeEnvironment.BROWSER ? {} : { BROWSER: "true" }),
   };
+  const logContext = {
+    instanceId: options.instanceId,
+    configDir: environment.CLAUDE_CONFIG_DIR ?? "(default)",
+  };
   const spawn = (args: ReadonlyArray<string>) =>
     spawner
       .spawn(
@@ -100,6 +104,8 @@ export const makeClaudeAuth = Effect.fn("makeClaudeAuth")(function* (options: Cl
     "ClaudeAuth.authenticate",
   )(function* (_methodId, context) {
     const child = yield* spawn(["auth", "login"]);
+    yield* Effect.annotateCurrentSpan({ ...logContext, pid: child.pid });
+    yield* Effect.logInfo("Claude sign-in started.", { ...logContext, pid: child.pid });
     yield* Effect.addFinalizer(() => child.kill().pipe(Effect.ignore));
     const decoder = new TextDecoder();
     const encoder = new TextEncoder();
@@ -115,6 +121,9 @@ export const makeClaudeAuth = Effect.fn("makeClaudeAuth")(function* (options: Cl
       const kept = lines.map(redactClaudeAuthOutput).filter((line) => line.trim().length > 0);
       outputLines.push(...kept);
       outputLines.splice(0, Math.max(0, outputLines.length - OUTPUT_LINES_KEPT));
+      return Effect.forEach(kept, (line) => Effect.logInfo("Claude sign-in output.", { line }), {
+        discard: true,
+      });
     };
     const lastOutputLine = () => {
       const tail = redactClaudeAuthOutput(pending).trim();
@@ -125,38 +134,59 @@ export const makeClaudeAuth = Effect.fn("makeClaudeAuth")(function* (options: Cl
         Effect.mapError((cause) =>
           failure("complete", "Could not send the code to the Claude CLI.", cause),
         ),
+        Effect.tap(() =>
+          Effect.logInfo("Claude sign-in code sent to the CLI.", {
+            codeLength: code.trim().length,
+          }),
+        ),
         Effect.tap(() => Deferred.succeed(codeSent, undefined)),
+        Effect.tapError((error) =>
+          Effect.logWarning("Claude sign-in code was not delivered.", { detail: error.detail }),
+        ),
       );
     yield* Stream.merge(child.stdout, child.stderr).pipe(
       Stream.runForEach((chunk) => {
         const text = decoder.decode(chunk, { stream: true });
-        recordOutput(text);
-        if (published) return Effect.void;
+        const logged = recordOutput(text);
+        if (published) return logged;
         buffered += text;
         const url = extractClaudeAuthorizeUrl(buffered);
-        if (url === undefined) return Effect.void;
+        if (url === undefined) return logged;
         published = true;
-        return context.setInteraction(
-          {
-            type: "browser",
-            id: INTERACTION_ID,
-            url,
-            requiresConsent: false,
-            acceptsCallback: true,
-          },
-          undefined,
-          submitCode,
+        return logged.pipe(
+          Effect.andThen(Effect.logInfo("Claude sign-in link shown.")),
+          Effect.andThen(
+            context.setInteraction(
+              {
+                type: "browser",
+                id: INTERACTION_ID,
+                url,
+                requiresConsent: false,
+                acceptsCallback: true,
+              },
+              undefined,
+              submitCode,
+            ),
+          ),
         );
       }),
+      Effect.tapError((cause) =>
+        Effect.logWarning("Claude sign-in output stopped.", { cause: String(cause) }),
+      ),
       Effect.ignore,
       Effect.forkScoped,
     );
     const exitAfterCodeTimeout = Deferred.await(codeSent).pipe(
       Effect.andThen(Effect.sleep(EXIT_AFTER_CODE_TIMEOUT)),
       Effect.andThen(
-        Effect.suspend(() => {
+        Effect.gen(function* () {
           const last = lastOutputLine();
-          return failure(
+          yield* Effect.logWarning("Claude sign-in CLI did not exit after the code was sent.", {
+            ...logContext,
+            pid: child.pid,
+            lastOutput: last ?? "",
+          });
+          return yield* failure(
             "wait",
             `The Claude CLI did not finish ${EXIT_AFTER_CODE_TIMEOUT} after the code was sent${
               last ? ` (last output: ${last})` : ""
@@ -170,7 +200,15 @@ export const makeClaudeAuth = Effect.fn("makeClaudeAuth")(function* (options: Cl
         failure("wait", "The Claude sign-in stopped unexpectedly.", cause),
       ),
       Effect.raceFirst(exitAfterCodeTimeout),
+      Effect.onInterrupt(() =>
+        Effect.logWarning("Claude sign-in interrupted before the CLI exited.", {
+          ...logContext,
+          pid: child.pid,
+          codeSent: Deferred.isDoneUnsafe(codeSent),
+        }),
+      ),
     );
+    yield* Effect.logInfo("Claude sign-in CLI exited.", { ...logContext, exitCode });
     if (exitCode !== 0) {
       const last = lastOutputLine();
       return yield* failure(

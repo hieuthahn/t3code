@@ -75,6 +75,7 @@ interface Harness {
   readonly jevBody?: unknown;
   readonly jevKeyFile?: string;
   readonly judge?: "auto" | "haiku";
+  readonly autoEffortDefault?: boolean;
   readonly levels?: ReadonlyArray<string>;
 }
 
@@ -123,7 +124,10 @@ const run = <A>(
                   ),
               } as never),
           }),
-          ServerSettings.layerTest({ autoEffortJudge: harness.judge ?? "auto" }),
+          ServerSettings.layerTest({
+            autoEffortJudge: harness.judge ?? "auto",
+            autoEffortDefault: harness.autoEffortDefault ?? true,
+          }),
           FileSystem.layerNoop({
             readFileString: () =>
               harness.jevKeyFile === undefined
@@ -180,6 +184,30 @@ describe("AutoEffortService", () => {
         expect(yield* Ref.get(haikuQuestions)).toEqual([]);
       }),
     ),
+  );
+
+  it.effect("judges a thread that never set the switch only while the default is on", () =>
+    Effect.gen(function* () {
+      const untouched: ModelSelection = {
+        instanceId: CLAUDE,
+        model: "model",
+        options: [{ id: "effort", value: "medium" }],
+      };
+      yield* run({ judge: "haiku" }, ({ service }) =>
+        Effect.gen(function* () {
+          expect(effortOf(yield* service.resolve(request({ modelSelection: untouched })))).toBe(
+            "high",
+          );
+        }),
+      );
+      yield* run({ judge: "haiku", autoEffortDefault: false }, ({ service, haikuQuestions }) =>
+        Effect.gen(function* () {
+          const resolution = yield* service.resolve(request({ modelSelection: untouched }));
+          expect(resolution.notice).toBeUndefined();
+          expect(yield* Ref.get(haikuQuestions)).toEqual([]);
+        }),
+      );
+    }),
   );
 
   it.effect("asks Haiku on the thread's own Claude account and applies its verdict", () =>

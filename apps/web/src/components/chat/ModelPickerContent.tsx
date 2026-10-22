@@ -1119,7 +1119,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               onRequestClose={onRequestClose}
               onOpenProviderSetup={onOpenProviderSetup}
             />
-            {groupAccounts.length > 1 && onToggleModel === undefined ? (
+            {groupAccounts.length > 1 ? (
               <div className="flex items-center gap-2 border-t px-2 py-1.5">
                 <span className="text-xs text-muted-foreground">Account</span>
                 <ToggleGroup

@@ -543,6 +543,9 @@ const make = Effect.gen(function* () {
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const receipts = yield* CommandReceiptStore.CommandReceiptStoreV2;
   const providerRegistry = yield* Effect.serviceOption(ProviderRegistry.ProviderRegistry);
+  if (Option.isNone(providerRegistry)) {
+    yield* Effect.logWarning("orchestration-v2.account-switch.signed-in-check-unavailable");
+  }
 
   const assertProviderInstanceEnabled: ThreadManagementServiceShape["assertProviderInstanceEnabled"] =
     (input) =>

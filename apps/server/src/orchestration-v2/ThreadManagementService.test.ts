@@ -10,6 +10,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   RunId,
+  type ServerProvider,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
@@ -20,6 +21,7 @@ import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 
+import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as CommandReceiptStore from "./CommandReceiptStore.ts";
@@ -186,6 +188,64 @@ it.effect(
     }).pipe(Effect.provide(layerTest));
   },
 );
+
+const layerAccountSwitchTest = (authStatus: "authenticated" | "unauthenticated") => {
+  const dispatched: Array<string> = [];
+  const providers = [
+    { instanceId: ProviderInstanceId.make("claude_alt"), auth: { status: authStatus } },
+  ] as unknown as ReadonlyArray<ServerProvider>;
+  const layer = layerDispatchChokepointTest(
+    ServerSettings.layerTest({
+      providerInstances: {
+        [ProviderInstanceId.make("claude_alt")]: { driver: "claudeAgent", enabled: true },
+      },
+    }),
+  )(dispatched).pipe(
+    Layer.provide(
+      Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed(providers) }),
+    ),
+  );
+  const switchCommand: OrchestrationV2Command = {
+    type: "message.dispatch",
+    commandId: CommandId.make(`command:thread-management:switch-${authStatus}`),
+    threadId: ThreadId.make("thread:thread-management:chokepoint"),
+    messageId: MessageId.make(`message:thread-management:switch-${authStatus}`),
+    text: "Continue on the other account.",
+    attachments: [],
+    modelSelection: { instanceId: ProviderInstanceId.make("claude_alt"), model: "test" },
+    dispatchMode: { type: "start_immediately" },
+    createdBy: "user",
+    creationSource: "web",
+  };
+  return { dispatched, layer, switchCommand };
+};
+
+it.effect(
+  "refuses to switch a thread to a signed-out account before reaching the orchestrator",
+  () => {
+    const { dispatched, layer, switchCommand } = layerAccountSwitchTest("unauthenticated");
+    return Effect.gen(function* () {
+      const threads = yield* ThreadManagementService.ThreadManagementService;
+      const error = yield* Effect.flip(threads.dispatch(switchCommand));
+
+      expect(error).toBeInstanceOf(
+        ThreadManagementService.ThreadManagementProviderInstanceSignedOutError,
+      );
+      expect(error).toMatchObject({ instanceId: ProviderInstanceId.make("claude_alt") });
+      expect(dispatched).toEqual([]);
+    }).pipe(Effect.provide(layer));
+  },
+);
+
+it.effect("switches a thread to a signed-in account", () => {
+  const { dispatched, layer, switchCommand } = layerAccountSwitchTest("authenticated");
+  return Effect.gen(function* () {
+    const threads = yield* ThreadManagementService.ThreadManagementService;
+    yield* threads.dispatch(switchCommand);
+
+    expect(dispatched).toEqual(["message.dispatch"]);
+  }).pipe(Effect.provide(layer));
+});
 
 it.effect("uses thread-not-found only after a projection loads outside the project", () => {
   const projectId = ProjectId.make("project:thread-management:requested");

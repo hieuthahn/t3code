@@ -22,6 +22,7 @@ import { type ReviewCommentContext } from "../../reviewCommentContext";
 import { composerTargetKey } from "../../composerDraftStore";
 import { listContinuationForEnter, listIndentForTab } from "../../composer-list-continuation";
 import { type Dispatch, type RefObject, type SetStateAction, useLayoutEffect, useRef } from "react";
+import { promptSuggestionKeyAction } from "./promptSuggestion";
 
 /**
  * The composer's key handling inside the editor: send shortcuts, the slash/mention menu,
@@ -78,6 +79,9 @@ export function useComposerCommandKey(input: {
     dispatchMode: ComposerDispatchMode,
     submissionIntent: ComposerSubmissionIntent,
   ) => void;
+  /** The ghost-text suggestion the empty composer shows, if any. */
+  readonly promptSuggestion: string | null;
+  readonly dismissPromptSuggestion: (suggestion: string) => void;
 }) {
   const {
     keybindings,
@@ -115,6 +119,8 @@ export function useComposerCommandKey(input: {
     readComposerSnapshot,
     applyPromptReplacement,
     submitComposer,
+    promptSuggestion,
+    dismissPromptSuggestion,
   } = input;
   // Entries are built on the keypress, not per render: the timeline changes
   // on every streamed delta and ArrowUp is rare.
@@ -194,6 +200,15 @@ export function useComposerCommandKey(input: {
     const { trigger } = resolveActiveComposerTrigger();
     const menuIsActive =
       !isLiteralPendingAnswer && (composerMenuOpenRef.current || trigger !== null);
+    const suggestionAction =
+      submissionIntent === null
+        ? promptSuggestionKeyAction({ key, event, suggestion: promptSuggestion, menuIsActive })
+        : null;
+    if (suggestionAction !== null && promptSuggestion !== null) {
+      if (suggestionAction === "accept") replacePromptFromHistory(promptSuggestion);
+      else dismissPromptSuggestion(promptSuggestion);
+      return true;
+    }
     if (key === "Escape") {
       if (!menuIsActive || event.isComposing || event.keyCode === 229) return false;
       dismissComposerTrigger(trigger);

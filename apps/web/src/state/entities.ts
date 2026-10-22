@@ -65,6 +65,9 @@ const EMPTY_CHECKPOINT_SUMMARIES_ATOM = Atom.make<ReadonlyArray<ThreadCheckpoint
 const EMPTY_THREAD_HISTORY_ATOM = Atom.make<ThreadHistoryMeta>(EMPTY_THREAD_HISTORY_META).pipe(
   Atom.withLabel("web-thread-history:empty"),
 );
+const EMPTY_PROMPT_SUGGESTION_ATOM = Atom.make<string | null>(null).pipe(
+  Atom.withLabel("web-thread-prompt-suggestion:empty"),
+);
 
 const activeEnvironmentIdAtom = Atom.make<EnvironmentId | null>(null).pipe(
   Atom.keepAlive,
@@ -170,6 +173,15 @@ export function useThreadStatus(ref: ScopedThreadRef | null): EnvironmentThreadS
 export function useThreadHistory(ref: ScopedThreadRef | null): ThreadHistoryMeta {
   return useAtomValue(
     ref === null ? EMPTY_THREAD_HISTORY_ATOM : environmentThreadDetails.historyAtom(ref),
+  );
+}
+
+/** The predicted next prompt the server sent after the thread's last run. */
+export function useThreadPromptSuggestion(ref: ScopedThreadRef | null): string | null {
+  return useAtomValue(
+    ref === null
+      ? EMPTY_PROMPT_SUGGESTION_ATOM
+      : environmentThreadDetails.promptSuggestionAtom(ref),
   );
 }
 

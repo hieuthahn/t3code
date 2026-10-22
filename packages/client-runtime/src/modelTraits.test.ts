@@ -1,7 +1,11 @@
 import { ProviderDriverKind, type ProviderOptionDescriptor } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { buildTraitsTriggerDisplay } from "./modelTraits.ts";
+import {
+  buildTraitsTriggerDisplay,
+  getPromptControlledTraits,
+  getTraitSelectChange,
+} from "./modelTraits.ts";
 
 const descriptors = (autoEffort: boolean): ReadonlyArray<ProviderOptionDescriptor> => [
   {
@@ -29,5 +33,23 @@ describe("buildTraitsTriggerDisplay", () => {
   it("marks the effort as the Auto fallback only while Auto effort is on", () => {
     expect(label(true)).toBe("Auto · High");
     expect(label(false)).toBe("High");
+  });
+});
+
+describe("getTraitSelectChange", () => {
+  it("turns Auto effort off when an effort is picked by hand", () => {
+    const current = descriptors(true);
+    const effort = current[0];
+    if (effort?.type !== "select") throw new Error("expected the effort select");
+    const change = getTraitSelectChange(
+      { ...getPromptControlledTraits(current, ""), descriptors: current },
+      effort,
+      "",
+      "medium",
+    );
+    expect(change?.modelOptions).toEqual([
+      { id: "effort", value: "medium" },
+      { id: "autoEffort", value: false },
+    ]);
   });
 });

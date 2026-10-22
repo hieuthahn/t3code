@@ -159,6 +159,27 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
         }),
     );
 
+    it.effect.skipIf(!symlinksSupported || process.platform === "win32")(
+      "creates a missing shadow home that only its owner can read",
+      () =>
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const sharedHome = yield* makeTempDir("t3code-codex-shared-");
+          const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+          const shadowHome = path.join(shadowRoot, "work");
+
+          yield* materializeCodexShadowHome(
+            yield* resolveCodexHomeLayout(
+              decodeCodexSettings({ homePath: sharedHome, shadowHomePath: shadowHome }),
+            ),
+          );
+
+          const info = yield* fileSystem.stat(shadowHome);
+          expect(info.mode & 0o777).toBe(0o700);
+        }),
+    );
+
     it.effect.skipIf(!symlinksSupported)(
       "replaces a Codex-created local sqlite maintenance lock with the shared lock",
       () =>

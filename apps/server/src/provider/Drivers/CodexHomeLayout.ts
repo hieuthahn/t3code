@@ -334,24 +334,27 @@ export const materializeCodexShadowHome = Effect.fn("materializeCodexShadowHome"
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
 
-  const makeDirectory = (directoryPath: string) =>
-    fileSystem.makeDirectory(directoryPath, { recursive: true }).pipe(
-      Effect.catchTags({
-        PlatformError: (cause) =>
-          new CodexShadowHomeFileSystemError({
-            sharedHomePath: layout.sharedHomePath,
-            effectiveHomePath,
-            operation: "makeDirectory",
-            path: directoryPath,
-            cause,
-          }),
-      }),
-    );
+  const makeDirectory = (directoryPath: string, mode?: number) =>
+    fileSystem
+      .makeDirectory(directoryPath, { recursive: true, ...(mode === undefined ? {} : { mode }) })
+      .pipe(
+        Effect.catchTags({
+          PlatformError: (cause) =>
+            new CodexShadowHomeFileSystemError({
+              sharedHomePath: layout.sharedHomePath,
+              effectiveHomePath,
+              operation: "makeDirectory",
+              path: directoryPath,
+              cause,
+            }),
+        }),
+      );
 
   yield* Effect.all(
     [
       makeDirectory(layout.sharedHomePath),
-      makeDirectory(effectiveHomePath),
+      // The shadow home holds this account's auth.json.
+      makeDirectory(effectiveHomePath, 0o700),
       ...KNOWN_SHARED_DIRECTORIES.map((directory) =>
         makeDirectory(path.join(layout.sharedHomePath, directory)),
       ),

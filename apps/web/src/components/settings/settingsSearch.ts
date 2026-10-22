@@ -379,6 +379,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["usage limit threshold percent 5 hour weekly early switch account rotate slider"],
   },
   {
+    id: "switch-pinned-accounts",
+    title: "Switch pinned accounts too",
+    to: "/settings/general",
+    searchTerms: ["pinned account manual choice keep switch limit threshold"],
+  },
+  {
     id: "auto-effort-default",
     title: "Auto effort by default",
     to: "/settings/general",

@@ -331,6 +331,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["usage quota rate limit account instance switch rotate claude ask auto"],
   },
   {
+    id: "model-picker-merge-accounts",
+    title: "Merge accounts in the model picker",
+    to: "/settings/general",
+    searchTerms: [
+      "model picker account merge combine duplicate opus sonnet shared one row claude codex",
+    ],
+  },
+  {
     id: "auto-effort-default",
     title: "Auto effort by default",
     to: "/settings/general",

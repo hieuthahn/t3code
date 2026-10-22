@@ -475,6 +475,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.limitedThreadSwitch !== DEFAULT_UNIFIED_SETTINGS.limitedThreadSwitch
       ? ["Switch limited threads"]
       : []),
+    ...(settings.modelPickerMergeAccounts !== DEFAULT_UNIFIED_SETTINGS.modelPickerMergeAccounts
+      ? ["Merge accounts in the model picker"]
+      : []),
     ...(settings.autoEffortDefault !== DEFAULT_UNIFIED_SETTINGS.autoEffortDefault
       ? ["Auto effort by default"]
       : []),
@@ -643,6 +646,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
       limitedThreadSwitch: DEFAULT_UNIFIED_SETTINGS.limitedThreadSwitch,
       autoEffortJudge: DEFAULT_UNIFIED_SETTINGS.autoEffortJudge,
+      modelPickerMergeAccounts: DEFAULT_UNIFIED_SETTINGS.modelPickerMergeAccounts,
       autoEffortDefault: DEFAULT_UNIFIED_SETTINGS.autoEffortDefault,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
@@ -1017,6 +1021,22 @@ export function GeneralSettingsPanel() {
                 ))}
               </SelectPopup>
             </Select>
+          }
+        />
+        <SettingsRow
+          serverScoped
+          {...searchableSetting("model-picker-merge-accounts")}
+          description="Show each model once for accounts that share a history. The thread keeps its account, and a new pick goes to the signed-in account with the most usage left."
+          settingKeys={["modelPickerMergeAccounts"]}
+          control={
+            <ScopedSwitch
+              settingKeys={["modelPickerMergeAccounts"]}
+              checked={settings.modelPickerMergeAccounts}
+              onCheckedChange={(checked) =>
+                updateSettings({ modelPickerMergeAccounts: Boolean(checked) })
+              }
+              aria-label="Merge accounts in the model picker"
+            />
           }
         />
         <SettingsRow

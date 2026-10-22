@@ -276,7 +276,9 @@ function SidebarThreadTooltip({
       >
         {projectDisplayName ? (
           <div className="flex min-w-0 items-center gap-2">
-            {project ? <ProjectFavicon project={project} className="size-3 shrink-0" /> : null}
+            {project ? (
+              <ProjectFavicon project={project} className="size-3 shrink-0" hideUnsetIcon />
+            ) : null}
             <div className="min-w-0 truncate text-foreground/75">{projectDisplayName}</div>
           </div>
         ) : null}
@@ -1121,7 +1123,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                   "opacity-40 grayscale group-focus-within/sidebar-row:opacity-100 group-focus-within/sidebar-row:grayscale-0 group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
               )}
             >
-              {props.project ? <ProjectFavicon project={props.project} className="size-4" /> : null}
+              {props.project ? (
+                <ProjectFavicon project={props.project} className="size-4" hideUnsetIcon />
+              ) : null}
             </span>
             {draftIndicator}
             {title}
@@ -1279,6 +1283,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               {props.project ? (
                 <ProjectFavicon
                   project={props.project}
+                  hideUnsetIcon
                   className={cn(
                     "size-4 shrink-0",
                     // Repeated brand colors outshout titles; color returns on the row in focus.
@@ -1632,6 +1637,7 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
           {props.project ? (
             <ProjectFavicon
               project={props.project}
+              hideUnsetIcon
               className={cn(
                 "size-4 shrink-0 transition-opacity",
                 props.isSettled &&

@@ -226,7 +226,7 @@ describe("ServerLoggerLive", () => {
   describe("startup pairing URL", () => {
     const pairingToken = "PAIRTOKEN7Q4K9";
     const pairingUrl = `http://localhost:3773/pair#token=${pairingToken}`;
-    const announce = announceStartupPairingUrl(pairingUrl).pipe(
+    const announce = announceStartupPairingUrl(pairingUrl, { stdoutIsTerminal: true }).pipe(
       Effect.andThen(logBrowserAutoOpenUnavailable),
     );
 
@@ -244,6 +244,18 @@ describe("ServerLoggerLive", () => {
           Array.isArray(line) ? line.join(" ") : String(line),
         );
         assert.isTrue(printed.some((line) => line.includes(`pairingUrl: ${pairingUrl}`)));
+      }).pipe(Effect.provide(TestConsole.layer)),
+    );
+
+    it.effect("hides the token when stdout is redirected to a file", () =>
+      Effect.gen(function* () {
+        yield* announceStartupPairingUrl(pairingUrl, { stdoutIsTerminal: false });
+        const printed = (yield* TestConsole.logLines)
+          .map((line) => (Array.isArray(line) ? line.join(" ") : String(line)))
+          .join("\n");
+        assert.notInclude(printed, pairingToken);
+        assert.include(printed, "http://localhost:3773/pair#token=<hidden>");
+        assert.include(printed, "t3 pair");
       }).pipe(Effect.provide(TestConsole.layer)),
     );
 

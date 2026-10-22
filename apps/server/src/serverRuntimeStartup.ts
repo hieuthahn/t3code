@@ -346,10 +346,24 @@ const resolveStartupBrowserTarget = Effect.gen(function* () {
 });
 
 /** Prints the one-time admin pairing URL to stdout only; logger records reach trace files and collectors. */
-export const announceStartupPairingUrl = (pairingUrl: string) =>
-  Effect.logInfo("Authentication required. Open T3 Code using the pairing URL.").pipe(
-    Effect.andThen(Console.log(`  pairingUrl: ${pairingUrl}`)),
+export const announceStartupPairingUrl = (
+  pairingUrl: string,
+  options: { readonly stdoutIsTerminal?: boolean } = {},
+) => {
+  const stdoutIsTerminal = options.stdoutIsTerminal ?? process.stdout.isTTY === true;
+  const printed = stdoutIsTerminal
+    ? [`  pairingUrl: ${pairingUrl}`]
+    : [
+        `  pairingUrl: ${hidePairingToken(pairingUrl)}`,
+        "  The token is hidden because stdout is not a terminal. Run `t3 pair` for a new link.",
+      ];
+  return Effect.logInfo("Authentication required. Open T3 Code using the pairing URL.").pipe(
+    Effect.andThen(Effect.forEach(printed, (line) => Console.log(line), { discard: true })),
   );
+};
+
+const hidePairingToken = (pairingUrl: string) =>
+  pairingUrl.replace(/#token=.*$/, "#token=<hidden>");
 
 // Pairing tokens belong only in announceStartupPairingUrl's stdout output.
 export const logBrowserAutoOpenUnavailable = Effect.logInfo("browser auto-open unavailable", {

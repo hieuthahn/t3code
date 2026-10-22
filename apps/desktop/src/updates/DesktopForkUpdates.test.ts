@@ -79,6 +79,25 @@ it.effect("reads the status the updater prints after its log lines", () =>
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
+it.effect("follows the preview track when the updater reports none", () =>
+  Effect.gen(function* () {
+    const { state } = yield* withUpdater(0, JSON.stringify(STATUS), DesktopForkUpdates.getState);
+    assert.equal(state.track, "preview");
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("passes the chosen track and reads it back", () =>
+  Effect.gen(function* () {
+    const { state, record } = yield* withUpdater(
+      0,
+      JSON.stringify({ ...STATUS, track: "stable" }),
+      DesktopForkUpdates.setTrack("stable"),
+    );
+    assert.include(record, "track stable --json");
+    assert.equal(state.track, "stable");
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
 it.effect("runs the updater with a plain environment", () =>
   Effect.gen(function* () {
     const previous = process.env.ELECTRON_RUN_AS_NODE;

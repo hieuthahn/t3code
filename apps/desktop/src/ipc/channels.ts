@@ -30,6 +30,7 @@ export const FORK_UPDATE_GET_STATE_CHANNEL = "desktop:fork-update-get-state";
 export const FORK_UPDATE_CHECK_CHANNEL = "desktop:fork-update-check";
 export const FORK_UPDATE_APPLY_CHANNEL = "desktop:fork-update-apply";
 export const FORK_UPDATE_SET_PAUSED_CHANNEL = "desktop:fork-update-set-paused";
+export const FORK_UPDATE_SET_TRACK_CHANNEL = "desktop:fork-update-set-track";
 export const CLI_COMMAND_GET_STATE_CHANNEL = "desktop:cli-command-get-state";
 export const CLI_COMMAND_INSTALL_CHANNEL = "desktop:cli-command-install";
 export const CLI_COMMAND_UNINSTALL_CHANNEL = "desktop:cli-command-uninstall";

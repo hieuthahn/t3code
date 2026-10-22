@@ -126,7 +126,7 @@ export function useComposerResume(input: ComposerResumeInput) {
         switchToInstanceId === undefined
           ? selectedModelSelection
           : {
-              ...(selectedModelSelection ?? activeThread.modelSelection),
+              ...activeThread.modelSelection,
               instanceId: switchToInstanceId,
             };
       const turnResult = await startThreadTurn({

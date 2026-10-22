@@ -69,7 +69,7 @@ const plan = (input: {
     command: input.command ?? command(),
     thread: input.thread ?? thread,
     providers: [provider(hieu, input.currentPercent), provider(dung, 20)],
-    thresholds: { sessionPercent: 90, weeklyPercent: 90 },
+    thresholdsFor: () => ({ sessionPercent: 90, weeklyPercent: 90 }),
     lastSwitchAtMs: input.lastSwitchAtMs,
     nowMs: NOW,
   });

@@ -1977,8 +1977,11 @@ describe("orchestration v2 provider switching", () => {
         );
         assert.lengthOf(projection.contextHandoffs, 0);
         assert.deepEqual(
-          (yield* Ref.get(capturedTurns)).map((turn) => turn.text),
-          ["First account turn", "Alternate account turn"],
+          (yield* Ref.get(capturedTurns)).map((turn) => [turn.text, turn.nativeThreadHasTurns]),
+          [
+            ["First account turn", false],
+            ["Alternate account turn", true],
+          ],
         );
       }),
     ),

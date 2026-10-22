@@ -124,3 +124,61 @@ export function resolveAcpRegistryWizardNavigation(
     prerequisite: { step: 0, error: validation.selectionError },
   });
 }
+
+const DEFAULT_CODEX_HOME = "~/.codex";
+
+const stringField = (config: Readonly<Record<string, unknown>>, key: string): string => {
+  const value = config[key];
+  return typeof value === "string" ? value.trim() : "";
+};
+
+/**
+ * Give a new Codex account a home of its own: a shadow home over `~/.codex` when it shares
+ * history, else a separate CODEX_HOME. Paths the user typed win.
+ */
+export function resolveCodexAccountConfig(input: {
+  readonly config: Readonly<Record<string, unknown>>;
+  readonly instanceId: string;
+  readonly shareHistory: boolean;
+}): Record<string, unknown> {
+  const { config, instanceId, shareHistory } = input;
+  if (shareHistory) {
+    return stringField(config, "shadowHomePath")
+      ? { ...config }
+      : { ...config, shadowHomePath: `~/.codex-t3/${instanceId}` };
+  }
+  return stringField(config, "homePath")
+    ? { ...config }
+    : { ...config, homePath: `${DEFAULT_CODEX_HOME}-${instanceId}` };
+}
+
+const codexSignInHome = (config: Readonly<Record<string, unknown>>): string =>
+  (
+    stringField(config, "shadowHomePath") ||
+    stringField(config, "homePath") ||
+    DEFAULT_CODEX_HOME
+  ).replace(/\/+$/, "");
+
+/** Name the Codex instance that already signs in from the home this config would use. */
+export function findCodexHomeConflict(input: {
+  readonly config: Readonly<Record<string, unknown>>;
+  readonly instances: Readonly<
+    Record<string, { readonly driver: string; readonly config?: unknown }>
+  >;
+}): string | null {
+  const home = codexSignInHome(input.config);
+  const codexInstances = Object.entries(input.instances).filter(
+    ([, instance]) => instance.driver === "codex",
+  );
+  if (!codexInstances.some(([instanceId]) => instanceId === "codex")) {
+    codexInstances.push(["codex", { driver: "codex", config: {} }]);
+  }
+  const conflict = codexInstances.find(([, instance]) => {
+    const config =
+      typeof instance.config === "object" && instance.config !== null
+        ? (instance.config as Record<string, unknown>)
+        : {};
+    return codexSignInHome(config) === home;
+  });
+  return conflict?.[0] ?? null;
+}

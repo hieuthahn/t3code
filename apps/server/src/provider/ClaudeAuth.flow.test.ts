@@ -6,6 +6,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 
 import { makeClaudeAuth } from "./ClaudeAuth.ts";
 
@@ -53,6 +54,7 @@ const runSignIn = (exitCodeOnCode: number, options: { readonly useHomePath: bool
     );
     assert.equal(waiting.authorizationUrl, AUTHORIZE_URL);
     yield* controller.complete("owner", { flowId: started.flowId!, callbackUrl: "the-code#state" });
+    if (exitCodeOnCode < 0) yield* TestClock.adjust("91 seconds");
     const settled: ProviderAuthState = yield* controller.subscribe("owner").pipe(
       Stream.filter((state) => state.phase === "succeeded" || state.phase === "failed"),
       Stream.runHead,
@@ -76,5 +78,22 @@ it.effect("leaves the default home to the CLI when the instance sets no home pat
   Effect.gen(function* () {
     const { record } = yield* runSignIn(0, { useHomePath: false });
     assert.include(record, "config=\n");
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("reports the CLI's own failure instead of waiting for the timeout", () =>
+  Effect.gen(function* () {
+    const { settled } = yield* runSignIn(1, { useHomePath: true });
+    assert.equal(settled.phase, "failed");
+    assert.include(settled.message ?? "", "status code 400");
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("fails with the CLI's last output when it never exits after the code", () =>
+  Effect.gen(function* () {
+    const { settled } = yield* runSignIn(-1, { useHomePath: true });
+    assert.equal(settled.phase, "failed");
+    assert.include(settled.message ?? "", "did not finish 90 seconds after the code was sent");
+    assert.include(settled.message ?? "", "authorize?<redacted>");
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );

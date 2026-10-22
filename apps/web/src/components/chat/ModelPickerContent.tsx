@@ -1120,7 +1120,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               onOpenProviderSetup={onOpenProviderSetup}
             />
             {groupAccounts.length > 1 && onToggleModel === undefined ? (
-              <div className="flex items-center gap-2 border-t px-2 py-1.5">
+              <div className="flex flex-wrap items-center gap-2 border-t px-2 py-1.5">
                 <span className="text-xs text-muted-foreground">Account</span>
                 <ToggleGroup
                   size="xs"
@@ -1133,8 +1133,13 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                 >
                   <Toggle value="auto">Auto</Toggle>
                   {groupAccounts.map((entry) => (
-                    <Toggle key={entry.instanceId} value={entry.instanceId}>
-                      {entry.displayName}
+                    <Toggle
+                      key={entry.instanceId}
+                      value={entry.instanceId}
+                      title={entry.displayName}
+                      disabled={entry.snapshot?.auth.status === "unauthenticated"}
+                    >
+                      {shortAccountLabel(entry.displayName)}
                     </Toggle>
                   ))}
                 </ToggleGroup>
@@ -1146,3 +1151,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     </TooltipProvider>
   );
 });
+
+/** Shorten "Claude hieu.nguyen@example.com" to "hieu.nguyen" for the account toggle. */
+function shortAccountLabel(displayName: string): string {
+  const lastWord = displayName.trim().split(/\s+/).at(-1) ?? displayName;
+  return lastWord.includes("@") ? lastWord.slice(0, lastWord.indexOf("@")) : displayName;
+}

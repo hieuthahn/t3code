@@ -184,8 +184,7 @@ export class ThreadLaunchService extends Context.Service<
       input: ThreadLaunchPreparationInput,
     ) => Effect.Effect<
       Orchestrator.OrchestratorV2DispatchResult,
-      | Orchestrator.OrchestratorV2Error
-      | ThreadManagement.ThreadManagementProviderInstanceDisabledError
+      ThreadManagement.ThreadManagementDispatchError
     >;
     readonly prepareRun: (input: ThreadLaunchPreparationInput) => Effect.Effect<void>;
   }

@@ -25,6 +25,22 @@ export function isForkUpdateAvailable(check: DesktopForkUpdateCheck): boolean {
   return check.updateAvailable ?? check.newCommits > 0;
 }
 
+export const DesktopForkUpdateGateCheckSchema = Schema.Struct({
+  id: Schema.String,
+  status: Schema.Literals(["pass", "warn", "block"]),
+  summary: Schema.String,
+  details: Schema.Array(Schema.String),
+});
+
+/** The report `t3-security-gate` writes for the upstream changes an update would bring. */
+export const DesktopForkUpdateGateSchema = Schema.Struct({
+  checkedAt: Schema.String,
+  target: Schema.String,
+  verdict: Schema.Literals(["pass", "warn", "block"]),
+  checks: Schema.Array(DesktopForkUpdateGateCheckSchema),
+});
+export type DesktopForkUpdateGate = typeof DesktopForkUpdateGateSchema.Type;
+
 export const DesktopForkUpdateRunSchema = Schema.Struct({
   kind: Schema.String,
   startedAt: Schema.String,
@@ -48,6 +64,7 @@ export const DesktopForkUpdateStateSchema = Schema.Struct({
   applyRunning: Schema.Boolean,
   check: Schema.NullOr(DesktopForkUpdateCheckSchema),
   lastRun: Schema.NullOr(DesktopForkUpdateRunSchema),
+  gate: Schema.optionalKey(Schema.NullOr(DesktopForkUpdateGateSchema)),
   error: Schema.NullOr(Schema.String),
 });
 export type DesktopForkUpdateState = typeof DesktopForkUpdateStateSchema.Type;

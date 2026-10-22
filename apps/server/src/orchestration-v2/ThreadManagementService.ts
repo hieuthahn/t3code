@@ -739,12 +739,13 @@ const make = Effect.gen(function* () {
     }
     return serverSettings.getSettings.pipe(
       Effect.flatMap((current) =>
-        current.earlyAccountSwitch
-          ? orchestrator.getThreadRecords(command.threadId, []).pipe(
+        current.earlyAccountSwitch || current.modelPickerMergeAccounts
+          ? orchestrator.getThreadRecords(command.threadId, ["runs"]).pipe(
               Effect.flatMap((projection) =>
                 earlyAccountSwitch.value.rewrite(command, {
                   id: projection.thread.id,
                   modelSelection: projection.thread.modelSelection,
+                  hasStartedRun: projection.runs.some((run) => run.startedAt !== null),
                 }),
               ),
             )

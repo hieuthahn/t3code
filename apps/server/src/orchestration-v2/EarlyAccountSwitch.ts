@@ -15,27 +15,35 @@ import {
   type AccountChoice,
   type AccountSwitchThresholds,
   chooseAccountForTurn,
+  pickNewThreadAccount,
   resolveAccountSwitchThresholds,
 } from "@t3tools/shared/usageLimitSwitchCandidates";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 
 const THREAD_COOLDOWN_MS = 30 * 60_000;
+const NEW_THREAD_ASSIGNMENT_WINDOW_MS = 60 * 60_000;
 
 type MessageDispatch = Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }>;
 
 export interface EarlySwitchThread {
   readonly id: ThreadId;
   readonly modelSelection: ModelSelection;
+  /** False only before the thread's first run started; new threads spread across the group. */
+  readonly hasStartedRun?: boolean;
 }
 
-/** Tell whether a dispatch is a new user turn on the thread's own account. */
+/**
+ * Tell whether a dispatch is a new user turn on the thread's own account. A launched thread's
+ * first message defers its start until the workspace is ready, so it counts too.
+ */
 export const isEarlySwitchCandidate = (
   command: MessageDispatch,
   thread: EarlySwitchThread,
 ): boolean =>
   command.createdBy === "user" &&
-  command.dispatchMode.type === "start_immediately" &&
+  (command.dispatchMode.type === "start_immediately" ||
+    (command.dispatchMode.type === "defer_start" && thread.hasStartedRun === false)) &&
   command.manualContinuationOfRunId === undefined &&
   command.restartContinuationOfRunId === undefined &&
   command.usageLimitContinuationOfRunId === undefined &&
@@ -50,6 +58,10 @@ export const isEarlySwitchCandidate = (
 export const planEarlySwitch = (input: {
   readonly command: MessageDispatch;
   readonly switchPinned: boolean;
+  /** False keeps pressured accounts; a signed-out account still moves. Defaults to true. */
+  readonly switchNearLimit?: boolean;
+  /** Present for a thread's first turn, when new threads spread across the group. */
+  readonly newThread?: { readonly recentAssignments: ReadonlyMap<ProviderInstanceId, number> };
   readonly thread: EarlySwitchThread;
   readonly providers: ReadonlyArray<ServerProvider>;
   readonly thresholdsFor: (instanceId: ProviderInstanceId) => AccountSwitchThresholds;
@@ -70,6 +82,24 @@ export const planEarlySwitch = (input: {
     return { command: input.command, choice: null };
   }
   const selection = input.command.modelSelection ?? input.thread.modelSelection;
+  if (input.newThread !== undefined) {
+    const instanceId = pickNewThreadAccount({
+      providers: input.providers,
+      proposedInstanceId: selection.instanceId,
+      model: selection.model,
+      nowMs: input.nowMs,
+      thresholdsFor: input.thresholdsFor,
+      recentAssignments: input.newThread.recentAssignments,
+    });
+    const choice: AccountChoice = {
+      instanceId,
+      switched: instanceId !== selection.instanceId,
+      reason: "new-thread",
+    };
+    return choice.switched
+      ? { command: { ...input.command, modelSelection: { ...selection, instanceId } }, choice }
+      : { command: input.command, choice };
+  }
   const choice = chooseAccountForTurn({
     providers: input.providers,
     currentInstanceId: selection.instanceId,
@@ -78,6 +108,9 @@ export const planEarlySwitch = (input: {
     thresholdsFor: input.thresholdsFor,
   });
   if (!choice.switched) return { command: input.command, choice };
+  if (input.switchNearLimit === false && choice.reason !== "current-signed-out") {
+    return { command: input.command, choice: null };
+  }
   return {
     command: { ...input.command, modelSelection: { ...selection, instanceId: choice.instanceId } },
     choice,
@@ -106,18 +139,37 @@ export const make = Effect.gen(function* () {
   const registry = registryOption.value;
   const lastSwitchRef = yield* Ref.make(new Map<ThreadId, number>());
   const unmeasuredLoggedRef = yield* Ref.make(new Set<string>());
+  const newThreadAssignmentsRef = yield* Ref.make<
+    ReadonlyArray<{ readonly instanceId: ProviderInstanceId; readonly atMs: number }>
+  >([]);
   const rewrite = Effect.fn("EarlyAccountSwitch.rewrite")(function* (
     command: MessageDispatch,
     thread: EarlySwitchThread,
   ) {
     const preferences = yield* settings.getSettings;
-    if (!preferences.earlyAccountSwitch || !isEarlySwitchCandidate(command, thread)) {
+    const balanceNewThread = preferences.modelPickerMergeAccounts && thread.hasStartedRun === false;
+    if (
+      !(preferences.earlyAccountSwitch || balanceNewThread) ||
+      !isEarlySwitchCandidate(command, thread)
+    ) {
       return command;
     }
     const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
+    const recentNewThreads = (yield* Ref.get(newThreadAssignmentsRef)).filter(
+      (assignment) => nowMs - assignment.atMs < NEW_THREAD_ASSIGNMENT_WINDOW_MS,
+    );
+    const recentAssignments = new Map<ProviderInstanceId, number>();
+    for (const assignment of recentNewThreads) {
+      recentAssignments.set(
+        assignment.instanceId,
+        (recentAssignments.get(assignment.instanceId) ?? 0) + 1,
+      );
+    }
     const plan = planEarlySwitch({
       command,
       switchPinned: preferences.switchPinnedAccounts,
+      switchNearLimit: preferences.earlyAccountSwitch,
+      ...(balanceNewThread ? { newThread: { recentAssignments } } : {}),
       thread,
       providers: yield* registry.getProviders,
       thresholdsFor: resolveAccountSwitchThresholds({
@@ -131,6 +183,18 @@ export const make = Effect.gen(function* () {
       nowMs,
     });
     const choice = plan.choice;
+    if (choice?.reason === "new-thread") {
+      yield* Ref.set(newThreadAssignmentsRef, [
+        ...recentNewThreads,
+        { instanceId: choice.instanceId, atMs: nowMs },
+      ]);
+      yield* Effect.logInfo("orchestration-v2.early-switch.new-thread", {
+        threadId: thread.id,
+        proposed: thread.modelSelection.instanceId,
+        to: choice.instanceId,
+      });
+      return plan.command;
+    }
     if (choice === null || choice.reason === "under-threshold") return plan.command;
     const from: ProviderInstanceId = thread.modelSelection.instanceId;
     if (!choice.switched) {

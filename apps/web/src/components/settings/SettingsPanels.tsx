@@ -28,6 +28,7 @@ import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
 import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../../branding";
 import { CliCommandSettingsRow } from "./CliCommandSettingsRow";
+import { ForkUpdateSection } from "./ForkUpdateSection";
 import { MobileAppSettingsRow } from "./MobileAppSettingsRow";
 import {
   canCheckForUpdate,
@@ -1948,7 +1949,7 @@ export function GeneralSettingsPanel() {
 
       <SettingsSection id="about" title="About">
         {isElectron || HOSTED_APP_CHANNEL ? (
-          <AboutVersionSection />
+          <ForkUpdateSection fallback={<AboutVersionSection />} />
         ) : (
           <>
             <SettingsRow

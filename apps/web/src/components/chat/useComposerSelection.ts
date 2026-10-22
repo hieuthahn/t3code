@@ -6,6 +6,7 @@ import { useStableCallback } from "../../hooks/useStableCallback";
 import {
   type EnvironmentId,
   type ModelSelection,
+  type ThreadAccountChoice,
   ProviderInstanceId,
   type ServerProvider,
   type ThreadId,
@@ -143,7 +144,7 @@ export function useComposerSelection(input: ComposerSelectionInput) {
   const onProviderModelSelect = (
     instanceId: ProviderInstanceId,
     model: string,
-    options?: { focusComposer?: boolean },
+    options?: { focusComposer?: boolean; accountChoice?: ThreadAccountChoice },
   ) => {
     if (!activeThread) return;
     const entry = providerStatuses.find((snapshot) => snapshot.instanceId === instanceId);
@@ -186,10 +187,14 @@ export function useComposerSelection(input: ComposerSelectionInput) {
     }
     const rememberedOptions =
       useComposerDraftStore.getState().stickyOptionsByModelByProvider[instanceId]?.[resolvedModel];
-    const nextModelSelection: ModelSelection =
+    const stickyModelSelection: ModelSelection =
       rememberedOptions !== undefined && rememberedOptions.length > 0
         ? { instanceId, model: resolvedModel, options: [...rememberedOptions] }
         : { instanceId, model: resolvedModel };
+    const nextModelSelection: ModelSelection =
+      options?.accountChoice === "pinned"
+        ? { ...stickyModelSelection, accountChoice: "pinned" }
+        : stickyModelSelection;
     const modelChangeBlockReason = getStartedThreadModelChangeBlockReason({
       providers: providerStatuses,
       hasStartedSession: activeRuntime !== null,
@@ -212,7 +217,7 @@ export function useComposerSelection(input: ComposerSelectionInput) {
       nextModelSelection,
       { explicit: true, replaceOptions: true },
     );
-    setStickyComposerModelSelection(nextModelSelection);
+    setStickyComposerModelSelection(stickyModelSelection);
     if (options?.focusComposer !== false) scheduleComposerFocus();
   };
   const onProviderModelSelectStable = useStableCallback(onProviderModelSelect);

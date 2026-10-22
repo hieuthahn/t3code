@@ -974,6 +974,19 @@ function normalizeProviderModelOptions(
 
 function normalizeModelSelection(
   value: unknown,
+  legacy?: Parameters<typeof normalizeModelSelectionFields>[1],
+): NormalizedModelSelection | null {
+  const normalized = normalizeModelSelectionFields(value, legacy);
+  const pinned =
+    normalized !== null &&
+    value !== null &&
+    typeof value === "object" &&
+    (value as Record<string, unknown>).accountChoice === "pinned";
+  return pinned ? { ...normalized, accountChoice: "pinned" } : normalized;
+}
+
+function normalizeModelSelectionFields(
+  value: unknown,
   legacy?: {
     provider?: unknown;
     model?: unknown;

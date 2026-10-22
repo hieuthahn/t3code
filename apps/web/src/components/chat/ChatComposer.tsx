@@ -37,6 +37,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  type ThreadAccountChoice,
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -521,7 +522,7 @@ export interface ChatComposerProps {
   onProviderModelSelect: (
     instanceId: ProviderInstanceId,
     model: string,
-    options?: { focusComposer?: boolean },
+    options?: { focusComposer?: boolean; accountChoice?: ThreadAccountChoice },
   ) => void;
   onOpenProviderSetup: (instanceId: ProviderInstanceId) => void;
   getModelDisabledReason: (instanceId: ProviderInstanceId, model: string) => string | null;
@@ -1024,11 +1025,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     provider: selectedProviderStatus,
     interactionMode: requestedInteractionMode,
   });
-  const selectedModelSelection: ModelSelection = createModelSelection(
-    selectedInstanceId,
-    selectedModel,
-    selectedModelOptionsForDispatch,
-  );
+  const selectedAccountPinned =
+    (
+      composerDraft.modelSelectionByProvider[selectedInstanceId] ??
+      (activeThreadModelSelection?.instanceId === selectedInstanceId
+        ? activeThreadModelSelection
+        : undefined)
+    )?.accountChoice === "pinned";
+  const selectedModelSelection: ModelSelection = {
+    ...createModelSelection(selectedInstanceId, selectedModel, selectedModelOptionsForDispatch),
+    ...(selectedAccountPinned ? { accountChoice: "pinned" as const } : {}),
+  };
   const selectedModelForPicker = selectedModel;
   const modelOptionsByInstance = new Map<ProviderInstanceId, ReadonlyArray<AppModelOption>>();
   for (const entry of providerInstanceEntries) {

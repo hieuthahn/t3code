@@ -223,7 +223,6 @@ function ModelPickerProviderNotices({
               <p
                 key={entry.instanceId}
                 data-testid="model-picker-setup-line"
-                title={modelPickerSetupSummary(entry)}
                 className="flex min-w-0 items-center gap-1.5 py-0.5 text-xs leading-snug text-muted-foreground"
               >
                 <span className="min-w-0 truncate">{modelPickerSetupSummary(entry)}</span>

@@ -187,7 +187,7 @@ describe("AutoEffortService", () => {
       Effect.gen(function* () {
         const resolution = yield* service.resolve(request());
         expect(effortOf(resolution)).toBe("high");
-        expect(resolution.notice).toBe("Auto effort: high · big job");
+        expect(resolution.notice).toBe("Auto effort: high · by Haiku · big job");
         const asked = yield* Ref.get(haikuQuestions);
         expect(asked.map((entry) => entry.instanceId)).toEqual([CLAUDE]);
         expect(asked[0]?.question).toContain("Next message:\nreview the whole repo");
@@ -229,13 +229,14 @@ describe("AutoEffortService", () => {
     () =>
       run({ judge: "haiku" }, ({ service, haikuQuestions }) =>
         Effect.gen(function* () {
-          expect(effortOf(yield* service.resolve(request({ text: "use max effort here" })))).toBe(
-            "max",
-          );
+          const asked = yield* service.resolve(request({ text: "use max effort here" }));
+          expect(effortOf(asked)).toBe("max");
+          expect(asked.notice).toBe("Auto effort: max · as asked");
           const followUp = yield* service.resolve(
             request({ text: "ok", previousAssistantText: "Done, all tests pass." }),
           );
           expect(effortOf(followUp)).toBe("max");
+          expect(followUp.notice).toBe("Auto effort: max · kept for a follow-up");
           expect(yield* Ref.get(haikuQuestions)).toEqual([]);
         }),
       ),
@@ -264,7 +265,7 @@ describe("AutoEffortService", () => {
         Effect.gen(function* () {
           const resolution = yield* service.resolve(request({ text: "what does this flag do?" }));
           expect(effortOf(resolution)).toBe("low");
-          expect(resolution.notice).toBe("Auto effort: low · 92% sure");
+          expect(resolution.notice).toBe("Auto effort: low · by Jev · 92% sure");
           expect(yield* Ref.get(jevAuthorization)).toEqual(["Bearer ts_test"]);
           expect(yield* Ref.get(haikuQuestions)).toEqual([]);
         }),

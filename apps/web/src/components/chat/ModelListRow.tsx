@@ -27,8 +27,8 @@ export const ModelListRow = memo(function ModelListRow(props: {
   instanceId: ProviderInstanceId;
   driverKind: ProviderDriverKind;
   providerDisplayName: string;
-  /** Accounts a merged row stands for; the row runs on providerDisplayName's account. */
-  accountCount?: number | undefined;
+  /** Name shown instead of the account when the row stands for a group of accounts. */
+  accountGroupName?: string | undefined;
   providerAccentColor?: string | undefined;
   acpRegistryAgentId?: string | undefined;
   acpRegistryIconUrl?: string | undefined;
@@ -51,11 +51,10 @@ export const ModelListRow = memo(function ModelListRow(props: {
     shortName: props.shortName,
     subProvider: props.subProvider,
   };
-  const accountLabel = getProviderRowLabel(props.providerDisplayName, props.subProvider);
-  const providerLabel =
-    props.accountCount !== undefined && props.accountCount > 1
-      ? `${accountLabel} · ${props.accountCount} accounts`
-      : accountLabel;
+  const providerLabel = getProviderRowLabel(
+    props.accountGroupName ?? props.providerDisplayName,
+    props.subProvider,
+  );
 
   const row = (
     <ComboboxItem
@@ -103,7 +102,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
               className="size-3"
               iconClassName="size-3"
             />
-            <span className="truncate text-xs font-normal leading-snug text-muted-foreground/70">
+            <span className="truncate text-xs font-normal leading-snug text-muted-foreground">
               {providerLabel}
             </span>
           </div>

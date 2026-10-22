@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   mergeModelPickerAccountModels,
   mergeModelPickerAccountTabs,
+  resolveModelPickerAccountAction,
   sameAccountGroup,
 } from "./modelPickerAccountGroups";
 
@@ -109,5 +110,49 @@ describe("sameAccountGroup", () => {
     expect(sameAccountGroup(entry("hieu"), entry("work", "claude:home:/work"))).toBe(false);
     expect(sameAccountGroup(entry("solo", null), entry("solo", null))).toBe(true);
     expect(sameAccountGroup(entry("a", null), entry("b", null))).toBe(false);
+  });
+});
+
+describe("resolveModelPickerAccountAction", () => {
+  const members = [id("hieu"), id("dung")];
+  const resolve = (accountPick: string, additive: boolean, canToggle: boolean) =>
+    resolveModelPickerAccountAction({
+      instanceId: id("hieu"),
+      memberInstanceIds: members,
+      accountPick: accountPick === "auto" ? "auto" : id(accountPick),
+      additive,
+      canToggle,
+    });
+
+  it("pins the picked account even while several models can be selected", () => {
+    expect(resolve("dung", false, true)).toEqual({
+      kind: "select",
+      instanceId: id("dung"),
+      accountChoice: "pinned",
+    });
+  });
+
+  it("adds the picked account's model when the click adds to the selection", () => {
+    expect(resolve("dung", true, true)).toEqual({ kind: "toggle", instanceId: id("dung") });
+  });
+
+  it("keeps Auto on the row's account", () => {
+    expect(resolve("auto", false, true)).toEqual({
+      kind: "select",
+      instanceId: id("hieu"),
+      accountChoice: "auto",
+    });
+  });
+
+  it("ignores a picked account that does not offer the model", () => {
+    expect(resolve("work", false, false)).toEqual({
+      kind: "select",
+      instanceId: id("hieu"),
+      accountChoice: "auto",
+    });
+  });
+
+  it("selects instead of toggling when the picker takes one model", () => {
+    expect(resolve("dung", true, false).kind).toBe("select");
   });
 });

@@ -54,6 +54,8 @@ export interface ProviderInstance {
   readonly textGeneration: ProviderTextGeneration;
   /** Asks this account's quick judge model a question; none when it could not answer. */
   readonly judgeEffort?: (question: string) => Effect.Effect<Option.Option<string>>;
+  /** Asks this account's quick model for the user's likely next prompt; none when it could not answer. */
+  readonly suggestNextPrompt?: (question: string) => Effect.Effect<Option.Option<string>>;
   readonly auth?: ProviderAuthController;
   readonly acpSessionManagement?: {
     readonly listSessions: (input: {

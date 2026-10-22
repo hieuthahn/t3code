@@ -1353,8 +1353,15 @@ export function makeClaudeQueryOptions(input: {
   readonly appendSystemPromptFileText?: string;
   // Flag settings, because a user's settings.json env beats the process env in Claude Code.
   readonly toolSearchOverride?: "true";
+  readonly promptSuggestions?: boolean;
 }): ClaudeAgentSdkQueryOptions {
   const compiledSelection = compileClaudeModelSelection(input.modelSelection);
+  // Without the variable Claude Code drops suggestions near the usage limit and after
+  // a streak of unused ones, which a composer that shows every suggestion never reports.
+  const environment =
+    input.promptSuggestions === true
+      ? { ...(input.environment ?? process.env), CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: "true" }
+      : input.environment;
   const {
     "permission-mode": launchArgPermissionMode,
     "dangerously-skip-permissions": launchArgSkipPermissions,
@@ -1413,6 +1420,7 @@ export function makeClaudeQueryOptions(input: {
         ? "bypassPermissions"
         : (input.permissionMode ?? "default")),
     includePartialMessages: true,
+    ...(input.promptSuggestions === true ? { promptSuggestions: true } : {}),
     ...(compiledSelection.effort === undefined
       ? {}
       : {
@@ -1447,7 +1455,7 @@ export function makeClaudeQueryOptions(input: {
     ...(input.settings?.binaryPath
       ? { pathToClaudeCodeExecutable: input.settings.binaryPath }
       : {}),
-    ...(input.environment === undefined ? {} : { env: input.environment }),
+    ...(environment === undefined ? {} : { env: environment }),
     ...(input.mcpServers === undefined ? {} : { mcpServers: input.mcpServers }),
     systemPrompt: {
       type: "preset" as const,
@@ -7784,6 +7792,19 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               current.has(message.task_id) ? current : new Set(current).add(message.task_id),
             );
           }
+          if (message.type === "prompt_suggestion") {
+            // It follows the turn's result; once the next turn is running it is stale.
+            const threadId = liveQuery.lastTurn?.input.threadId;
+            if (threadId !== undefined && (yield* Ref.get(activeTurn)) === null) {
+              yield* emitProviderEvent({
+                type: "prompt_suggestion.updated",
+                driver: CLAUDE_PROVIDER,
+                threadId,
+                suggestion: message.suggestion,
+              });
+            }
+            return;
+          }
           if (message.type === "rate_limit_event") {
             const rateLimitInfo = message.rate_limit_info;
             if (!rateLimitInfo) return;
@@ -9670,6 +9691,14 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             supportedDialogKinds: ["resume_return"],
             ...(appendSystemPromptFileText === undefined ? {} : { appendSystemPromptFileText }),
             ...(toolSearchOverride === undefined ? {} : { toolSearchOverride }),
+            promptSuggestions:
+              turnInput.appThread.lineage.relationshipToParent !== "subagent" &&
+              (Option.isSome(serverSettings)
+                ? yield* serverSettings.value.getSettings.pipe(
+                    Effect.map((settings) => settings.promptSuggestions),
+                    Effect.orElseSucceed(() => true),
+                  )
+                : true),
           });
           const querySession = yield* queryRunner
             .open({

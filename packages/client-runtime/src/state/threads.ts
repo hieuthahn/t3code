@@ -596,6 +596,14 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       return;
     }
 
+    if (item.kind === "prompt-suggestion") {
+      yield* SubscriptionRef.update(state, (current) => ({
+        ...current,
+        promptSuggestion: item.suggestion,
+      }));
+      return;
+    }
+
     if (item.kind === "snapshot") {
       yield* SubscriptionRef.set(lastSequence, item.snapshotSequence);
       const hasProgressiveHistory =
@@ -960,6 +968,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           threadId,
           ...(canResume ? { afterSequence: sequence } : {}),
           ...(supportsCompletionMarker ? { requestCompletionMarker: true as const } : {}),
+          acceptPromptSuggestions: true as const,
           ...(acceptBoundedSnapshot
             ? {
                 acceptBoundedSnapshot: true as const,

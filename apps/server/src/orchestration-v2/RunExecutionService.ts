@@ -32,6 +32,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
@@ -50,6 +51,7 @@ import {
   makeProviderFailure,
   makeProviderFailureTurnItem,
 } from "@t3tools/provider-core/server/failure";
+import * as PromptSuggestionHub from "./PromptSuggestionHub.ts";
 import * as RunFinalizationService from "./RunFinalizationService.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 
@@ -507,7 +509,8 @@ export function routeProviderEvent(
         state,
       ];
     case "command_output.delta":
-      // The session manager hands live output to the command output hub; runs never see it.
+    case "prompt_suggestion.updated":
+      // The session manager hands these to their hubs; runs never see them.
       return [false, state];
     case "turn.terminal":
       return event.providerTurnId === state.rootProviderTurnId
@@ -608,6 +611,7 @@ export const layer: Layer.Layer<
     const mcpAppModelContext = yield* McpAppModelContext.McpAppModelContext;
     const turnItemPositions = yield* TurnItemPositionStore.TurnItemPositionStoreV2;
     const finalizationObserver = yield* RunFinalizationService.RunFinalizationObserver;
+    const promptSuggestions = yield* Effect.serviceOption(PromptSuggestionHub.PromptSuggestionHub);
 
     const writeFinalRunEvents = Effect.fn("RunExecutionService.writeFinalRunEvents")(
       function* (input: {
@@ -878,6 +882,10 @@ export const layer: Layer.Layer<
           scheduled: input.message.scheduledTaskId !== undefined,
           subagent: input.appThread.lineage.relationshipToParent === "subagent",
         };
+        const offersSuggestions =
+          Option.isSome(promptSuggestions) &&
+          input.appThread.lineage.relationshipToParent !== "subagent";
+        if (offersSuggestions) yield* promptSuggestions.value.clear(input.run.threadId);
         // Startup failure and stream shutdown can report the same attempt.
         const refreshAfterTurn = yield* Effect.cached(
           finalizationObserver.refreshAfterTurn(input.appThread.projectId).pipe(
@@ -1081,6 +1089,16 @@ export const layer: Layer.Layer<
             yield* Ref.set(openRunOwnedSubagents, emptyOpenRunOwnedSubagentProjection());
           }
           yield* Ref.set(rootRunFinalized, true);
+          if (offersSuggestions && terminal.status === "completed") {
+            yield* Effect.forkIn(
+              promptSuggestions.value.suggestAfterRun({
+                threadId: input.run.threadId,
+                runId: input.run.id,
+                driver: input.providerThread.driver,
+              }),
+              scope,
+            );
+          }
         });
         // Runs for every provider event, including streamed text updates; avoid a per-event span.
         const trackChildLifecycle = Effect.fnUntraced(function* (

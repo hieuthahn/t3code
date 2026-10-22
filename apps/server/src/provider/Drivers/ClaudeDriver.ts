@@ -13,6 +13,7 @@ import { ChildProcessSpawner } from "effect/process";
 
 import { makeClaudeTextGeneration } from "../../textGeneration/ClaudeTextGeneration.ts";
 import { makeClaudeEffortJudge } from "../../autoEffort/ClaudeEffortJudge.ts";
+import { SUGGESTION_SYSTEM } from "../../orchestration-v2/promptSuggestion.ts";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import * as ServerConfig from "../../config.ts";
@@ -213,6 +214,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       modelCatalog,
     );
     const effortJudge = yield* makeClaudeEffortJudge(effectiveConfig, processEnv);
+    const promptSuggester = yield* makeClaudeEffortJudge(effectiveConfig, processEnv, {
+      systemPrompt: SUGGESTION_SYSTEM,
+      warmAtStart: false,
+    });
 
     // Per-instance capabilities cache: keyed on binary + resolved HOME so
     // account-specific probes never share auth metadata across instances.
@@ -438,6 +443,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       orchestrationAdapter,
       textGeneration,
       judgeEffort: effortJudge.ask,
+      suggestNextPrompt: promptSuggester.ask,
       consumeResetCredit,
     } satisfies ProviderInstance;
   }),

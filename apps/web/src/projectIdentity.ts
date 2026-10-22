@@ -1,5 +1,7 @@
 import { PROJECT_ICON_COLORS } from "./projectIconColors";
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { ProjectIconColor } from "@t3tools/contracts";
+import { isProjectFaviconFallbackUrl } from "@t3tools/shared/projectFavicon";
 
 export interface ProjectIdentity {
   readonly monogram: string;
@@ -38,4 +40,12 @@ export function deriveProjectIdentity(projectName: string): ProjectIdentity {
     monogram: projectMonogram(projectName),
     color: projectColor(projectName),
   };
+}
+
+/** True when a project shows a chosen icon or a favicon from its folder rather than initials from its name. */
+export function hasExplicitProjectIcon(
+  projectIcon: EnvironmentProject["projectIcon"] | undefined,
+  faviconSrc: string | null | undefined,
+): boolean {
+  return projectIcon != null || (!!faviconSrc && !isProjectFaviconFallbackUrl(faviconSrc));
 }

@@ -21,6 +21,7 @@ import {
   ThreadId,
   TurnItemId,
   ProviderDriverKind,
+  type ThreadAccountChoice,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -1207,7 +1208,7 @@ describe("orchestration v2 provider switching", () => {
           const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
           const runToEnd = Effect.fn("runToEnd")(function* (
             ordinal: number,
-            modelSelection: typeof CLAUDE_MODEL_SELECTION,
+            modelSelection: typeof CLAUDE_MODEL_SELECTION & { accountChoice?: ThreadAccountChoice },
           ) {
             yield* orchestrator.dispatch({
               type: "message.dispatch",

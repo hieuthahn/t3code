@@ -1116,17 +1116,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             }
           >
             {accessibleTitle}
-            <span
-              className={cn(
-                "flex shrink-0 items-center transition-opacity",
-                (!props.isActive || variantAction === "unsettle") &&
-                  "opacity-40 grayscale group-focus-within/sidebar-row:opacity-100 group-focus-within/sidebar-row:grayscale-0 group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
-              )}
-            >
-              {props.project ? (
-                <ProjectFavicon project={props.project} className="size-4" hideUnsetIcon />
-              ) : null}
-            </span>
             {draftIndicator}
             {title}
             {pinIndicator}
@@ -1137,6 +1126,17 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               </span>
             ) : null}
             {prBadge}
+            <span
+              className={cn(
+                "flex shrink-0 items-center transition-opacity empty:hidden",
+                (!props.isActive || variantAction === "unsettle") &&
+                  "opacity-40 grayscale group-focus-within/sidebar-row:opacity-100 group-focus-within/sidebar-row:grayscale-0 group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
+              )}
+            >
+              {props.project ? (
+                <ProjectFavicon project={props.project} className="size-4" hideUnsetIcon />
+              ) : null}
+            </span>
             {sortable?.isDragging ? (
               dragDestination
             ) : (
@@ -1634,19 +1634,6 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
             />
           }
         >
-          {props.project ? (
-            <ProjectFavicon
-              project={props.project}
-              hideUnsetIcon
-              className={cn(
-                "size-4 shrink-0 transition-opacity",
-                props.isSettled &&
-                  !props.isRouteActive &&
-                  !props.isHighlighted &&
-                  "opacity-40 grayscale group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
-              )}
-            />
-          ) : null}
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="flex min-w-0 items-center gap-2.5">
               <span
@@ -1669,6 +1656,19 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
                   settled={props.isSettled}
                 />
               </span>
+              {props.project ? (
+                <ProjectFavicon
+                  project={props.project}
+                  hideUnsetIcon
+                  className={cn(
+                    "size-4 shrink-0 transition-opacity",
+                    props.isSettled &&
+                      !props.isRouteActive &&
+                      !props.isHighlighted &&
+                      "opacity-40 grayscale group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
+                  )}
+                />
+              ) : null}
               <span className="w-8 shrink-0 text-right text-xs text-muted-foreground/55 tabular-nums">
                 <RelativeTimeLabel timestamp={threadTimeTimestamp(thread)} />
               </span>

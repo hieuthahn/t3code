@@ -29,6 +29,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     pid: process.pid,
     noPersistence: args.includes("--no-session-persistence"),
     judgePrompt: args[args.indexOf("--system-prompt") + 1]?.startsWith("You choose the reasoning effort"),
+    systemPrompt: args[args.indexOf("--system-prompt") + 1],
   };
   process.stdout.write(JSON.stringify({ type: "system", subtype: "init" }) + "\\n");
   process.stdout.write(
@@ -108,6 +109,32 @@ describe("makeClaudeEffortJudge", () => {
       const reply = yield* judge.ask("rename x");
 
       expect(JSON.parse(Option.getOrThrow(reply))).toMatchObject({ question: "rename x" });
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.live("waits for the first question before starting a pool that is not warmed at start", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-effort-judge-test-" });
+      const accountDir = path.join(dir, "account-hieu");
+      yield* fs.makeDirectory(accountDir);
+      const binary = writeFakeCli({ directory: dir, name: "claude", source: FAKE_JUDGE });
+      const suggester = yield* makeClaudeEffortJudge(
+        decodeClaudeSettings({ binaryPath: binary, homePath: accountDir }),
+        undefined,
+        { systemPrompt: "Predict the next prompt.", warmAtStart: false },
+      );
+
+      expect(yield* fs.exists(path.join(accountDir, "judge-starts"))).toBe(false);
+      expect(Option.isNone(yield* suggester.ask("cold"))).toBe(true);
+      yield* suggester.prewarm;
+      const reply = yield* suggester.ask("run the tests?");
+
+      expect(JSON.parse(Option.getOrThrow(reply))).toMatchObject({
+        question: "run the tests?",
+        systemPrompt: "Predict the next prompt.",
+      });
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 

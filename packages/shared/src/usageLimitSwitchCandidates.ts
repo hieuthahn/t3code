@@ -121,6 +121,7 @@ export type AccountChoiceReason =
   | "under-threshold"
   | "current-unmeasured"
   | "current-unknown"
+  | "current-signed-out"
   | "no-peer-with-headroom"
   | "near-limit";
 
@@ -172,6 +173,20 @@ export const chooseAccountForTurn = (input: {
     (provider) => provider.instanceId === input.currentInstanceId,
   );
   if (current === undefined) return stay("current-unknown");
+  if (current.auth.status !== "authenticated") {
+    const target = rankUsageLimitSwitchCandidates({
+      providers: input.providers,
+      currentInstanceId: input.currentInstanceId,
+      nowMs: input.nowMs,
+      model: input.model,
+      ...(input.recentAssignments === undefined
+        ? {}
+        : { recentAssignments: input.recentAssignments }),
+    })[0];
+    return target === undefined
+      ? stay("current-signed-out")
+      : { instanceId: target.instanceId, switched: true, reason: "current-signed-out", target };
+  }
   const currentWindows = liveWindows(current, input.nowMs);
   if (currentWindows === undefined) return stay("current-unmeasured");
   const currentThresholds = input.thresholdsFor(input.currentInstanceId);
@@ -235,6 +250,57 @@ export const pinnedAccountWarning = (
   return choice.target === undefined
     ? { pressure: choice.pressure }
     : { pressure: choice.pressure, target: choice.target };
+};
+
+/**
+ * Pick the account a new thread starts on: the signed-in member of the proposed account's group
+ * with the most headroom under its own thresholds, after a penalty for each recent assignment.
+ */
+export const pickNewThreadAccount = (input: {
+  readonly providers: ReadonlyArray<ServerProvider>;
+  readonly proposedInstanceId: ProviderInstanceId;
+  readonly model: string;
+  readonly nowMs: number;
+  readonly thresholdsFor: (instanceId: ProviderInstanceId) => AccountSwitchThresholds;
+  readonly recentAssignments: ReadonlyMap<ProviderInstanceId, number>;
+}): ProviderInstanceId => {
+  const proposed = input.providers.find(
+    (provider) => provider.instanceId === input.proposedInstanceId,
+  );
+  const groupKey = proposed?.continuation?.groupKey;
+  if (proposed === undefined || groupKey === undefined) return input.proposedInstanceId;
+  const scored = input.providers
+    .filter(
+      (provider) =>
+        provider.driver === proposed.driver &&
+        provider.continuation?.groupKey === groupKey &&
+        canTakeOver(provider, input.model),
+    )
+    .flatMap((provider) => {
+      const windows = liveWindows(provider, input.nowMs);
+      if (windows === undefined) return [];
+      const own = input.thresholdsFor(provider.instanceId);
+      const headroom = Math.min(
+        FULL_PERCENT,
+        ...windows.map((window) => thresholdFor(window.kind, own) - window.usedPercent),
+      );
+      const recent = input.recentAssignments.get(provider.instanceId) ?? 0;
+      return [
+        {
+          instanceId: provider.instanceId,
+          score: headroom - recent * ASSIGNMENT_WEIGHT_PERCENT,
+          recent,
+        },
+      ];
+    })
+    .sort(
+      (left, right) =>
+        right.score - left.score ||
+        left.recent - right.recent ||
+        Number(right.instanceId === input.proposedInstanceId) -
+          Number(left.instanceId === input.proposedInstanceId),
+    );
+  return scored[0]?.instanceId ?? input.proposedInstanceId;
 };
 
 /**

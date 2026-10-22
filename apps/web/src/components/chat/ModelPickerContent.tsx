@@ -22,7 +22,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { ChevronRightIcon } from "lucide-react";
+import { ChevronRightIcon, ListChecksIcon } from "lucide-react";
 import { ModelListRow } from "./ModelListRow";
 import { ModelPickerSidebar } from "./ModelPickerSidebar";
 import { getProviderStatusMessage, hasProviderSetup } from "./ProviderStatusBanner";
@@ -63,10 +63,12 @@ import {
   sameAccountGroup,
   shortAccountLabels,
 } from "./modelPickerAccountGroups";
+import { modelRowClickIntent } from "./modelPickerMultiple";
 import { cn } from "~/lib/utils";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import { TooltipProvider } from "../ui/tooltip";
 import { InlineButton } from "../ui/button";
+import { Toggle as ToggleButton } from "../ui/toggle";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import {
   modelPickerSetupSummary,
@@ -390,6 +392,8 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   model: string;
   selectedModels?: ReadonlyArray<{ instanceId: ProviderInstanceId; model: string }>;
   onToggleModel?: (instanceId: ProviderInstanceId, model: string) => void;
+  multiSelectMode?: boolean;
+  onMultiSelectModeChange?: (enabled: boolean) => void;
   lockedProvider: ProviderDriverKind | null;
   lockedContinuationGroupKey?: string | null;
   instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
@@ -493,6 +497,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const [searchHeight, setSearchHeight] = useState(0);
   const toggleFavorite = useToggleEnvironmentModelFavorite(props.environmentId);
   const mergeAccounts = useModelPickerMergeAccounts(props.environmentId);
+  const multiSelectMode = onToggleModel !== undefined && props.multiSelectMode === true;
   const activeGroupKey = activeEntry?.continuationGroupKey;
   const groupAccounts =
     mergeAccounts && activeGroupKey !== undefined
@@ -546,8 +551,13 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const handleModelSelect = (
     modelSlug: string,
     instanceId: ProviderInstanceId,
-    additive = false,
+    shiftKey = false,
   ) => {
+    const { additive, entersMode } = modelRowClickIntent({
+      shiftKey,
+      multiSelectMode: props.multiSelectMode === true,
+      canToggle: onToggleModel !== undefined,
+    });
     if (getModelDisabledReason?.(instanceId, modelSlug)) {
       return;
     }
@@ -569,6 +579,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         additive,
         canToggle: onToggleModel !== undefined,
       });
+      if (entersMode) props.onMultiSelectModeChange?.(true);
       if (action.kind === "toggle") onToggleModel?.(action.instanceId, resolvedModel);
       else onInstanceModelChange(action.instanceId, resolvedModel, action.accountChoice);
     }
@@ -1096,7 +1107,8 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                         ? selectedModelKeySet.has(modelKey)
                         : modelKey === activeModelKey
                     }
-                    showSelection={selectedModelKeys !== undefined}
+                    showSelection={selectedModelKeys !== undefined || multiSelectMode}
+                    selectionStyle={multiSelectMode ? "checkbox" : "check"}
                     showProvider
                     preferShortName={!isLocked}
                     useTriggerLabel={false}
@@ -1121,31 +1133,48 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               onRequestClose={onRequestClose}
               onOpenProviderSetup={onOpenProviderSetup}
             />
-            {groupAccounts.length > 1 ? (
-              <div className="flex items-center gap-2 border-t px-2 py-1.5">
-                <span className="text-xs text-muted-foreground">Account</span>
-                <ToggleGroup
-                  size="xs"
-                  className="min-w-0 flex-wrap"
-                  aria-label="Account for this thread"
-                  value={[accountPick]}
-                  onValueChange={(next) => {
-                    const value = next[0];
-                    if (value !== undefined) setAccountPick(value as ProviderInstanceId | "auto");
-                  }}
-                >
-                  <Toggle value="auto">Auto</Toggle>
-                  {groupAccounts.map((entry, index) => (
-                    <Toggle
-                      key={entry.instanceId}
-                      value={entry.instanceId}
-                      title={entry.displayName}
-                      disabled={entry.snapshot?.auth.status === "unauthenticated"}
+            {groupAccounts.length > 1 || props.onMultiSelectModeChange ? (
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t px-2 py-1.5">
+                {groupAccounts.length > 1 ? (
+                  <>
+                    <span className="text-xs text-muted-foreground">Account</span>
+                    <ToggleGroup
+                      size="xs"
+                      className="min-w-0 flex-wrap"
+                      aria-label="Account for this thread"
+                      value={[accountPick]}
+                      onValueChange={(next) => {
+                        const value = next[0];
+                        if (value !== undefined)
+                          setAccountPick(value as ProviderInstanceId | "auto");
+                      }}
                     >
-                      {groupAccountLabels[index]}
-                    </Toggle>
-                  ))}
-                </ToggleGroup>
+                      <Toggle value="auto">Auto</Toggle>
+                      {groupAccounts.map((entry, index) => (
+                        <Toggle
+                          key={entry.instanceId}
+                          value={entry.instanceId}
+                          title={entry.displayName}
+                          disabled={entry.snapshot?.auth.status === "unauthenticated"}
+                        >
+                          {groupAccountLabels[index]}
+                        </Toggle>
+                      ))}
+                    </ToggleGroup>
+                  </>
+                ) : null}
+                {props.onMultiSelectModeChange ? (
+                  <ToggleButton
+                    size="xs"
+                    variant="outline"
+                    className="ml-auto"
+                    pressed={multiSelectMode}
+                    onPressedChange={props.onMultiSelectModeChange}
+                  >
+                    <ListChecksIcon aria-hidden="true" />
+                    Multiple models
+                  </ToggleButton>
+                ) : null}
               </div>
             ) : null}
           </div>

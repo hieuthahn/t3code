@@ -57,6 +57,7 @@ import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import { DispatchModeLimit, exceededDispatchModeLimit } from "./DispatchModeLimit.ts";
 import { projectTurnItemForDetail } from "./WireProjection.ts";
 import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
+import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 
 export type ThreadManagementSendMode = "auto" | "queue" | "steer" | "restart";
@@ -332,6 +333,17 @@ export class ThreadManagementBackgroundWaitError extends Schema.TaggedError<Thre
   }
 }
 
+export class ThreadManagementProviderInstanceSignedOutError extends Schema.TaggedError<ThreadManagementProviderInstanceSignedOutError>()(
+  "ThreadManagementProviderInstanceSignedOutError",
+  {
+    instanceId: ProviderInstanceId,
+  },
+) {
+  override get message(): string {
+    return `Provider instance "${this.instanceId}" is signed out. Sign it in or pick another account, then send again.`;
+  }
+}
+
 export const ThreadManagementError = Schema.Union([
   ThreadManagementThreadNotFoundError,
   ThreadManagementRunNotFoundError,
@@ -342,10 +354,16 @@ export const ThreadManagementError = Schema.Union([
   ThreadManagementProjectThreadsListError,
   ThreadManagementDurableRunProjectionError,
   ThreadManagementProviderInstanceDisabledError,
+  ThreadManagementProviderInstanceSignedOutError,
 ]);
 export type ThreadManagementError = typeof ThreadManagementError.Type;
 
 type ThreadManagementFailure = ThreadManagementError | Orchestrator.OrchestratorV2Error;
+
+export type ThreadManagementDispatchError =
+  | Orchestrator.OrchestratorV2Error
+  | ThreadManagementProviderInstanceDisabledError
+  | ThreadManagementProviderInstanceSignedOutError;
 
 export interface ThreadManagementServiceShape {
   readonly searchThreadStream: (
@@ -359,10 +377,7 @@ export interface ThreadManagementServiceShape {
   ) => Effect.Effect<void, LegacyV1ThreadImporter.LegacyV1ThreadImportError>;
   readonly dispatch: (
     command: OrchestrationV2ServerCommand,
-  ) => Effect.Effect<
-    Orchestrator.OrchestratorV2DispatchResult,
-    Orchestrator.OrchestratorV2Error | ThreadManagementProviderInstanceDisabledError
-  >;
+  ) => Effect.Effect<Orchestrator.OrchestratorV2DispatchResult, ThreadManagementDispatchError>;
   readonly getThreadHistoryPage: Orchestrator.OrchestratorV2["Service"]["getThreadHistoryPage"];
   readonly getTimelinePage: Orchestrator.OrchestratorV2["Service"]["getTimelinePage"];
   readonly getMessageCount: Orchestrator.OrchestratorV2["Service"]["getMessageCount"];
@@ -442,7 +457,7 @@ export interface ThreadManagementServiceShape {
     readonly byOwnAgent: boolean;
   }) => Effect.Effect<
     { readonly sequence: number } | { readonly settlesWhenTurnEnds: true },
-    Orchestrator.OrchestratorV2Error | ThreadManagementProviderInstanceDisabledError
+    ThreadManagementDispatchError
   >;
   readonly interruptThread: (
     input: ThreadManagementInterruptInput,
@@ -462,10 +477,7 @@ export interface ThreadManagementServiceShape {
     readonly threadId: ThreadId;
     readonly commandId: CommandId;
     readonly reason?: string | undefined;
-  }) => Effect.Effect<
-    void,
-    Orchestrator.OrchestratorV2Error | ThreadManagementProviderInstanceDisabledError
-  >;
+  }) => Effect.Effect<void, ThreadManagementDispatchError>;
   readonly getThreadEventSequence: Orchestrator.OrchestratorV2["Service"]["getThreadEventSequence"];
   readonly recoverDelegatedTask: Orchestrator.OrchestratorV2["Service"]["recoverDelegatedTask"];
   readonly delegatedTaskResultPending: Orchestrator.OrchestratorV2["Service"]["delegatedTaskResultPending"];
@@ -552,6 +564,7 @@ const make = Effect.gen(function* () {
   const legacyImporter = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const receipts = yield* CommandReceiptStore.CommandReceiptStoreV2;
+  const providerRegistry = yield* Effect.serviceOption(ProviderRegistry.ProviderRegistry);
 
   const assertProviderInstanceEnabled: ThreadManagementServiceShape["assertProviderInstanceEnabled"] =
     (input) =>
@@ -680,6 +693,24 @@ const make = Effect.gen(function* () {
       Effect.andThen(orchestrator.getThreadSnapshotWindow(threadId, options)),
     );
 
+  /** Refuse to move a thread onto an account whose CLI reports it signed out. */
+  const assertSwitchTargetSignedIn = (commandId: CommandId, instanceId: ProviderInstanceId) =>
+    Option.isNone(providerRegistry)
+      ? Effect.void
+      : hasReceipt(commandId).pipe(
+          Effect.flatMap((replayed) =>
+            replayed ? Effect.succeed([]) : providerRegistry.value.getProviders,
+          ),
+          Effect.flatMap((providers) =>
+            providers.some(
+              (provider) =>
+                provider.instanceId === instanceId && provider.auth.status === "unauthenticated",
+            )
+              ? new ThreadManagementProviderInstanceSignedOutError({ instanceId })
+              : Effect.void,
+          ),
+        );
+
   const assertDispatchTargetEnabled = (command: OrchestrationV2ServerCommand) => {
     switch (command.type) {
       case "message.dispatch":
@@ -689,7 +720,17 @@ const make = Effect.gen(function* () {
               projectId: projection.thread.projectId,
               commandId: command.commandId,
               instanceId: (command.modelSelection ?? projection.thread.modelSelection).instanceId,
-            }),
+            }).pipe(
+              Effect.andThen(
+                command.modelSelection === undefined ||
+                  command.modelSelection.instanceId === projection.thread.modelSelection.instanceId
+                  ? Effect.void
+                  : assertSwitchTargetSignedIn(
+                      command.commandId,
+                      command.modelSelection.instanceId,
+                    ),
+              ),
+            ),
           ),
         );
       case "delegated_task.request":
@@ -1218,9 +1259,7 @@ const make = Effect.gen(function* () {
     "ThreadManagementService.stopDelegatedTasks",
   )(function* (input) {
     const { subagents } = yield* orchestrator.getThreadRecords(input.threadId, ["subagents"]);
-    const failures: Array<
-      Orchestrator.OrchestratorV2Error | ThreadManagementProviderInstanceDisabledError
-    > = [];
+    const failures: Array<ThreadManagementDispatchError> = [];
     const stoppedChildThreadIds = new Set<ThreadId>();
     for (const task of subagents) {
       if (task.origin !== "app_owned") continue;

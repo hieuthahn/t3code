@@ -238,6 +238,7 @@ function threadManagementFailure(error: unknown): OrchestratorMcpFailure {
     case "ThreadManagementDurableRunProjectionError":
       return failure("orchestration_error", error.message);
     case "ThreadManagementProviderInstanceDisabledError":
+    case "ThreadManagementProviderInstanceSignedOutError":
       return failure("invalid_request", error.message);
   }
 }

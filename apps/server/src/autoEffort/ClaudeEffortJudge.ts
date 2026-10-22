@@ -53,9 +53,9 @@ export function assistantText(line: string): string | undefined {
 }
 
 /**
- * Keeps one `claude -p` started and idle per account, so a judgment costs a model round trip
- * rather than a CLI boot. Each process answers one question: a reused session would carry
- * another thread's conversation into the next verdict.
+ * Keeps one `claude -p` started and idle per enabled account from start-up, so a judgment costs
+ * a model round trip rather than a CLI boot. Each process answers one question: a reused session
+ * would carry another thread's conversation into the next verdict.
  */
 export const makeClaudeEffortJudge = Effect.fn("makeClaudeEffortJudge")(function* (
   claudeSettings: ClaudeSettings,
@@ -152,6 +152,8 @@ export const makeClaudeEffortJudge = Effect.fn("makeClaudeEffortJudge")(function
         ).pipe(Effect.andThen(Deferred.await(warm.answer)), Effect.map(Option.some)),
       () => Scope.close(warm.scope, Exit.void),
     );
+
+  if (claudeSettings.enabled) yield* Effect.forkIn(replaceWarm, instanceScope);
 
   return {
     prewarm: replaceWarm,

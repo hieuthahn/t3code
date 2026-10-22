@@ -1297,6 +1297,20 @@ function ProviderInstanceRow({
     Boolean(recommendedVersion) &&
     liveProvider.versionAdvisory?.canInstallVersion === true;
 
+  const environmentProviders = useAtomValue(providersIgnoringCheckedAtAtom(environmentId));
+  const signedInEmail =
+    liveProvider?.auth.status === "authenticated"
+      ? liveProvider.auth.email?.trim().toLowerCase()
+      : undefined;
+  const duplicateAccountOf = signedInEmail
+    ? environmentProviders.find(
+        (candidate) =>
+          candidate.instanceId !== instanceId &&
+          candidate.driver === liveProvider?.driver &&
+          candidate.auth.status === "authenticated" &&
+          candidate.auth.email?.trim().toLowerCase() === signedInEmail,
+      )
+    : undefined;
   const defaultSessionPercent = useEnvironmentSettings(
     environmentId,
     (current) => current.earlySwitchSessionThreshold,
@@ -1314,6 +1328,9 @@ function ProviderInstanceRow({
         weeklyPercent: defaultWeeklyPercent,
       }}
       acpProjects={acpProjects}
+      {...(duplicateAccountOf
+        ? { duplicateAccountOf: duplicateAccountOf.displayName ?? duplicateAccountOf.instanceId }
+        : {})}
       projectOverride={projectOverride}
       onAcceptUrlAuth={
         readOnly ? undefined : (action) => actions.acceptUrlAuthentication(instanceId, action)

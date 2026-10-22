@@ -9,7 +9,6 @@ import {
   ExternalLinkIcon,
   LayersIcon,
   PlusIcon,
-  Trash2Icon,
   XIcon,
 } from "lucide-react";
 import { Lock as LockGlyph, LockOpen } from "lucide";
@@ -46,6 +45,7 @@ import { DraftInput } from "../ui/draft-input";
 import { SecretInput } from "./SecretInput";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Switch } from "../ui/switch";
+import { DeleteProviderInstanceButton } from "./DeleteProviderInstanceButton";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type {
@@ -587,6 +587,8 @@ interface ProviderInstanceCardProps {
   readonly isUpdating?: boolean | undefined;
   readonly onAcceptUrlAuth?: ((action: AcpRegistryUrlAuthAction) => void) | undefined;
   readonly environmentId?: EnvironmentId | undefined;
+  /** Another instance signed in with the same account. */
+  readonly duplicateAccountOf?: string;
   readonly accountSwitchDefaults?:
     | { readonly sessionPercent: number; readonly weeklyPercent: number }
     | undefined;
@@ -633,6 +635,7 @@ export function ProviderInstanceCard({
   onAcceptUrlAuth,
   environmentId,
   accountSwitchDefaults,
+  duplicateAccountOf,
   acpProjects = EMPTY_ACP_PROJECTS,
   projectOverride,
 }: ProviderInstanceCardProps) {
@@ -1074,16 +1077,12 @@ export function ProviderInstanceCard({
       >
         {titleTailNode}
         {onDelete ? (
-          <Button
-            type="button"
-            size="icon-xs"
-            variant="ghost-destructive"
-            disabled={readOnly}
-            onClick={onDelete}
-            aria-label={`Delete instance ${instanceId}`}
-          >
-            <Trash2Icon />
-          </Button>
+          <DeleteProviderInstanceButton
+            instanceId={instanceId}
+            instance={instance}
+            disabled={readOnly === true}
+            onDelete={onDelete}
+          />
         ) : null}
       </span>
     </div>
@@ -1240,6 +1239,11 @@ export function ProviderInstanceCard({
           onChange={updateGenericEnvironment}
         />
       </SettingsSection>
+      {mode === "editor" && duplicateAccountOf !== undefined ? (
+        <p className="text-xs text-warning">
+          {`${duplicateAccountOf} is signed in with the same account. Sign this instance in with a different account, or it shares one usage limit with ${duplicateAccountOf}.`}
+        </p>
+      ) : null}
       {accountSwitchDefaults !== undefined && liveProvider?.continuation !== undefined ? (
         <SettingsSection
           title="Account switching"

@@ -168,6 +168,9 @@ import {
   type SidebarListItem,
   type SidebarSection,
   resolveSidebarRowThreadId,
+  settledGroupIdOfMarker,
+  settledGroupMarker,
+  sidebarMarkerId,
 } from "./Sidebar.logic";
 import {
   createSidebarCollisionDetection,
@@ -209,7 +212,14 @@ import {
   SidebarDragBoundary,
   SidebarSectionHeader,
   SidebarSectionPlaceholder,
+  SidebarSettledGroupHeader,
 } from "./sidebar/SidebarListMarkers";
+import {
+  groupSettledThreads,
+  resolveSettledGroupTargets,
+  settledThreadActivityMs,
+  type SettledGroupTarget,
+} from "./sidebar/settledProjectGroups";
 
 function sameSidebarProviderEntries(
   left: ReadonlyMap<string, SidebarProviderEntry>,
@@ -272,6 +282,9 @@ const SETTLED_TAIL_PAGE_COUNT = 25;
 const SETTLED_SHELF_EXPANDED_KEY = "t3code:sidebar:settled-expanded";
 const SNOOZED_SHELF_EXPANDED_KEY = "t3code:sidebar:snoozed-expanded";
 const WORKING_SHELF_EXPANDED_KEY = "t3code:sidebar:working-expanded";
+const SETTLED_GROUPS_EXPANDED_KEY = "t3code:sidebar:settled-groups-expanded";
+const NO_EXPANDED_SETTLED_GROUPS: readonly string[] = [];
+const SettledGroupIdsSchema = Schema.Array(Schema.String);
 
 const inboxReturns = createInboxReturnTracker();
 
@@ -356,9 +369,16 @@ function useSidebarThreads(input: {
   readonly serverConfigs: ReadonlyMap<EnvironmentId, EnvironmentServerConfig>;
   readonly optimisticDrop: SidebarOptimisticDrop | null;
   readonly routeThreadRef: ScopedThreadRef | null;
+  readonly settledGroupTargets: ReadonlyMap<string, SettledGroupTarget>;
 }) {
-  const { projectScopeKey, scopedProjectKeys, serverConfigs, optimisticDrop, routeThreadRef } =
-    input;
+  const {
+    projectScopeKey,
+    scopedProjectKeys,
+    serverConfigs,
+    optimisticDrop,
+    routeThreadRef,
+    settledGroupTargets,
+  } = input;
   const threads = useQuietThreadShells();
   const routeRowThreadKey =
     routeThreadRef === null
@@ -375,6 +395,7 @@ function useSidebarThreads(input: {
         );
   const delegatedUnderParent = useDelegatedUnderParent();
   const workingShelfEnabled = useClientSettings((s) => s.sidebarWorkingShelfEnabled);
+  const settledGroupsEnabled = useClientSettings((s) => s.sidebarSettledProjectGroupsEnabled);
   const nowMinute = useNowMinute();
   // Snooze wake times are second-precise, so classifying with the quantized
   // minute would hold a woken thread on the shelf for up to a minute.
@@ -398,6 +419,11 @@ function useSidebarThreads(input: {
     WORKING_SHELF_EXPANDED_KEY,
     false,
     Schema.Boolean,
+  );
+  const [expandedSettledGroupIds, setExpandedSettledGroupIds] = useLocalStorage(
+    SETTLED_GROUPS_EXPANDED_KEY,
+    NO_EXPANDED_SETTLED_GROUPS,
+    SettledGroupIdsSchema,
   );
   // The settled tail restarts whenever the project scope changes.
   const [settledTail, setSettledTail] = useState({
@@ -424,8 +450,28 @@ function useSidebarThreads(input: {
 
   const { pinnedThreads, activeThreads, workingThreads, snoozedThreads, settledThreads } =
     partition;
+  const settledGroups =
+    settledGroupsEnabled && settledShelfExpanded
+      ? groupSettledThreads({
+          threads: settledThreads,
+          targets: settledGroupTargets,
+          projectKeyOf: (thread) => `${thread.environmentId}:${thread.projectId}`,
+          activityMsOf: settledThreadActivityMs,
+        }).map((group) => {
+          const expanded = expandedSettledGroupIds.includes(group.id);
+          return {
+            id: group.id,
+            label: group.label,
+            threadCount: group.threads.length,
+            expanded,
+            threads: expanded ? group.threads : routeThreadOnly(group.threads, routeRowThreadKey),
+          };
+        })
+      : null;
   const visibleSettledThreads = (() => {
-    if (settledThreads.length <= settledVisibleCount) return settledThreads;
+    if (settledGroups !== null || settledThreads.length <= settledVisibleCount) {
+      return settledThreads;
+    }
     const visible = settledThreads.slice(0, settledVisibleCount);
     if (routeRowThreadKey !== null) {
       const routeThread = settledThreads
@@ -435,9 +481,12 @@ function useSidebarThreads(input: {
     }
     return visible;
   })();
-  const renderedSettledThreads = settledShelfExpanded
-    ? visibleSettledThreads
-    : routeThreadOnly(visibleSettledThreads, routeRowThreadKey);
+  const renderedSettledThreads =
+    settledGroups !== null
+      ? settledGroups.flatMap((group) => group.threads)
+      : settledShelfExpanded
+        ? visibleSettledThreads
+        : routeThreadOnly(visibleSettledThreads, routeRowThreadKey);
   const visibleSnoozedThreads = snoozedShelfExpanded
     ? snoozedThreads
     : routeThreadOnly(snoozedThreads, routeRowThreadKey);
@@ -486,6 +535,12 @@ function useSidebarThreads(input: {
     toggleSnoozedShelf: () => setSnoozedShelfExpanded((value) => !value),
     workingShelfExpanded,
     toggleWorkingShelf: () => setWorkingShelfExpanded((value) => !value),
+    settledGroups,
+    settledGroupById: new Map((settledGroups ?? []).map((group) => [group.id, group] as const)),
+    toggleSettledGroup: (groupId: string) =>
+      setExpandedSettledGroupIds((ids) =>
+        ids.includes(groupId) ? ids.filter((id) => id !== groupId) : [...ids, groupId],
+      ),
     renderedSettledThreads,
     visibleSnoozedThreads,
     visibleWorkingThreads,
@@ -701,6 +756,24 @@ function useSidebarLookups() {
   const projectGroupByScopeKey = new Map(
     projectGroups.map((project) => [project.projectKey, project] as const),
   );
+  const settledGroupByScopeKey = resolveSettledGroupTargets(
+    projectGroups.map((group) => ({
+      key: group.projectKey,
+      label: group.displayName,
+      workspaceRoot: group.workspaceRoot,
+      isScratch: group.isScratch === true,
+    })),
+  );
+  const settledGroupTargets = new Map(
+    projectGroups.flatMap((group) => {
+      const target = settledGroupByScopeKey.get(group.projectKey);
+      return target === undefined
+        ? []
+        : group.memberProjects.map(
+            (project) => [`${project.environmentId}:${project.id}`, target] as const,
+          );
+    }),
+  );
   const projectScopeItems = [
     { value: "all", label: "All projects" },
     ...projectGroups.map((project) => ({ value: project.projectKey, label: project.displayName })),
@@ -715,6 +788,7 @@ function useSidebarLookups() {
     projectDisplayNameByKey,
     projectGroupByScopeKey,
     projectScopeItems,
+    settledGroupTargets,
   };
 }
 
@@ -764,6 +838,7 @@ export default function Sidebar() {
     projectDisplayNameByKey,
     projectGroupByScopeKey,
     projectScopeItems,
+    settledGroupTargets,
   } = useSidebarLookups();
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
@@ -1051,6 +1126,9 @@ export default function Sidebar() {
     toggleSnoozedShelf,
     workingShelfExpanded,
     toggleWorkingShelf,
+    settledGroups,
+    settledGroupById,
+    toggleSettledGroup,
     renderedSettledThreads,
     visibleSnoozedThreads,
     visibleWorkingThreads,
@@ -1070,6 +1148,7 @@ export default function Sidebar() {
     serverConfigs,
     optimisticDrop,
     routeThreadRef,
+    settledGroupTargets,
   });
 
   const isSearchingThreads = threadSearchQuery.trim().length > 0;
@@ -1625,9 +1704,15 @@ export default function Sidebar() {
       items.push(...rowsOf(visibleSnoozedThreads, "snoozed"));
     }
     items.push({ kind: "marker", marker: "settled-header" });
-    const settledRows = rowsOf(renderedSettledThreads, "settled");
     items.push({ kind: "marker", marker: "settled-placeholder" });
-    items.push(...settledRows);
+    if (settledGroups === null) {
+      items.push(...rowsOf(renderedSettledThreads, "settled"));
+    } else {
+      for (const group of settledGroups) {
+        items.push({ kind: "marker", marker: settledGroupMarker(group.id) });
+        items.push(...rowsOf(group.threads, "settled"));
+      }
+    }
     return items;
   })();
   // Thread shells update on every streamed event without moving rows. Keep the
@@ -3095,6 +3180,24 @@ export default function Sidebar() {
                               />,
                             );
                             break;
+                          default: {
+                            const groupId = settledGroupIdOfMarker(item.marker);
+                            const group =
+                              groupId === null ? undefined : settledGroupById.get(groupId);
+                            if (group !== undefined) {
+                              items.push(
+                                <SidebarSettledGroupHeader
+                                  key={sidebarMarkerId(item.marker)}
+                                  groupId={group.id}
+                                  label={group.label}
+                                  threadCount={group.threadCount}
+                                  expanded={group.expanded}
+                                  onToggle={() => toggleSettledGroup(group.id)}
+                                />,
+                              );
+                            }
+                            break;
+                          }
                         }
                       }
                       return items;

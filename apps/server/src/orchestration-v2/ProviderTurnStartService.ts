@@ -789,15 +789,20 @@ export const layer: Layer.Layer<
             handoff.delivery?.nativeThreadId === providerThread.nativeThreadRef?.nativeId &&
             handoff.delivery?.status === "pending",
         );
+        // A turn that ended with the native thread broken, such as a CLI that lost
+        // the transcript, would fail the same way on resume.
+        const brokenNativeThread = providerThread.status === "error";
         const resumed = yield* Effect.result(
-          uncertainDelivery
+          uncertainDelivery || brokenNativeThread
             ? Effect.fail(
                 new ProviderAdapter.ProviderAdapterTurnStartError({
                   driver: session.driver,
                   threadId: projection.thread.id,
                   providerThreadId: providerThread.id,
                   runId,
-                  cause: "Uncertain native history injection",
+                  cause: uncertainDelivery
+                    ? "Uncertain native history injection"
+                    : "Broken native thread",
                 }),
               )
             : session.resumeThread({
@@ -815,7 +820,11 @@ export const layer: Layer.Layer<
           driver: session.driver,
           providerThreadId: providerThread.id,
           runId,
-          reason: uncertainDelivery ? "uncertain_history_delivery" : "resume_failed",
+          reason: uncertainDelivery
+            ? "uncertain_history_delivery"
+            : brokenNativeThread
+              ? "broken_native_thread"
+              : "resume_failed",
           errorTag: resumed.failure._tag,
         });
         const replacement = yield* loadFromProvider(
@@ -1133,6 +1142,18 @@ export const layer: Layer.Layer<
           )
           .map((source) => source.runId),
       );
+      const runningNativeId = runningProviderThread.nativeThreadRef?.nativeId;
+      const nativeIdHasTurnsOnOtherAccount =
+        runningNativeId !== undefined &&
+        projection.attempts.some(
+          (source) =>
+            source.providerThreadId !== providerThread.id &&
+            (source.nativeThreadId === runningNativeId ||
+              (source.nativeThreadId === undefined &&
+                deliveredAttemptIds.has(source.id) &&
+                projection.providerThreads.find((thread) => thread.id === source.providerThreadId)
+                  ?.nativeThreadRef?.nativeId === runningNativeId)),
+        );
       const legacyInputRunIds = new Set(
         acceptedAttempts
           .filter((source) => source.nativeThreadId === undefined)
@@ -1415,6 +1436,7 @@ export const layer: Layer.Layer<
           ) + 1,
         nativeThreadHasTurns:
           nativeInputRunIds.size > 0 ||
+          nativeIdHasTurnsOnOtherAccount ||
           (legacyInputRunIds.size > 0 &&
             sameNativeThread &&
             !acceptedAttempts.some((source) => source.nativeThreadId !== undefined)),

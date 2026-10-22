@@ -2,6 +2,8 @@ import {
   DesktopForkUpdateCheckSchema,
   DesktopForkUpdateRunSchema,
   type DesktopForkUpdateState,
+  type DesktopForkUpdateTrack,
+  DesktopForkUpdateTrackSchema,
 } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -17,6 +19,7 @@ const UpdaterStatusJson = Schema.fromJsonString(
   Schema.Struct({
     head: Schema.String,
     branch: Schema.String,
+    track: Schema.optionalKey(DesktopForkUpdateTrackSchema),
     paused: Schema.Boolean,
     activeRuns: Schema.Number,
     applyRunning: Schema.Boolean,
@@ -36,12 +39,14 @@ const TIMEOUTS = {
   check: Duration.minutes(2),
   launch: Duration.seconds(30),
   pause: Duration.seconds(30),
+  track: Duration.seconds(30),
 } as const;
 
 const DISABLED_STATE: DesktopForkUpdateState = {
   enabled: false,
   head: "",
   branch: "",
+  track: "preview",
   paused: false,
   activeRuns: 0,
   applyRunning: false,
@@ -117,7 +122,12 @@ const runUpdater = Effect.fn("desktop.forkUpdates.run")(function* (
     exitCode === 0
       ? null
       : (EXIT_MESSAGES[exitCode] ?? `t3-update ${args.join(" ")} exited with ${exitCode}.`);
-  return { ...status.value, enabled: true, error: exitMessage };
+  return {
+    ...status.value,
+    track: status.value.track ?? "preview",
+    enabled: true,
+    error: exitMessage,
+  };
 });
 
 export const getState = runUpdater("status", ["status"]);
@@ -125,3 +135,5 @@ export const check = runUpdater("check", ["check", "--json"]);
 export const apply = runUpdater("launch", ["launch"]);
 export const setPaused = (paused: boolean) =>
   runUpdater("pause", ["pause", paused ? "on" : "off", "--json"]);
+export const setTrack = (track: DesktopForkUpdateTrack) =>
+  runUpdater("track", ["track", track, "--json"]);

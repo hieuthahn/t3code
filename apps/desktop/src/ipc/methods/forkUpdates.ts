@@ -1,4 +1,4 @@
-import { DesktopForkUpdateStateSchema } from "@t3tools/contracts";
+import { DesktopForkUpdateStateSchema, DesktopForkUpdateTrackSchema } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -39,5 +39,14 @@ export const setForkUpdatePaused = makeIpcMethod({
   result: DesktopForkUpdateStateSchema,
   handler: Effect.fn("desktop.ipc.forkUpdates.setPaused")(function* (paused) {
     return yield* DesktopForkUpdates.setPaused(paused);
+  }),
+});
+
+export const setForkUpdateTrack = makeIpcMethod({
+  channel: IpcChannels.FORK_UPDATE_SET_TRACK_CHANNEL,
+  payload: DesktopForkUpdateTrackSchema,
+  result: DesktopForkUpdateStateSchema,
+  handler: Effect.fn("desktop.ipc.forkUpdates.setTrack")(function* (track) {
+    return yield* DesktopForkUpdates.setTrack(track);
   }),
 });

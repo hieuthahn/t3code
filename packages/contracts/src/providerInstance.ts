@@ -46,6 +46,19 @@ export type ProviderInstanceEnvironmentVariable = typeof ProviderInstanceEnviron
 export const ProviderInstanceEnvironment = Schema.Array(ProviderInstanceEnvironmentVariable);
 export type ProviderInstanceEnvironment = typeof ProviderInstanceEnvironment.Type;
 
+export const AccountSwitchThresholdPercent = Schema.Int.check(
+  Schema.isBetween({ minimum: 50, maximum: 100 }),
+);
+export type AccountSwitchThresholdPercent = typeof AccountSwitchThresholdPercent.Type;
+export const DEFAULT_ACCOUNT_SWITCH_THRESHOLD_PERCENT = 90;
+
+/** An account's own switch thresholds; a missing window inherits the global setting. */
+export const ProviderInstanceAccountSwitch = Schema.Struct({
+  sessionPercent: Schema.optionalKey(AccountSwitchThresholdPercent),
+  weeklyPercent: Schema.optionalKey(AccountSwitchThresholdPercent),
+});
+export type ProviderInstanceAccountSwitch = typeof ProviderInstanceAccountSwitch.Type;
+
 /**
  * The driver-specific config payload is left as `Schema.Unknown`; each driver
  * registers its own decoder with the runtime registry, and envelopes for
@@ -58,6 +71,7 @@ export const ProviderInstanceConfig = Schema.Struct({
   accentColor: Schema.optional(TrimmedNonEmptyString),
   environment: Schema.optionalKey(ProviderInstanceEnvironment),
   enabled: Schema.optionalKey(Schema.Boolean),
+  accountSwitch: Schema.optionalKey(ProviderInstanceAccountSwitch),
   config: Schema.optionalKey(Schema.Unknown),
 });
 export type ProviderInstanceConfig = typeof ProviderInstanceConfig.Type;

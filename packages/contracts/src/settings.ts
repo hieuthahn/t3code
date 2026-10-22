@@ -707,7 +707,7 @@ export const ClaudeSettings = makeProviderSettingsSchema(
       Schema.annotateKey({
         title: "Share config with the default Claude home",
         description:
-          "Link settings.json, CLAUDE.md, skills, agents, commands, hooks, rules and plugins to the default ~/.claude, and copy its MCP servers. Login and history stay separate.",
+          "Link settings.json, CLAUDE.md, skills, agents, commands, hooks, rules and plugins to the default ~/.claude when they are missing. Login, MCP servers and history stay separate.",
         providerSettingsForm: { control: "switch", clearWhenEmpty: "omit" },
       }),
     ),

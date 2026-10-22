@@ -163,7 +163,6 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       enabled: effectiveConfig.shareMainConfig,
       sourceDir: yield* resolveClaudeHomePath({ homePath: "" }, yield* HostProcess.Environment),
       targetDir: configDir,
-      homeDirectory: yield* HostProcess.HomeDirectory,
     }).pipe(
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(Path.Path, path),

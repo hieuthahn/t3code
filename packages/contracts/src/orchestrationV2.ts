@@ -3706,6 +3706,8 @@ export const OrchestrationV2SubscribeThreadInput = Schema.Struct({
   /** The client restores `*Omitted` bodies from records it already holds. */
   acceptDedupedBodies: Schema.optionalKey(Schema.Boolean),
   acceptCompactIds: Schema.optionalKey(Schema.Boolean),
+  /** The client handles `prompt-suggestion` items; older clients would fail to decode them. */
+  acceptPromptSuggestions: Schema.optionalKey(Schema.Boolean),
 });
 export type OrchestrationV2SubscribeThreadInput = typeof OrchestrationV2SubscribeThreadInput.Type;
 
@@ -3826,6 +3828,11 @@ export const OrchestrationV2ThreadStreamItem = withRecordIdTable(
       kind: Schema.Literal("event"),
       sequence: NonNegativeInt,
       event: OrchestrationV2DomainEvent,
+    }),
+    /** The predicted next prompt for the composer, null once a new run starts. Never persisted. */
+    Schema.Struct({
+      kind: Schema.Literal("prompt-suggestion"),
+      suggestion: Schema.NullOr(Schema.String),
     }),
     OrchestrationV2UnknownThreadStreamEvent,
   ]),

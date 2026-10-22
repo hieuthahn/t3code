@@ -339,6 +339,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "early-account-switch",
+    title: "Switch accounts before the limit",
+    to: "/settings/general",
+    searchTerms: ["usage limit threshold percent 5 hour weekly early switch account rotate slider"],
+  },
+  {
     id: "auto-effort-default",
     title: "Auto effort by default",
     to: "/settings/general",

@@ -140,10 +140,23 @@ export type SidebarListMarker =
   | "pinned-divider"
   | "working-header"
   | "snoozed-header"
-  | "settled-header";
+  | "settled-header"
+  | `${typeof SETTLED_GROUP_MARKER_PREFIX}${string}`;
+
+const SETTLED_GROUP_MARKER_PREFIX = "settled-group:";
 
 export function sidebarMarkerId(marker: SidebarListMarker): string {
   return `${SIDEBAR_MARKER_PREFIX}${marker}`;
+}
+
+export function settledGroupMarker(groupId: string): SidebarListMarker {
+  return `${SETTLED_GROUP_MARKER_PREFIX}${groupId}`;
+}
+
+export function settledGroupIdOfMarker(marker: SidebarListMarker): string | null {
+  return marker.startsWith(SETTLED_GROUP_MARKER_PREFIX)
+    ? marker.slice(SETTLED_GROUP_MARKER_PREFIX.length)
+    : null;
 }
 
 export type SidebarListItem =

@@ -5,6 +5,7 @@ import { type ReactNode } from "react";
 import { cn } from "~/lib/utils";
 import {
   animateSidebarLayoutChanges,
+  settledGroupMarker,
   sidebarMarkerId,
   type SidebarListMarker,
 } from "../Sidebar.logic";
@@ -129,6 +130,35 @@ export function SidebarSectionHeader(props: {
         data-testid={`sidebar-${shelf}-shelf-toggle`}
       >
         {props.label}
+      </CollapsibleSectionHeader>
+    </SortableSidebarMarker>
+  );
+}
+
+export function SidebarSettledGroupHeader(props: {
+  groupId: string;
+  label: string;
+  threadCount: number;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <SortableSidebarMarker
+      marker={settledGroupMarker(props.groupId)}
+      data-testid="sidebar-settled-group-header"
+      className="ms-2 me-0.5 h-8"
+    >
+      <CollapsibleSectionHeader
+        onClick={props.onToggle}
+        expanded={props.expanded}
+        tone="emphasized"
+        accessory={
+          <span className="shrink-0 text-xs tabular-nums text-sidebar-muted-foreground/60">
+            {props.threadCount}
+          </span>
+        }
+      >
+        <span className="block max-w-40 truncate">{props.label}</span>
       </CollapsibleSectionHeader>
     </SortableSidebarMarker>
   );

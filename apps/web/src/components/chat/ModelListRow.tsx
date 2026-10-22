@@ -117,7 +117,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
             data-checked={props.isSelected ? "" : undefined}
             className="flex size-4 shrink-0 items-center justify-center rounded-xs border border-input bg-background text-primary-foreground data-checked:border-primary data-checked:bg-primary dark:bg-input/32 dark:data-checked:bg-primary"
           >
-            {props.isSelected ? <CheckIcon className="size-3" /> : null}
+            {props.isSelected ? <CheckIcon className="size-3 text-primary-foreground" /> : null}
           </span>
         ) : props.showSelection && props.isSelected ? (
           <CheckIcon className="size-3.5" aria-hidden="true" />

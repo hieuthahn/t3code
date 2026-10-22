@@ -20,6 +20,11 @@ export const DesktopForkUpdateCheckSchema = Schema.Struct({
 });
 export type DesktopForkUpdateCheck = typeof DesktopForkUpdateCheckSchema.Type;
 
+/** True when the newest tag of the track differs from the fork's base; older checks only count commits. */
+export function isForkUpdateAvailable(check: DesktopForkUpdateCheck): boolean {
+  return check.updateAvailable ?? check.newCommits > 0;
+}
+
 export const DesktopForkUpdateRunSchema = Schema.Struct({
   kind: Schema.String,
   startedAt: Schema.String,

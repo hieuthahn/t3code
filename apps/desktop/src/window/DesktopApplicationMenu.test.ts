@@ -2,7 +2,9 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 
 import type * as Electron from "electron";
 
@@ -50,12 +52,16 @@ const layerElectronApp = Layer.succeed(ElectronApp.ElectronApp, {
   on: () => Effect.void,
 } satisfies ElectronApp.ElectronApp["Service"]);
 
-const layerElectronDialog = Layer.succeed(ElectronDialog.ElectronDialog, {
-  pickFolder: () => Effect.succeedNone,
-  pickFiles: () => Effect.succeed([]),
-  showMessageBox: () => Effect.succeed({ response: 0, checkboxChecked: false }),
-  showErrorBox: () => Effect.void,
-} satisfies ElectronDialog.ElectronDialog["Service"]);
+const layerElectronDialog = (shownMessage?: Deferred.Deferred<Electron.MessageBoxOptions>) =>
+  Layer.succeed(ElectronDialog.ElectronDialog, {
+    pickFolder: () => Effect.succeedNone,
+    pickFiles: () => Effect.succeed([]),
+    showMessageBox: (options) =>
+      (shownMessage ? Deferred.succeed(shownMessage, options) : Effect.void).pipe(
+        Effect.as({ response: 1, checkboxChecked: false }),
+      ),
+    showErrorBox: () => Effect.void,
+  } satisfies ElectronDialog.ElectronDialog["Service"]);
 
 const layerDesktopUpdates = Layer.succeed(DesktopUpdates.DesktopUpdates, {
   getState: Effect.die("unexpected getState"),
@@ -107,6 +113,10 @@ const configureMenu = (
   selectedAction: Deferred.Deferred<string>,
   applicationMenuTemplate: Deferred.Deferred<readonly Electron.MenuItemConstructorOptions[]>,
   environment: Partial<DesktopEnvironment.MakeDesktopEnvironmentInput> = {},
+  options: {
+    readonly configEnv?: Readonly<Record<string, string>>;
+    readonly shownMessage?: Deferred.Deferred<Electron.MessageBoxOptions>;
+  } = {},
 ) =>
   Effect.gen(function* () {
     const menu = yield* DesktopApplicationMenu.DesktopApplicationMenu;
@@ -117,12 +127,15 @@ const configureMenu = (
         Layer.provideMerge(layerElectronMenu(applicationMenuTemplate)),
         Layer.provideMerge(layerDesktopWindow(selectedAction)),
         Layer.provideMerge(layerDesktopUpdates),
-        Layer.provideMerge(layerElectronDialog),
+        Layer.provideMerge(layerElectronDialog(options.shownMessage)),
         Layer.provideMerge(layerElectronApp),
         Layer.provideMerge(
           DesktopEnvironment.layer({ ...environmentInput, ...environment }).pipe(
             Layer.provide(Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest({}))),
           ),
+        ),
+        Layer.provideMerge(
+          Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest(options.configEnv ?? {})),
         ),
       ),
     ),
@@ -221,5 +234,73 @@ describe("DesktopApplicationMenu", () => {
       reload.click({} as Electron.MenuItem, {} as Electron.BrowserWindow, {} as KeyboardEvent);
       assert.equal(yield* Deferred.await(selectedAction), "main-reload");
     }),
+  );
+
+  it.effect("checks through the fork updater instead of the upstream updater", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "fork-menu-" });
+      const updaterPath = path.join(directory, "t3-update");
+      const recordPath = path.join(directory, "record.log");
+      const status = {
+        head: "4a66c6edd2",
+        branch: "feat/shared-history-continuation",
+        track: "preview",
+        paused: false,
+        activeRuns: 0,
+        applyRunning: false,
+        check: {
+          checkedAt: "2026-10-22T06:40:00Z",
+          head: "4a66c6edd2",
+          upstreamHead: "a0c623abd8",
+          newCommits: 0,
+          overlapFiles: [],
+          conflictFiles: [],
+          riskyFiles: [],
+          baseTag: "v0.1.2-preview.20261022.3511",
+          targetTag: "v0.1.2-preview.20261022.3511",
+          version: "0.1.2-preview.20261022.3511+fork.4a66c6edd2",
+          updateAvailable: false,
+        },
+        lastRun: null,
+      };
+      yield* fileSystem.writeFileString(
+        updaterPath,
+        `#!/bin/sh\necho "$@" >> ${JSON.stringify(recordPath)}\nprintf '%s\\n' ${JSON.stringify(JSON.stringify(status))}\n`,
+      );
+      yield* fileSystem.chmod(updaterPath, 0o755);
+      const selectedAction = yield* Deferred.make<string>();
+      const applicationMenuTemplate =
+        yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+      const shownMessage = yield* Deferred.make<Electron.MessageBoxOptions>();
+
+      yield* configureMenu(
+        selectedAction,
+        applicationMenuTemplate,
+        { platform: "darwin" },
+        { configEnv: { T3CODE_FORK_UPDATER: updaterPath }, shownMessage },
+      );
+
+      const template = yield* Deferred.await(applicationMenuTemplate);
+      const appMenu = template[0];
+      if (!Array.isArray(appMenu?.submenu)) {
+        throw new Error("Expected the app menu submenu to be an array.");
+      }
+      const checkItem = appMenu.submenu.find((item) => item.label === "Check for Updates...");
+      if (typeof checkItem?.click !== "function") {
+        throw new Error("Expected Check for Updates to have a click handler.");
+      }
+      checkItem.click(
+        {} as Electron.MenuItem,
+        {} as Electron.BrowserWindow,
+        {} as unknown as KeyboardEvent,
+      );
+
+      const message = yield* Deferred.await(shownMessage);
+      assert.equal(message.title, "You're up to date!");
+      assert.equal(message.message, "T3 Code is on v0.1.2-preview.20261022.3511.");
+      assert.include(yield* fileSystem.readFileString(recordPath), "check --json");
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });

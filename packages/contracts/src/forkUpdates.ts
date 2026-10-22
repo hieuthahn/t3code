@@ -1,5 +1,8 @@
 import * as Schema from "effect/Schema";
 
+export const DesktopForkUpdateTrackSchema = Schema.Literals(["preview", "stable", "nightly"]);
+export type DesktopForkUpdateTrack = typeof DesktopForkUpdateTrackSchema.Type;
+
 export const DesktopForkUpdateCheckSchema = Schema.Struct({
   checkedAt: Schema.String,
   head: Schema.String,
@@ -8,6 +11,12 @@ export const DesktopForkUpdateCheckSchema = Schema.Struct({
   overlapFiles: Schema.Array(Schema.String),
   conflictFiles: Schema.Array(Schema.String),
   riskyFiles: Schema.Array(Schema.String),
+  track: Schema.optionalKey(DesktopForkUpdateTrackSchema),
+  baseTag: Schema.optionalKey(Schema.String),
+  targetTag: Schema.optionalKey(Schema.String),
+  version: Schema.optionalKey(Schema.String),
+  updateAvailable: Schema.optionalKey(Schema.Boolean),
+  droppedCommits: Schema.optionalKey(Schema.Number),
 });
 export type DesktopForkUpdateCheck = typeof DesktopForkUpdateCheckSchema.Type;
 
@@ -28,6 +37,7 @@ export const DesktopForkUpdateStateSchema = Schema.Struct({
   enabled: Schema.Boolean,
   head: Schema.String,
   branch: Schema.String,
+  track: DesktopForkUpdateTrackSchema,
   paused: Schema.Boolean,
   activeRuns: Schema.Number,
   applyRunning: Schema.Boolean,
@@ -42,4 +52,5 @@ export interface DesktopForkUpdatesBridge {
   check: () => Promise<DesktopForkUpdateState>;
   apply: () => Promise<DesktopForkUpdateState>;
   setPaused: (paused: boolean) => Promise<DesktopForkUpdateState>;
+  setTrack: (track: DesktopForkUpdateTrack) => Promise<DesktopForkUpdateState>;
 }

@@ -165,11 +165,32 @@ export function SidebarSettledGroupHeader(props: {
   );
 }
 
+export function SidebarTimeBucketHeader(props: {
+  marker: SidebarListMarker;
+  label: string;
+  threadCount: number;
+}) {
+  return (
+    <SortableSidebarMarker
+      marker={props.marker}
+      data-testid="sidebar-time-bucket-header"
+      className="mx-0.5 flex h-7 items-end gap-1.5 px-2 pb-1 text-xs font-medium text-sidebar-muted-foreground"
+    >
+      <span>{props.label}</span>
+      <span className="tabular-nums text-sidebar-muted-foreground/60">
+        {props.threadCount}
+        <span className="sr-only"> threads</span>
+      </span>
+    </SortableSidebarMarker>
+  );
+}
+
 export function SidebarFanoutGroupHeader(props: {
   marker: SidebarListMarker;
   label: string;
   memberCount: number;
   expanded: boolean;
+  compact?: boolean;
   onToggle: () => void;
   onSelectMembers: () => void;
   onCompare: () => void;
@@ -184,7 +205,12 @@ export function SidebarFanoutGroupHeader(props: {
       data-testid="sidebar-fanout-group-header"
       className="group/fanout-header mx-0.5"
     >
-      <div className="flex h-8 items-center rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-row-hover has-[button:focus-visible]:bg-sidebar-row-hover">
+      <div
+        className={cn(
+          "flex items-center rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-row-hover has-[button:focus-visible]:bg-sidebar-row-hover",
+          props.compact ? "h-7" : "h-8",
+        )}
+      >
         <button
           type="button"
           aria-expanded={props.expanded}

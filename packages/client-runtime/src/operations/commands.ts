@@ -678,9 +678,7 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
       runtimeMode: input.runtimeMode,
       interactionMode: input.interactionMode,
       workspaceStrategy,
-      ...(bootstrap?.fanoutGroupId === undefined
-        ? {}
-        : { fanoutGroupId: bootstrap.fanoutGroupId }),
+      ...(bootstrap?.fanoutGroupId === undefined ? {} : { fanoutGroupId: bootstrap.fanoutGroupId }),
       initialMessage: {
         messageId: input.message.messageId,
         text: input.message.text,

@@ -92,6 +92,15 @@ const unitTestProject = {
   },
 } satisfies TestProjectInlineConfiguration;
 
+// Reads the production build in dist, so it runs only through `vp run test:bundle`.
+const bundleBudgetProject = {
+  test: {
+    name: "bundle",
+    include: ["test/**/*.budget.ts"],
+    environment: "node",
+  },
+} satisfies TestProjectInlineConfiguration;
+
 // Hash checkout paths to ports 61000-64999; Vitest's fixed port collides under inherited strictPort.
 const browserTestApiPort = 61_000 + ((Hash.string(import.meta.dirname) >>> 0) % 4_000);
 
@@ -330,6 +339,7 @@ export default defineConfig(() => {
         defineProject(unitTestProject),
         defineProject(browserTestProject),
         defineProject(renderScenariosProject),
+        defineProject(bundleBudgetProject),
       ],
     },
   };

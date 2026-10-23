@@ -105,6 +105,11 @@ import {
   AgentSessionScanError,
 } from "./agentSessions.ts";
 import {
+  ClaudeDesktopSyncError,
+  ClaudeDesktopSyncRequest,
+  ClaudeDesktopSyncResponse,
+} from "./claudeDesktopSync.ts";
+import {
   AssetAccessError,
   AssetCreateUrlInput,
   AssetCreateUrlResult,
@@ -411,6 +416,7 @@ export const WS_METHODS = {
   filesystemGetMetadata: "filesystem.getMetadata",
   agentSessionsScan: "agentSessions.scan",
   agentSessionsImport: "agentSessions.import",
+  claudeDesktopSyncRun: "claudeDesktopSync.run",
   assetsCreateUrl: "assets.createUrl",
   assetsPersistChatAttachments: "assets.persistChatAttachments",
   attachmentsCreateUploadUrl: "attachments.createUploadUrl",
@@ -1339,6 +1345,14 @@ const WsAgentSessionsImportRpc = Rpc.make(WS_METHODS.agentSessionsImport, {
   ]),
 });
 
+
+const WsClaudeDesktopSyncRunRpc = Rpc.make(WS_METHODS.claudeDesktopSyncRun, {
+  payload: ClaudeDesktopSyncRequest,
+  success: ClaudeDesktopSyncResponse,
+  error: Schema.Union([ClaudeDesktopSyncError, EnvironmentAuthorizationError]),
+});
+
+
 const WsAssetsCreateUrlRpc = Rpc.make(WS_METHODS.assetsCreateUrl, {
   payload: AssetCreateUrlInput,
   success: AssetCreateUrlResult,
@@ -2078,6 +2092,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsFilesystemGetMetadataRpc,
   WsAgentSessionsScanRpc,
   WsAgentSessionsImportRpc,
+  WsClaudeDesktopSyncRunRpc,
   WsAssetsCreateUrlRpc,
   WsAssetsPersistChatAttachmentsRpc,
   WsAttachmentsCreateUploadUrlRpc,

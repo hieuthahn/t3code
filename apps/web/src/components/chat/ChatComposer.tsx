@@ -211,6 +211,7 @@ import {
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerFooterPrimaryActions } from "./ComposerFooterControls";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
+import { ComposerPendingApprovalGroup } from "./ComposerPendingApprovalGroup";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
 import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
@@ -662,6 +663,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     incomingPendingApproval && !heldRequestIds.has(incomingPendingApproval.requestId)
       ? incomingPendingApproval
       : null;
+  const shownPendingApprovals = pendingApprovals.filter(
+    (approval) => !heldRequestIds.has(approval.requestId),
+  );
   const holdingUserInput = incomingPendingUserInputs[0]
     ? heldRequestIds.has(incomingPendingUserInputs[0].requestId)
     : false;
@@ -3606,7 +3610,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 variant={activePendingApproval ? "warning" : "info"}
                 density={activePendingApproval ? "spacious" : "default"}
               >
-                {activePendingApproval ? (
+                {activePendingApproval && shownPendingApprovals.length > 1 ? (
+                  <ComposerPendingApprovalGroup
+                    approvals={shownPendingApprovals}
+                    disabled={!canOperateThread}
+                    respondingRequestIds={respondingRequestIds}
+                    onRespondToApproval={onRespondToApproval}
+                  />
+                ) : activePendingApproval ? (
                   <ComposerBanner.Row
                     layout="approval"
                     data-chat-composer-collapsed-controls="true"

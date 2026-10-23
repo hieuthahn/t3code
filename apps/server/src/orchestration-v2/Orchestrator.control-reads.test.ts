@@ -1,5 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import {
+  AuthSessionId,
   CommandId,
   MessageId,
   EventId,
@@ -274,6 +275,10 @@ it.effect(
           },
         });
         const answers = { text: "Blue", list: ["Red"], codex: { answers: ["Green"] } };
+        const decidedBy = {
+          actor: "user",
+          authSessionId: AuthSessionId.make("session:control-reads"),
+        } as const;
         const normalizedAnswers = { ...answers, codex: ["Green"] };
         if (mode === "live") {
           const pending = yield* projections.getRuntimeResponseContext(threadId, requestId);
@@ -312,6 +317,7 @@ it.effect(
                 threadId,
                 requestId,
                 answers,
+                decidedBy,
               }
             : {
                 type: "thread.user-input.dismiss",
@@ -329,9 +335,11 @@ it.effect(
         assert.equal(response.item?.status, mode === "live" ? "completed" : "cancelled");
         if (mode === "live") {
           assert.deepEqual(response.request?.answers, normalizedAnswers);
+          assert.deepEqual(response.request?.decidedBy, decidedBy);
           assert.equal(response.item?.type, "user_input_request");
           if (response.item?.type === "user_input_request") {
             assert.deepEqual(response.item.questionAnswer?.answers, normalizedAnswers);
+            assert.deepEqual(response.item.decidedBy, decidedBy);
           }
           const effects = yield* outbox.listByCommandId(CommandId.make(`respond:${mode}`));
           assert.deepEqual(
@@ -399,6 +407,129 @@ it.effect(
       });
       assert.isNotNull((yield* projections.getThread(threadId)).deletedAt);
     }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("records the decision and who made it on an answered approval", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const outbox = yield* EffectOutbox.EffectOutboxV2;
+    const threadId = ThreadId.make("thread:approval-decider");
+    const sessionId = ProviderSessionId.make("session:approval-decider");
+    const requestId = RuntimeRequestId.make("request:approval-decider");
+    const nodeId = NodeId.make("node:approval-decider");
+    const itemId = TurnItemId.make("item:approval-decider");
+    const now = yield* DateTime.now;
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make("create-approval-decider"),
+      threadId,
+      projectId: ProjectId.make("project:approval-decider"),
+      title: "Approval",
+      modelSelection,
+      runtimeMode: "approval-required",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdBy: "user",
+      creationSource: "web",
+    });
+    yield* projections.apply({
+      id: EventId.make("attach-approval-decider"),
+      type: "provider-session.attached",
+      threadId,
+      occurredAt: now,
+      payload: {
+        id: sessionId,
+        driver: adapter.driver,
+        providerInstanceId: instanceId,
+        status: "ready",
+        cwd: "/repo",
+        model: modelSelection.model,
+        capabilities: CodexProviderCapabilitiesV2,
+        createdAt: now,
+        updatedAt: now,
+        lastError: null,
+      },
+    });
+    yield* projections.apply({
+      id: EventId.make("request:approval-decider"),
+      type: "runtime-request.updated",
+      threadId,
+      occurredAt: now,
+      payload: {
+        id: requestId,
+        nodeId,
+        providerTurnId: null,
+        nativeRequestRef: null,
+        kind: "command",
+        status: "pending",
+        responseCapability: { type: "live", providerSessionId: sessionId },
+        createdAt: now,
+        resolvedAt: null,
+      },
+    });
+    yield* projections.apply({
+      id: EventId.make("item:approval-decider"),
+      type: "turn-item.updated",
+      threadId,
+      occurredAt: now,
+      payload: {
+        id: itemId,
+        threadId,
+        runId: null,
+        nodeId,
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal: 1,
+        status: "waiting",
+        title: null,
+        startedAt: now,
+        completedAt: null,
+        updatedAt: now,
+        type: "approval_request",
+        requestId,
+        requestKind: "command",
+        prompt: "git push",
+      },
+    });
+    const decidedBy = {
+      actor: "user",
+      authSessionId: AuthSessionId.make("session:approval-decider"),
+    } as const;
+    yield* orchestrator.dispatch({
+      type: "runtime-request.respond",
+      commandId: CommandId.make("respond-approval-decider"),
+      threadId,
+      requestId,
+      decision: "accept",
+      decidedBy,
+    });
+
+    const response = yield* projections.getRuntimeResponseContext(threadId, requestId);
+    assert.equal(response.request?.decision, "accept");
+    assert.deepEqual(response.request?.decidedBy, decidedBy);
+    assert.equal(response.item?.type, "approval_request");
+    if (response.item?.type === "approval_request") {
+      assert.equal(response.item.decision, "accept");
+      assert.deepEqual(response.item.decidedBy, decidedBy);
+    }
+    // The provider gets the decision alone; who made it stays in T3.
+    const effects = yield* outbox.listByCommandId(CommandId.make("respond-approval-decider"));
+    assert.deepEqual(
+      effects.map((effect) => effect.request),
+      [
+        {
+          type: "runtime-request.respond",
+          providerSessionId: sessionId,
+          requestId,
+          decision: "accept",
+        },
+      ],
+    );
+  }).pipe(Effect.provide(layerTest)),
 );
 
 it.effect("implements a proposed plan that the command projection leaves out", () =>

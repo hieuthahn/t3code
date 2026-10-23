@@ -78,6 +78,8 @@ export const SidebarProjectGroupingMode = Schema.Literals([
 ]);
 export type SidebarProjectGroupingMode = typeof SidebarProjectGroupingMode.Type;
 const DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE: SidebarProjectGroupingMode = "repository";
+export const SidebarCompactGroupBy = Schema.Literals(["time", "project"]);
+export type SidebarCompactGroupBy = typeof SidebarCompactGroupBy.Type;
 export const MIN_SIDEBAR_THREAD_PREVIEW_COUNT = 1;
 export const MAX_SIDEBAR_THREAD_PREVIEW_COUNT = 15;
 export const SidebarThreadPreviewCount = Schema.Int.check(
@@ -459,6 +461,9 @@ export const ClientSettingsSchema = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(true)),
   ),
   sidebarCompactModeEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  sidebarCompactGroupBy: SidebarCompactGroupBy.pipe(
+    Schema.withDecodingDefault(Effect.succeed<SidebarCompactGroupBy>("time")),
+  ),
   sidebarProjectGroupingMode: SidebarProjectGroupingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE)),
   ),
@@ -1788,6 +1793,7 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarWorkingShelfEnabled: Schema.optionalKey(Schema.Boolean),
   sidebarSettledProjectGroupsEnabled: Schema.optionalKey(Schema.Boolean),
   sidebarCompactModeEnabled: Schema.optionalKey(Schema.Boolean),
+  sidebarCompactGroupBy: Schema.optionalKey(SidebarCompactGroupBy),
   sidebarProjectGroupingMode: Schema.optionalKey(SidebarProjectGroupingMode),
   sidebarProjectGroupingOverrides: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, SidebarProjectGroupingMode),

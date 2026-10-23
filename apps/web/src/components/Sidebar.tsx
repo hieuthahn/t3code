@@ -265,12 +265,11 @@ import {
 import {
   bucketByTime,
   countByTimeBucket,
-  everyBucketCollapsed,
   visibleBucketItems,
-  withBucketsCollapsed,
   sidebarThreadTimeMs,
   sortThreadsByRecency,
 } from "./sidebar/sidebarTimeBuckets";
+import { everythingFolded, foldEverything, type SidebarFoldState } from "./sidebar/sidebarFoldAll";
 import { sidebarProviderEntriesAtom } from "./sidebar/sidebarProviderEntries";
 
 const EMPTY_PROVIDER_ENTRIES: ReadonlyMap<string, SidebarProviderEntry> = new Map();
@@ -574,14 +573,18 @@ function useSidebarThreads(input: {
     });
   };
   const compactBucketRowsOf = compactGroupBy === "project" ? projectBucketRowsOf : timeBucketRowsOf;
-  const settledGroups =
-    settledGroupsEnabled && settledShelfExpanded && !compactModeEnabled
+  const settledProjectGroups =
+    settledGroupsEnabled && !compactModeEnabled
       ? groupSettledThreads({
           threads: listedSettledThreads,
           targets: settledGroupTargets,
           projectKeyOf: (thread) => `${thread.environmentId}:${thread.projectId}`,
           activityMsOf: settledThreadActivityMs,
-        }).map((group) => {
+        })
+      : [];
+  const settledGroups =
+    settledGroupsEnabled && settledShelfExpanded && !compactModeEnabled
+      ? settledProjectGroups.map((group) => {
           const expanded = expandedSettledGroupIds.includes(group.id);
           return {
             id: group.id,
@@ -686,9 +689,18 @@ function useSidebarThreads(input: {
   ] as const) {
     for (const thread of list) sectionByThreadKey.set(threadShellKey(thread), section);
   }
-  const visibleBucketMarkers = [...(activeBuckets ?? []), ...(settledBuckets ?? [])].map(
-    (bucket) => bucket.marker,
-  );
+  const foldState: SidebarFoldState = {
+    collapsedBuckets: collapsedBucketMarkers,
+    settledShelfExpanded,
+    expandedSettledGroupIds,
+  };
+  const foldTargets = {
+    bucketMarkers: [...(activeBuckets ?? []), ...(settledBuckets ?? [])].map(
+      (bucket) => bucket.marker,
+    ),
+    hasSettledShelf: settledThreads.length > 0,
+    settledGroupIds: settledProjectGroups.map((group) => group.id),
+  };
   return {
     routeRowThreadKey,
     ...partition,
@@ -745,14 +757,13 @@ function useSidebarThreads(input: {
           ? markers.filter((entry) => entry !== marker)
           : [...markers, marker],
       ),
-    bucketsCollapsed:
-      visibleBucketMarkers.length === 0
-        ? null
-        : everyBucketCollapsed(visibleBucketMarkers, collapsedBucketMarkers),
-    setAllBucketsCollapsed: (collapse: boolean) =>
-      setCollapsedBucketMarkers((markers) =>
-        withBucketsCollapsed(markers, visibleBucketMarkers, collapse),
-      ),
+    allCollapsed: everythingFolded(foldState, foldTargets),
+    setAllCollapsed: (fold: boolean) => {
+      const next = foldEverything(foldState, foldTargets, fold);
+      setCollapsedBucketMarkers([...next.collapsedBuckets]);
+      setSettledShelfExpanded(next.settledShelfExpanded);
+      setExpandedSettledGroupIds([...next.expandedSettledGroupIds]);
+    },
     bucketByMarker: new Map(
       [...(activeBuckets ?? []), ...(settledBuckets ?? [])].map(
         (bucket) => [bucket.marker, bucket] as const,
@@ -1389,8 +1400,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     activeBuckets,
     settledBuckets,
     toggleBucket,
-    bucketsCollapsed,
-    setAllBucketsCollapsed,
+    allCollapsed,
+    setAllCollapsed,
     bucketByMarker,
     orderedThreadKeys,
     threadByKey,
@@ -3238,8 +3249,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               onCompactGroupByChange={(groupBy) =>
                 void updateClientSettings({ sidebarCompactGroupBy: groupBy })
               }
-              bucketsCollapsed={bucketsCollapsed}
-              onBucketsCollapsedChange={setAllBucketsCollapsed}
+              allCollapsed={allCollapsed}
+              onAllCollapsedChange={setAllCollapsed}
               onNewProject={openAddProjectCommandPalette}
               onNewThread={handleNewThreadClick}
               newThreadDisabled={projects.length === 0}

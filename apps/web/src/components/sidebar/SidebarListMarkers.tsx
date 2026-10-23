@@ -169,18 +169,34 @@ export function SidebarBucketHeader(props: {
   marker: SidebarListMarker;
   label: string;
   threadCount: number;
+  expanded: boolean;
+  onToggle: () => void;
 }) {
   return (
     <SortableSidebarMarker
       marker={props.marker}
       data-testid="sidebar-bucket-header"
-      className="mx-0.5 flex h-7 items-end gap-1.5 px-2 pb-1 text-xs font-medium text-sidebar-muted-foreground"
+      className="mx-0.5 h-7"
     >
-      <span>{props.label}</span>
-      <span className="tabular-nums text-sidebar-muted-foreground/60">
-        {props.threadCount}
-        <span className="sr-only"> threads</span>
-      </span>
+      <button
+        type="button"
+        aria-expanded={props.expanded}
+        onClick={props.onToggle}
+        className="flex h-full w-full cursor-pointer items-end gap-1.5 rounded-md px-2 pb-1 text-left text-xs font-medium text-sidebar-muted-foreground outline-none hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      >
+        <span>{props.label}</span>
+        <span className="tabular-nums text-sidebar-muted-foreground/60">
+          {props.threadCount}
+          <span className="sr-only"> threads</span>
+        </span>
+        <ChevronRightIcon
+          aria-hidden
+          className={cn(
+            "mb-px size-3 shrink-0 transition-transform motion-reduce:transition-none",
+            props.expanded && "rotate-90",
+          )}
+        />
+      </button>
     </SortableSidebarMarker>
   );
 }

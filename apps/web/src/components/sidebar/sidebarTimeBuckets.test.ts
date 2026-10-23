@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   bucketByTime,
+  visibleBucketItems,
   countByTimeBucket,
   sidebarThreadTimeMs,
   sidebarTimeBucketOf,
@@ -98,5 +99,18 @@ describe("sortThreadsByRecency", () => {
     expect(sidebarThreadTimeMs(thread("t", null, "2026-10-22T09:00:00.000Z"))).toBe(
       Date.parse("2026-10-22T09:00:00.000Z"),
     );
+  });
+});
+
+describe("visibleBucketItems", () => {
+  const items = ["a", "b", "c"];
+
+  it("shows every item of an open bucket", () => {
+    expect(visibleBucketItems(items, false, (item) => item === "b")).toEqual(items);
+  });
+
+  it("keeps only the open thread of a collapsed bucket", () => {
+    expect(visibleBucketItems(items, true, (item) => item === "b")).toEqual(["b"]);
+    expect(visibleBucketItems(items, true, () => false)).toEqual([]);
   });
 });

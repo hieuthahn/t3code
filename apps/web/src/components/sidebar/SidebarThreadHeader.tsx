@@ -1,11 +1,4 @@
-import {
-  FolderPlusIcon,
-  FolderTreeIcon,
-  Rows3Icon,
-  SearchIcon,
-  SquarePenIcon,
-  XIcon,
-} from "lucide-react";
+import { FolderPlusIcon, Rows3Icon, SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
 import {
   type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -14,8 +7,21 @@ import {
   type RefObject,
 } from "react";
 
+import type { SidebarCompactGroupBy } from "@t3tools/contracts";
+
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
+import {
+  Menu,
+  MenuGroup,
+  MenuGroupLabel,
+  MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuRadioItemIndicator,
+  MenuSeparator,
+  MenuTrigger,
+} from "../ui/menu";
 import { SidebarInput, SidebarMenuButton } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
@@ -24,9 +30,9 @@ export interface SidebarThreadHeaderProps {
   hasProjects: boolean;
   projectScope: ReactNode;
   compactMode: boolean;
-  onToggleCompactMode: () => void;
-  compactGroupedByProject: boolean;
-  onToggleCompactGroupBy: () => void;
+  onCompactModeChange: (compact: boolean) => void;
+  compactGroupBy: SidebarCompactGroupBy;
+  onCompactGroupByChange: (groupBy: SidebarCompactGroupBy) => void;
   onNewProject: () => void;
   onNewThread: (event: ReactMouseEvent) => void;
   newThreadDisabled: boolean;
@@ -48,9 +54,9 @@ export function SidebarThreadHeader({
   hasProjects,
   projectScope,
   compactMode,
-  onToggleCompactMode,
-  compactGroupedByProject,
-  onToggleCompactGroupBy,
+  onCompactModeChange,
+  compactGroupBy,
+  onCompactGroupByChange,
   onNewProject,
   onNewThread,
   newThreadDisabled,
@@ -118,25 +124,13 @@ export function SidebarThreadHeader({
           </Button>
         ) : null}
       </div>
-      <div className="flex shrink-0 items-center">
-        <SidebarHeaderIconButton
-          label="Compact sidebar"
-          aria-pressed={compactMode}
-          isActive={compactMode}
-          onClick={onToggleCompactMode}
-        >
-          <Rows3Icon />
-        </SidebarHeaderIconButton>
-        {compactMode ? (
-          <SidebarHeaderIconButton
-            label="Group by project"
-            aria-pressed={compactGroupedByProject}
-            isActive={compactGroupedByProject}
-            onClick={onToggleCompactGroupBy}
-          >
-            <FolderTreeIcon />
-          </SidebarHeaderIconButton>
-        ) : null}
+      <div className="flex shrink-0 items-center gap-0.5">
+        <SidebarViewMenu
+          compactMode={compactMode}
+          onCompactModeChange={onCompactModeChange}
+          compactGroupBy={compactGroupBy}
+          onCompactGroupByChange={onCompactGroupByChange}
+        />
         {hasProjects ? (
           <>
             {projectScope}
@@ -170,34 +164,98 @@ export function SidebarThreadHeader({
   );
 }
 
+function SidebarViewMenu({
+  compactMode,
+  onCompactModeChange,
+  compactGroupBy,
+  onCompactGroupByChange,
+}: Pick<
+  SidebarThreadHeaderProps,
+  "compactMode" | "onCompactModeChange" | "compactGroupBy" | "onCompactGroupByChange"
+>) {
+  return (
+    <Menu>
+      <SidebarHeaderIconButton label="View options" menuTrigger>
+        <Rows3Icon />
+      </SidebarHeaderIconButton>
+      <MenuPopup align="end" side="bottom" className="min-w-44">
+        <MenuGroup>
+          <MenuGroupLabel>Density</MenuGroupLabel>
+          <MenuRadioGroup
+            value={compactMode ? "compact" : "comfortable"}
+            onValueChange={(value) => onCompactModeChange(value === "compact")}
+          >
+            <MenuRadioItem value="comfortable" closeOnClick>
+              <span className="flex items-center justify-between gap-2">
+                Comfortable
+                <MenuRadioItemIndicator />
+              </span>
+            </MenuRadioItem>
+            <MenuRadioItem value="compact" closeOnClick>
+              <span className="flex items-center justify-between gap-2">
+                Compact
+                <MenuRadioItemIndicator />
+              </span>
+            </MenuRadioItem>
+          </MenuRadioGroup>
+        </MenuGroup>
+        <MenuSeparator />
+        <MenuGroup>
+          <MenuGroupLabel>Group by</MenuGroupLabel>
+          <MenuRadioGroup
+            value={compactGroupBy}
+            onValueChange={(value) => {
+              if (value === "time" || value === "project") onCompactGroupByChange(value);
+            }}
+          >
+            <MenuRadioItem value="time" disabled={!compactMode} closeOnClick>
+              <span className="flex items-center justify-between gap-2">
+                Date
+                <MenuRadioItemIndicator />
+              </span>
+            </MenuRadioItem>
+            <MenuRadioItem value="project" disabled={!compactMode} closeOnClick>
+              <span className="flex items-center justify-between gap-2">
+                Project
+                <MenuRadioItemIndicator />
+              </span>
+            </MenuRadioItem>
+          </MenuRadioGroup>
+        </MenuGroup>
+      </MenuPopup>
+    </Menu>
+  );
+}
+
 export function SidebarHeaderIconButton({
   label,
   tooltip = label,
   className,
   children,
+  menuTrigger = false,
   ...rest
 }: {
   label: string;
   tooltip?: ReactNode;
   className?: string | undefined;
   children?: ReactNode;
+  menuTrigger?: boolean;
 } & Omit<
   ComponentProps<typeof SidebarMenuButton>,
-  "children" | "className" | "tooltip" | "aria-label"
+  "children" | "className" | "tooltip" | "isActive" | "aria-label"
 >) {
+  const button = (
+    <SidebarMenuButton
+      size="icon"
+      type="button"
+      aria-label={label}
+      {...rest}
+      className={cn("relative size-7 shrink-0", className)}
+    />
+  );
   return (
     <Tooltip>
-      <TooltipTrigger
-        render={
-          <SidebarMenuButton
-            size="icon"
-            type="button"
-            aria-label={label}
-            {...rest}
-            className={cn("relative size-7 shrink-0", className)}
-          />
-        }
-      >
+      <TooltipTrigger render={menuTrigger ? <MenuTrigger render={button} /> : button}>
         {children}
         <span
           aria-hidden

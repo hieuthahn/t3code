@@ -198,6 +198,39 @@ describe("ClientSettings notifications", () => {
   });
 });
 
+describe("ClientSettings saved environments", () => {
+  it("starts empty and keeps a saved setup through a patch", () => {
+    const saved = {
+      id: "env-1",
+      name: "Frontend",
+      environmentId: "local",
+      folders: ["project-web", "project-api"],
+      worktreePerFolder: true,
+    };
+
+    expect(decodeClientSettings({}).savedEnvironments).toEqual([]);
+    expect(decodeClientSettingsPatch({ savedEnvironments: [saved] }).savedEnvironments).toEqual([
+      saved,
+    ]);
+    expect(
+      encodeClientSettings(decodeClientSettings({ savedEnvironments: [saved] })).savedEnvironments,
+    ).toEqual([saved]);
+  });
+
+  it("defaults the worktree toggle off and rejects a blank name", () => {
+    const [saved] = decodeClientSettings({
+      savedEnvironments: [{ id: "env-2", name: "Server", environmentId: "remote", folders: [] }],
+    }).savedEnvironments;
+
+    expect(saved?.worktreePerFolder).toBe(false);
+    expect(() =>
+      decodeClientSettingsPatch({
+        savedEnvironments: [{ id: "env-3", name: "  ", environmentId: "local", folders: [] }],
+      }),
+    ).toThrow();
+  });
+});
+
 describe("ClientSettings quit confirmation", () => {
   it.each([
     [true, "hold"],

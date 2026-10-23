@@ -9,6 +9,7 @@ import {
   archiveSelectedThreadEntries,
   deleteSelectedThreadEntries,
   fanoutGroupMarker,
+  filterSidebarV2VisibleThreads,
   timeBucketMarker,
   projectBucketMarker,
   getFallbackThreadIdAfterDelete,
@@ -205,6 +206,32 @@ describe("sidebar thread lineage helpers", () => {
     const loopA = subagentOf("thread-loop-a", ThreadId.make("thread-loop-b"));
     const loopB = subagentOf("thread-loop-b", loopA.id);
     expect(resolveSidebarRowThreadId(loopA.id, environmentId, [loopA, loopB])).toBe(loopA.id);
+  });
+});
+
+describe("sidebar side questions", () => {
+  it("hides a side question and maps it to its parent's row", () => {
+    const environmentId = EnvironmentId.make("environment-side-question");
+    const root = makeThreadFixture({ id: ThreadId.make("thread-main"), environmentId });
+    const sideQuestion = makeThreadFixture({
+      id: ThreadId.make("thread-side-question"),
+      environmentId,
+      lineage: {
+        rootThreadId: root.id,
+        parentThreadId: root.id,
+        relationshipToParent: "fork",
+        sideQuestion: true,
+      },
+    });
+
+    expect(
+      filterSidebarV2VisibleThreads([root, sideQuestion], null, new Set()).map(
+        (thread) => thread.id,
+      ),
+    ).toEqual([root.id]);
+    expect(resolveSidebarRowThreadId(sideQuestion.id, environmentId, [root, sideQuestion])).toBe(
+      root.id,
+    );
   });
 });
 

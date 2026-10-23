@@ -146,6 +146,8 @@ export const OrchestrationV2AppThreadLineage = Schema.Struct({
   parentThreadId: Schema.NullOr(ThreadId),
   relationshipToParent: Schema.NullOr(Schema.Literals(["fork", "subagent"])),
   rootThreadId: ThreadId,
+  /** A `/btw` fork: it opens as a tab beside its parent and stays out of thread lists. */
+  sideQuestion: Schema.optional(Schema.Literal(true)),
 });
 export type OrchestrationV2AppThreadLineage = typeof OrchestrationV2AppThreadLineage.Type;
 
@@ -3153,6 +3155,7 @@ export const OrchestrationV2Command = Schema.Union([
     targetThreadId: ThreadId,
     sourcePoint: OrchestrationV2ThreadForkSourcePoint,
     title: Schema.optional(TrimmedNonEmptyString),
+    sideQuestion: Schema.optional(Schema.Literal(true)),
     createdAt: Schema.optional(Schema.DateTimeUtc),
   }),
   Schema.Struct({

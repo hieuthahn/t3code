@@ -585,11 +585,11 @@ export function buildMultiSelectThreadContextMenuItems(input: {
 }
 
 function isSidebarSubagentThread(thread: Pick<SidebarThreadSummary, "lineage">): boolean {
-  return thread.lineage.relationshipToParent === "subagent";
+  return thread.lineage.relationshipToParent === "subagent" || thread.lineage.sideQuestion === true;
 }
 
-// Subagent threads have no sidebar row, so an open subagent is represented by
-// its nearest non-subagent ancestor. A broken chain (missing parent, cycle,
+// Subagent threads and side questions have no sidebar row, so an open one is
+// represented by its nearest ancestor that has a row. A broken chain (missing parent, cycle,
 // other environment) resolves to the thread itself, which then matches no row.
 export function resolveSidebarRowThreadId(
   threadId: ThreadId,

@@ -45,6 +45,7 @@ import * as ProviderSwitchService from "./ProviderSwitchService.ts";
 import * as ProviderTurnControlService from "./ProviderTurnControlService.ts";
 import * as ProviderTurnStartService from "./ProviderTurnStartService.ts";
 import * as PromptSuggestionHub from "./PromptSuggestionHub.ts";
+import * as TurnRecapHub from "./TurnRecapHub.ts";
 import * as RunExecutionService from "./RunExecutionService.ts";
 import * as RunFinalizationService from "./RunFinalizationService.ts";
 import * as ResourceCleanupService from "./ResourceCleanupService.ts";
@@ -134,6 +135,8 @@ const layerPromptSuggestionHubProvided = PromptSuggestionHub.layer.pipe(
   Layer.provide(ProjectionStore.layer),
 );
 
+const layerTurnRecapHubProvided = TurnRecapHub.layer.pipe(Layer.provide(ProjectionStore.layer));
+
 const layerCommandOutputHubProvided = CommandOutputHub.layer.pipe(
   Layer.provide(Layer.merge(layerEventSinkProvided, ProjectionStore.layer)),
 );
@@ -162,6 +165,7 @@ const layerRunExecutionServiceProvided = RunExecutionService.layer.pipe(
       McpAppModelContext.layer,
       layerCheckpointServiceProvided,
       layerPromptSuggestionHubProvided,
+      layerTurnRecapHubProvided,
       layerEventSinkProvided,
       IdAllocator.layer,
       layerProviderEventIngestorProvided,
@@ -361,6 +365,7 @@ const layerMcpAppRequestsProvided = McpAppRequests.layer.pipe(
 export const layer = Layer.mergeAll(
   layerCommandOutputHubProvided,
   layerPromptSuggestionHubProvided,
+  layerTurnRecapHubProvided,
   layerOrchestratorProvided,
   layerMcpAppRequestsProvided,
   layerThreadManagementProvided,

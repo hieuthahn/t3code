@@ -1353,6 +1353,7 @@ export function makeClaudeQueryOptions(input: {
   readonly appendSystemPromptFileText?: string;
   // Flag settings, because a user's settings.json env beats the process env in Claude Code.
   readonly toolSearchOverride?: "true";
+  readonly tokenSaverInstructions?: string;
   readonly promptSuggestions?: boolean;
 }): ClaudeAgentSdkQueryOptions {
   const compiledSelection = compileClaudeModelSelection(input.modelSelection);
@@ -1465,6 +1466,7 @@ export function makeClaudeQueryOptions(input: {
           (input.mcpServers === undefined
             ? ""
             : T3_CODE_ORCHESTRATION_INSTRUCTIONS + CLAUDE_BACKGROUND_WAIT_INSTRUCTIONS),
+        ...(input.tokenSaverInstructions === undefined ? [] : [input.tokenSaverInstructions]),
         ...launchAppendSystemPrompt,
       ].join("\n\n"),
     },
@@ -2485,12 +2487,14 @@ function claudeRuntimeQueryPolicyKey(policy: ClaudeRuntimeQueryPolicy): string {
 }
 
 // Live-query reuse must include MCP pre-approvals, which can differ for the same policy key.
+/** The system prompt is fixed when a query opens, so a Token Saver change reopens it with resume. */
 export function claudeEffectiveQueryPolicyKey(
   queryPolicy: ClaudeRuntimeQueryPolicy,
   mcpOverrides: {
     readonly allowedTools?: ReadonlyArray<string>;
     readonly mcpServers?: ClaudeQueryOptions["mcpServers"];
   },
+  tokenSaverProfileKey?: string,
 ): string {
   return JSON.stringify({
     runtimePolicy: claudeRuntimeQueryPolicyKey({
@@ -2500,6 +2504,7 @@ export function claudeEffectiveQueryPolicyKey(
         : { allowedTools: mcpOverrides.allowedTools }),
     }),
     mcpServers: mcpOverrides.mcpServers,
+    ...(tokenSaverProfileKey === undefined ? {} : { tokenSaver: tokenSaverProfileKey }),
   });
 }
 
@@ -9576,7 +9581,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               ? {}
               : { allowedTools: queryPolicy.allowedTools }),
           });
-          const queryPolicyKey = claudeEffectiveQueryPolicyKey(queryPolicy, mcpOverrides);
+          const queryPolicyKey = claudeEffectiveQueryPolicyKey(
+            queryPolicy,
+            mcpOverrides,
+            turnInput.tokenSaver?.profileKey,
+          );
           const compiledSelection = compileClaudeModelSelection(turnInput.modelSelection);
           const resumeSessionAt = yield* getNativeConversationHeadId(turnInput.providerThread);
           const existing = yield* Ref.get(queryContext);
@@ -9705,6 +9714,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             supportedDialogKinds: ["resume_return"],
             ...(appendSystemPromptFileText === undefined ? {} : { appendSystemPromptFileText }),
             ...(toolSearchOverride === undefined ? {} : { toolSearchOverride }),
+            ...(turnInput.tokenSaver === undefined
+              ? {}
+              : { tokenSaverInstructions: turnInput.tokenSaver.instructions }),
             promptSuggestions:
               turnInput.appThread.lineage.relationshipToParent !== "subagent" &&
               (Option.isSome(serverSettings)
@@ -9714,6 +9726,13 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   )
                 : true),
           });
+          if (turnInput.tokenSaver !== undefined) {
+            yield* Effect.annotateCurrentSpan({
+              "tokenSaver.profile": turnInput.tokenSaver.profileKey,
+              "tokenSaver.chars": turnInput.tokenSaver.instructions.length,
+              "tokenSaver.resume": shouldResume,
+            });
+          }
           const querySession = yield* queryRunner
             .open({
               threadId: turnInput.threadId,

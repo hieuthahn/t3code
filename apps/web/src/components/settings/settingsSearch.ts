@@ -387,6 +387,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["sidebar density dense one line rows today this week older time groups"],
   },
   {
+    id: "compact-sidebar-grouping",
+    title: "Group compact sidebar by",
+    to: "/settings/general",
+    searchTerms: ["sidebar compact group project date time today folder"],
+  },
+  {
     id: "auto-settle-inactive-threads",
     title: "Auto-settle inactive threads",
     to: "/settings/general",

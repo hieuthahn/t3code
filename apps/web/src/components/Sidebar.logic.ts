@@ -144,11 +144,13 @@ export type SidebarListMarker =
   | "settled-header"
   | `${typeof SETTLED_GROUP_MARKER_PREFIX}${string}`
   | `${typeof FANOUT_GROUP_MARKER_PREFIX}${string}`
-  | `${typeof TIME_BUCKET_MARKER_PREFIX}${string}`;
+  | `${typeof TIME_BUCKET_MARKER_PREFIX}${string}`
+  | `${typeof PROJECT_BUCKET_MARKER_PREFIX}${string}`;
 
 const SETTLED_GROUP_MARKER_PREFIX = "settled-group:";
 const FANOUT_GROUP_MARKER_PREFIX = "fanout-group:";
 const TIME_BUCKET_MARKER_PREFIX = "time-bucket:";
+const PROJECT_BUCKET_MARKER_PREFIX = "project-bucket:";
 
 export function sidebarMarkerId(marker: SidebarListMarker): string {
   return `${SIDEBAR_MARKER_PREFIX}${marker}`;
@@ -173,6 +175,10 @@ export function timeBucketMarker(
   bucket: SidebarTimeBucket,
 ): SidebarListMarker {
   return `${TIME_BUCKET_MARKER_PREFIX}${section}:${bucket}`;
+}
+
+export function projectBucketMarker(section: SidebarSection, groupId: string): SidebarListMarker {
+  return `${PROJECT_BUCKET_MARKER_PREFIX}${section}:${groupId}`;
 }
 
 export type SidebarListItem =
@@ -964,6 +970,11 @@ export type SidebarV2TopStatusKind =
   | "waiting"
   | "woke"
   | "working";
+
+/** Decide whether a compact row shows its status; an idle "Waiting" thread shows its time instead. */
+export function compactRowShowsStatus(kind: SidebarV2TopStatusKind | null): boolean {
+  return kind !== null && kind !== "waiting";
+}
 
 export function resolveSidebarV2TopStatus(input: {
   readonly status: SidebarThreadStatus;

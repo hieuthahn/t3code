@@ -25,6 +25,7 @@ import serverPackageJson from "../apps/server/package.json" with { type: "json" 
 
 import {
   createStagePatchedDependencies,
+  pinPatchedStageDependencies,
   createStageWorkspaceConfig,
   resolveFffNativeDependencies,
   STAGE_INSTALL_ARGS,
@@ -153,10 +154,10 @@ const stageRuntimeExternals = Effect.fn("stageRuntimeExternals")(function* (inpu
       hint: "The archive stages fff's platform binary from this version.",
     });
   }
-  const dependencies = {
+  const dependencies = pinPatchedStageDependencies(workspace.patchedDependencies ?? {}, {
     ...selectCliRuntimeExternalDependencies(serverDependencies),
     ...resolveFffNativeDependencies(input.platform, input.arch, fffNodeVersion),
-  };
+  });
   const patchedDependencies = createStagePatchedDependencies(
     workspace.patchedDependencies ?? {},
     dependencies,

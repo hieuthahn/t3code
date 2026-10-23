@@ -43,4 +43,26 @@ describe("SidebarBucketHeader", () => {
     await userEvent.keyboard(" ");
     expect(onToggle).toHaveBeenCalledTimes(2);
   });
+
+  it("marks a project group and names it in full on hover", async () => {
+    await using screen = await render(
+      <ul>
+        <SidebarBucketHeader
+          marker={timeBucketMarker("active", "today")}
+          label="hora-skills-ort-furo"
+          threadCount={4}
+          expanded
+          onToggle={() => {}}
+          project={null}
+        />
+      </ul>,
+    );
+    const header = screen.container.querySelector("[data-testid=sidebar-bucket-header]");
+
+    expect(header?.getAttribute("data-kind")).toBe("project");
+    await userEvent.hover(header!.querySelector("[data-slot=tooltip-trigger]")!);
+    await expect
+      .poll(() => document.querySelector("[data-slot=tooltip-popup]")?.textContent)
+      .toBe("hora-skills-ort-furo");
+  });
 });

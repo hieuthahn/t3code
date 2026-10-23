@@ -41,6 +41,7 @@ import * as Stream from "effect/Stream";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as McpAppModelContext from "../mcpApps/McpAppModelContext.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as TokenSaver from "../tokenSaver/TokenSaverService.ts";
 import * as CheckpointService from "./CheckpointService.ts";
 import * as EventSink from "./EventSink.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -617,6 +618,7 @@ export const layer: Layer.Layer<
     const finalizationObserver = yield* RunFinalizationService.RunFinalizationObserver;
     const promptSuggestions = yield* Effect.serviceOption(PromptSuggestionHub.PromptSuggestionHub);
     const turnRecaps = yield* Effect.serviceOption(TurnRecapHub.TurnRecapHub);
+    const tokenSaverService = yield* Effect.serviceOption(TokenSaver.TokenSaverService);
 
     const writeFinalRunEvents = Effect.fn("RunExecutionService.writeFinalRunEvents")(
       function* (input: {
@@ -1602,6 +1604,15 @@ export const layer: Layer.Layer<
           key: `mcp_app_${entry.itemId.replace(/[^\w.-]/g, "_")}`,
           text: entry.text,
         }));
+        const tokenSaver =
+          Option.isNone(tokenSaverService) ||
+          !TokenSaver.TOKEN_SAVER_DRIVERS.has(input.session.driver)
+            ? undefined
+            : yield* tokenSaverService.value.resolveTurn(input.appThread);
+        yield* Effect.annotateCurrentSpan(
+          "tokenSaver.profile",
+          tokenSaver?.instructions === undefined ? "off" : tokenSaver.profileKey,
+        );
         const turnInput = {
           appThread: input.appThread,
           threadId: input.run.threadId,
@@ -1623,6 +1634,14 @@ export const layer: Layer.Layer<
           modelSelection: input.modelSelection,
           runtimePolicy: input.runtimePolicy,
           ...(appContext.length === 0 ? {} : { appContext }),
+          ...(tokenSaver?.instructions === undefined
+            ? {}
+            : {
+                tokenSaver: {
+                  profileKey: tokenSaver.profileKey,
+                  instructions: tokenSaver.instructions,
+                },
+              }),
         };
         // Check after the context read: ingestion can settle the run while
         // it awaits. A failed ownership read fails the start below.
@@ -1633,6 +1652,13 @@ export const layer: Layer.Layer<
         if (Exit.isSuccess(shouldStart) && !shouldStart.value) {
           yield* Fiber.interrupt(providerEventFiber);
           return;
+        }
+        if (Option.isSome(tokenSaverService) && Exit.isSuccess(shouldStart)) {
+          yield* tokenSaverService.value.recordAttempt({
+            attemptId: input.attemptId,
+            threadId: input.run.threadId,
+            profileKey: tokenSaver?.instructions === undefined ? "off" : tokenSaver.profileKey,
+          });
         }
 
         const compact =

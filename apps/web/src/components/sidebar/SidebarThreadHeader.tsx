@@ -175,9 +175,9 @@ function SidebarViewMenu({
 >) {
   return (
     <Menu>
-      <MenuTrigger render={<SidebarHeaderIconButton label="View options" />}>
+      <SidebarHeaderIconButton label="View options" menuTrigger>
         <Rows3Icon />
-      </MenuTrigger>
+      </SidebarHeaderIconButton>
       <MenuPopup align="end" side="bottom" className="min-w-44">
         <MenuGroup>
           <MenuGroupLabel>Density</MenuGroupLabel>
@@ -232,29 +232,30 @@ export function SidebarHeaderIconButton({
   tooltip = label,
   className,
   children,
+  menuTrigger = false,
   ...rest
 }: {
   label: string;
   tooltip?: ReactNode;
   className?: string | undefined;
   children?: ReactNode;
+  menuTrigger?: boolean;
 } & Omit<
   ComponentProps<typeof SidebarMenuButton>,
   "children" | "className" | "tooltip" | "isActive" | "aria-label"
 >) {
+  const button = (
+    <SidebarMenuButton
+      size="icon"
+      type="button"
+      aria-label={label}
+      {...rest}
+      className={cn("relative size-7 shrink-0", className)}
+    />
+  );
   return (
     <Tooltip>
-      <TooltipTrigger
-        render={
-          <SidebarMenuButton
-            size="icon"
-            type="button"
-            aria-label={label}
-            {...rest}
-            className={cn("relative size-7 shrink-0", className)}
-          />
-        }
-      >
+      <TooltipTrigger render={menuTrigger ? <MenuTrigger render={button} /> : button}>
         {children}
         <span
           aria-hidden

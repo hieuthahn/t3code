@@ -634,6 +634,7 @@ function useSidebarThreads(input: {
     threads,
     workingShelfEnabled,
     compactModeEnabled,
+    compactGroupBy,
     searchableThreads: [
       ...pinnedThreads,
       ...activeThreads,
@@ -1253,6 +1254,7 @@ export default function Sidebar() {
     threads,
     workingShelfEnabled,
     compactModeEnabled,
+    compactGroupBy,
     pinnedThreads,
     draggableThreadKeys,
     activeReorderableThreadKeys,
@@ -3054,6 +3056,12 @@ export default function Sidebar() {
               compactMode={compactModeEnabled}
               onToggleCompactMode={() =>
                 void updateClientSettings({ sidebarCompactModeEnabled: !compactModeEnabled })
+              }
+              compactGroupedByProject={compactGroupBy === "project"}
+              onToggleCompactGroupBy={() =>
+                void updateClientSettings({
+                  sidebarCompactGroupBy: compactGroupBy === "project" ? "time" : "project",
+                })
               }
               onNewProject={openAddProjectCommandPalette}
               onNewThread={handleNewThreadClick}

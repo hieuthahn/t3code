@@ -14,6 +14,7 @@ import type {
   ProjectId,
   ProviderInstanceId,
   RunId,
+  TeamSetup,
   ThreadId,
   TokenSaverConfig,
 } from "@t3tools/contracts";
@@ -108,6 +109,8 @@ export interface EnvironmentThreadShell {
   readonly fanoutGroupId?: string | null;
   /** Null when the thread follows the server's Token Saver defaults. */
   readonly tokenSaver?: TokenSaverConfig | null;
+  /** Null while the thread runs as a single agent. */
+  readonly team?: TeamSetup | null;
   readonly activeProviderThreadId: OrchestrationV2ThreadShell["activeProviderThreadId"];
   readonly latestRun: ThreadRunSummary | null;
   readonly runtime: ThreadRuntimeSummary | null;
@@ -258,6 +261,7 @@ export function presentThreadShell(
     delegatedFrom: thread.delegatedFrom ?? null,
     fanoutGroupId: thread.fanoutGroupId ?? null,
     tokenSaver: thread.tokenSaver ?? null,
+    team: thread.team ?? null,
     activeProviderThreadId: thread.activeProviderThreadId,
     latestRun,
     runtime,

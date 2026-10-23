@@ -47,16 +47,21 @@ const isChildRunLive = (
 
 /**
  * Whether a thread shows under its parent rather than in thread lists: a
- * subagent, or a task a linked environment delegated here whose parent the
- * client lists (`delegatedUnderParent`, by thread key). A task whose parent
- * the client cannot list stays in the lists, so its work is never out of reach.
+ * subagent, a side question (a tab beside its parent), or a task a linked
+ * environment delegated here whose parent the client lists
+ * (`delegatedUnderParent`, by thread key). A task whose parent the client
+ * cannot list stays in the lists, so its work is never out of reach.
  */
 export function isShownUnderParent(
   ref: ScopedThreadRef,
   lineage: OrchestrationV2ThreadShell["lineage"],
   delegatedUnderParent: ReadonlySet<string>,
 ): boolean {
-  return lineage.relationshipToParent === "subagent" || delegatedUnderParent.has(threadKey(ref));
+  return (
+    lineage.relationshipToParent === "subagent" ||
+    lineage.sideQuestion === true ||
+    delegatedUnderParent.has(threadKey(ref))
+  );
 }
 
 /** Provider-native

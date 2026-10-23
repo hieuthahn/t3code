@@ -341,10 +341,18 @@ export const layerWith = (options: { readonly drainOnApprove: boolean }) =>
       );
 
       const subscribe: MergeQueueService["Service"]["subscribe"] = (ownerThreadId) =>
-        Stream.concat(
-          Stream.make(ownerThreadId),
-          Stream.fromPubSub(changes).pipe(Stream.filter((changed) => changed === ownerThreadId)),
-        ).pipe(Stream.mapEffect(() => view(ownerThreadId)));
+        Stream.unwrap(
+          Effect.gen(function* () {
+            const subscription = yield* PubSub.subscribe(changes);
+            return Stream.concat(
+              Stream.fromEffect(view(ownerThreadId)),
+              Stream.fromSubscription(subscription).pipe(
+                Stream.filter((changed) => changed === ownerThreadId),
+                Stream.mapEffect(() => view(ownerThreadId)),
+              ),
+            );
+          }),
+        );
 
       const interrupted = yield* readRows(
         sql`SELECT * FROM merge_queue_items WHERE status IN ${sql.in(RUNNING_STATUSES)}`,

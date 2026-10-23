@@ -27,6 +27,7 @@ import * as RuntimeRequestService from "./RuntimeRequestService.ts";
 import * as ThreadTitleRegenerationService from "./ThreadTitleRegenerationService.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import { queuedRunsInDeliveryOrder } from "./QueuedRunOrder.ts";
 import { continueRestartedRun } from "./RestartContinuation.ts";
 
 export class OrchestrationEffectExecutionError extends Schema.TaggedError<OrchestrationEffectExecutionError>()(
@@ -247,11 +248,10 @@ export const layerExecutor: Layer.Layer<
                 ),
                 Effect.catch((error) =>
                   Effect.gen(function* () {
-                    if (
-                      !("turnCompleted" in error) ||
-                      !error.turnCompleted ||
-                      effect.request.type !== "provider-turn.steer"
-                    ) {
+                    const turnCompleted = "turnCompleted" in error && error.turnCompleted === true;
+                    const turnEnded =
+                      turnCompleted || ("turnEnded" in error && error.turnEnded === true);
+                    if (!turnEnded || effect.request.type !== "provider-turn.steer") {
                       return yield* error;
                     }
                     const projection = yield* threads.getThreadRecords(
@@ -263,6 +263,9 @@ export const layerExecutor: Layer.Layer<
                     const message = projection.messages.find((item) => item.id === messageId);
                     const run = projection.runs.find((item) => item.id === message?.runId);
                     if (message === undefined || run === undefined) return yield* error;
+                    // A turn that ended without completing sends the message back to the head
+                    // of the queue, where a held queue keeps it and an open one starts it.
+                    const startsNow = turnCompleted && message.delegatedCompletion === undefined;
                     // Reuse the message identity and a stable command receipt so an outbox
                     // retry cannot append a duplicate message or start a second follow-up.
                     yield* threads
@@ -274,14 +277,9 @@ export const layerExecutor: Layer.Layer<
                         text: message.text,
                         ...(message.context ? { context: message.context } : {}),
                         attachments: message.attachments,
-                        ...(message.delegatedCompletion === undefined
-                          ? {}
-                          : { modelSelection: run.modelSelection }),
+                        ...(startsNow ? {} : { modelSelection: run.modelSelection }),
                         dispatchMode: {
-                          type:
-                            message.delegatedCompletion === undefined
-                              ? "start_immediately"
-                              : "queue_after_active",
+                          type: startsNow ? "start_immediately" : "queue_after_active",
                         },
                         createdBy: message.createdBy,
                         creationSource: message.creationSource,
@@ -317,6 +315,21 @@ export const layerExecutor: Layer.Layer<
                             ),
                         }),
                       );
+                    if (startsNow || message.delegatedCompletion !== undefined) return;
+                    const queued = queuedRunsInDeliveryOrder(
+                      yield* threads.getThreadRecords(effect.threadId, ["messages", "runs"]),
+                    );
+                    const requeued = queued.find((item) => item.userMessageId === message.id);
+                    const head = queued.find((item) => item.id !== requeued?.id);
+                    if (requeued === undefined || head === undefined) return;
+                    if (queued.indexOf(requeued) < queued.indexOf(head)) return;
+                    yield* threads.dispatch({
+                      type: "queued-run.reorder",
+                      commandId: CommandId.make(`command:steer-requeue:${effect.id}`),
+                      threadId: effect.threadId,
+                      runId: requeued.id,
+                      beforeRunId: head.id,
+                    });
                   }),
                 ),
                 Effect.mapError(

@@ -14,6 +14,7 @@ import {
   CornerUpRightIcon,
   GripVerticalIcon,
   ListOrderedIcon,
+  PauseIcon,
   PencilIcon,
 } from "lucide-react";
 import { useId, useImperativeHandle, useRef, useState, type Ref } from "react";
@@ -42,6 +43,12 @@ interface QueuedRowThumbnail {
 }
 
 const QUEUED_RUN_DRAG_TYPE = "application/x-t3code-queued-run";
+
+const HOLD_REASON_LABELS = {
+  failed: "Paused because the last run failed",
+  stopped: "Paused because the run was stopped",
+  usage_limit: "Paused until the usage limit resets",
+} as const;
 
 export interface QueuedRunsControlHandle {
   steerNext: (repeat: boolean) => boolean;
@@ -87,6 +94,7 @@ export function QueuedRunsControl({
   const [expanded, setExpanded] = useState(true);
   const queueListId = useId();
   const [busyRunId, setBusyRunId] = useState<RunId | null>(null);
+  const [resumingQueue, setResumingQueue] = useState(false);
   const [dragState, setDragState] = useState<{
     readonly runId: RunId;
     readonly insertIndex: number | null;
@@ -109,6 +117,7 @@ export function QueuedRunsControl({
   const activeRun = workflow?.activeRun ?? null;
   const canReorder = workflow?.canReorder === true;
   const canSend = workflow?.canSendNow === true || workflow?.canPromoteToSteer === true;
+  const holdReason = workflow?.holdReason ?? null;
   const queuedImageUrlById = new Map(
     queuedImageAttachmentUrls.flatMap((url, index) => {
       const resource = queuedImageAttachmentResources[index];
@@ -227,9 +236,16 @@ export function QueuedRunsControl({
     setBusyRunId(null);
   };
 
+  const resumeQueue = async () => {
+    setResumingQueue(true);
+    await resume({ environmentId: props.environmentId, input: { threadId: props.threadId } });
+    setResumingQueue(false);
+  };
+
   return (
     <ComposerBanner.Attachment>
       <ComposerBanner.Root
+        variant={holdReason === null ? "default" : "warning"}
         role="region"
         aria-label={`${items.length} queued message${items.length === 1 ? "" : "s"}`}
         aria-live="polite"
@@ -253,6 +269,28 @@ export function QueuedRunsControl({
             <ComposerBanner.ToggleIcon expanded={expanded} />
           </ComposerBanner.Actions>
         </ComposerBanner.Row>
+        {holdReason !== null ? (
+          <ComposerBanner.Row>
+            <ComposerBanner.Icon className="text-warning">
+              <PauseIcon />
+            </ComposerBanner.Icon>
+            <ComposerBanner.Content className="text-foreground/80">
+              <span className="min-w-0 truncate">{HOLD_REASON_LABELS[holdReason]}</span>
+            </ComposerBanner.Content>
+            {holdReason === "usage_limit" ? null : (
+              <ComposerBanner.Actions>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={resumingQueue || busyRunId !== null}
+                  onClick={() => void resumeQueue()}
+                >
+                  Resume
+                </Button>
+              </ComposerBanner.Actions>
+            )}
+          </ComposerBanner.Row>
+        ) : null}
         <ComposerBanner.Scroll className={cn("max-h-32", !expanded && "hidden")}>
           <ComposerBanner.Children render={<ol />} id={queueListId}>
             {items.map((item) => {
@@ -441,7 +479,7 @@ export function QueuedRunsControl({
                               }}
                             >
                               <CornerUpRightIcon />
-                              {workflow?.canSendNow ? "Send now" : "Steer"}
+                              {workflow?.canSendNow ? "Send now" : "Steer now"}
                             </Button>
                           </TooltipTrigger>
                           <TooltipPopup>

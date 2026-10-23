@@ -250,6 +250,11 @@ const steps = [
       "typecheck",
     ],
   },
+  // The startup bundle budget reads a production build, so it builds the web app first.
+  affected.includes("@t3tools/web") && {
+    name: "web bundle budget",
+    args: ["run", "--filter", "@t3tools/web", "test:bundle"],
+  },
   // From the repo root, the root vite.config.ts hands each file to its package's config.
   tests.size > 0 && {
     name: `test (${tests.size} files)`,

@@ -14,6 +14,8 @@ import {
   ThreadId,
   type OrchestrationV2Command,
   type OrchestrationV2ThreadProjection,
+  type OrchestrationV2ThreadShell,
+  type TeamSetup,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -44,6 +46,7 @@ function makeProjection() {
       id: threadId,
       projectId: ProjectId.make("restart-project"),
       providerInstanceId: instanceId,
+      lineage: { rootThreadId: threadId, parentThreadId: null, relationshipToParent: null },
       archivedAt: null,
       deletedAt: null,
     },
@@ -844,7 +847,10 @@ it.effect("does not cancel or resume a run that completes while shutdown intent 
   }),
 );
 
-const continuationDispatches = (projection: OrchestrationV2ThreadProjection) =>
+const continuationDispatches = (
+  projection: OrchestrationV2ThreadProjection,
+  parentShell: Partial<OrchestrationV2ThreadShell> | null = null,
+) =>
   Effect.gen(function* () {
     const dispatches: Array<Extract<OrchestrationV2Command, { type: "message.dispatch" }>> = [];
     yield* continueRestartedRun({ threadId, sourceRunId: runId }).pipe(
@@ -852,6 +858,8 @@ const continuationDispatches = (projection: OrchestrationV2ThreadProjection) =>
         Layer.merge(
           Layer.mock(ThreadManagementService.ThreadManagementService)({
             getThreadRecords: () => Effect.succeed(projection),
+            getThreadShell: () =>
+              Effect.succeed(parentShell as unknown as OrchestrationV2ThreadShell | null),
             recoverDelegatedTask: () => Effect.void,
             dispatch: (command) => {
               if (command.type === "message.dispatch") dispatches.push(command);
@@ -865,8 +873,11 @@ const continuationDispatches = (projection: OrchestrationV2ThreadProjection) =>
     return dispatches;
   });
 
-const continuationTexts = (projection: OrchestrationV2ThreadProjection) =>
-  continuationDispatches(projection).pipe(
+const continuationTexts = (
+  projection: OrchestrationV2ThreadProjection,
+  parentShell: Partial<OrchestrationV2ThreadShell> | null = null,
+) =>
+  continuationDispatches(projection, parentShell).pipe(
     Effect.map((dispatches) => dispatches.map((command) => command.text)),
   );
 
@@ -1144,4 +1155,32 @@ it.effect.each(["completed", "failed", "interrupted"] as const)(
         [],
       );
     }),
+);
+
+const teamSetup = {
+  architect: { instanceId, model: "gpt-6" },
+  workers: [{ instanceId, model: "gpt-6" }],
+  limits: { maxRounds: 8, maxAssignments: 12, maxParallel: "unlimited", summaryLimitBytes: 2000 },
+} as const satisfies TeamSetup;
+
+it.effect("leaves a team's architect for the user to resume after a restart", () =>
+  Effect.gen(function* () {
+    const live = makeProjection();
+    const thread = { ...live.thread, team: teamSetup };
+    assert.isUndefined(restartContinuationRun({ ...live, thread }, now));
+    assert.deepEqual(yield* continuationTexts({ ...cutMidTurn(), thread }), []);
+  }),
+);
+
+it.effect("leaves a team's worker for the user to resume, but continues other children", () =>
+  Effect.gen(function* () {
+    const cut = cutMidTurn();
+    const parentThreadId = ThreadId.make("thread:parent");
+    const thread = {
+      ...cut.thread,
+      lineage: { rootThreadId: parentThreadId, parentThreadId, relationshipToParent: "subagent" },
+    } as typeof cut.thread;
+    assert.deepEqual(yield* continuationTexts({ ...cut, thread }, { team: teamSetup }), []);
+    assert.lengthOf(yield* continuationTexts({ ...cut, thread }, {}), 1);
+  }),
 );

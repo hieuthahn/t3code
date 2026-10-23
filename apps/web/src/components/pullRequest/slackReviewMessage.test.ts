@@ -4,6 +4,7 @@ import {
   buildSlackReviewMessage,
   normalizeSlackAssignees,
   projectNameFromRepository,
+  resolveStoredSlackAssignees,
 } from "./slackReviewMessage";
 
 describe("projectNameFromRepository", () => {
@@ -25,6 +26,18 @@ describe("normalizeSlackAssignees", () => {
     ["", ""],
   ])("normalizes %j to %j", (input, expected) => {
     expect(normalizeSlackAssignees(input)).toBe(expected);
+  });
+});
+
+describe("resolveStoredSlackAssignees", () => {
+  it.each([
+    ["@ort-internal", "@web-team"],
+    [" ort-internal ", "@web-team"],
+    ["@web-team", "@web-team"],
+    ["@ort-internal @hieu", "@ort-internal @hieu"],
+    ["@hieu", "@hieu"],
+  ])("reads a stored %j as %j", (stored, expected) => {
+    expect(resolveStoredSlackAssignees(stored)).toBe(expected);
   });
 });
 

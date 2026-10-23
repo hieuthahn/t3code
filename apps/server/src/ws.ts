@@ -128,6 +128,7 @@ import * as DocumentText from "./provider/DocumentText.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
 import * as MergeQueueService from "./mergeQueue/MergeQueueService.ts";
+import * as TeamService from "./team/TeamService.ts";
 import * as SecretRequests from "./secrets/SecretRequests.ts";
 import * as GuestShareService from "./guest/GuestShareService.ts";
 import {
@@ -1304,6 +1305,7 @@ type WsRpcServices =
   | ScheduledTasks.ScheduledTaskService
   | SecretRequests.SecretRequests
   | MergeQueueService.MergeQueueService
+  | TeamService.TeamService
   | ServerConfig.ServerConfig
   | ServerEnvironment.ServerEnvironment
   | ServerLifecycleEvents.ServerLifecycleEvents
@@ -1388,6 +1390,7 @@ const makeWsRpcLayer = (
       const secretRequests = yield* SecretRequests.SecretRequests;
       const guestShares = yield* GuestShareService.GuestShareService;
       const mergeQueue = yield* MergeQueueService.MergeQueueService;
+      const team = yield* TeamService.TeamService;
       const pullRequests = yield* PullRequestService.PullRequestService;
       const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
@@ -2344,6 +2347,24 @@ const makeWsRpcLayer = (
         [WS_METHODS.mergeQueueCancel]: (input) =>
           Effect.annotateCurrentSpan({ "merge_queue.item_id": input.itemId }).pipe(
             Effect.andThen(mergeQueue.cancel(input)),
+          ),
+        [WS_METHODS.teamSubscribe]: (input) =>
+          Stream.unwrap(
+            Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
+              Effect.as(team.subscribe(input.threadId)),
+            ),
+          ),
+        [WS_METHODS.teamPause]: (input) =>
+          Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
+            Effect.andThen(team.pause(input)),
+          ),
+        [WS_METHODS.teamResume]: (input) =>
+          Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
+            Effect.andThen(team.resume(input)),
+          ),
+        [WS_METHODS.teamStop]: (input) =>
+          Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
+            Effect.andThen(team.stop(input)),
           ),
         [WS_METHODS.scheduledTasksListWebhookDeliveries]: (input) =>
           Effect.annotateCurrentSpan({ "scheduled_task.id": input.id }).pipe(
@@ -3467,6 +3488,7 @@ export const layer = Layer.unwrap(
     const peerLinks = yield* PeerLinks.PeerLinks;
     const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
     const mergeQueue = yield* MergeQueueService.MergeQueueService;
+    const team = yield* TeamService.TeamService;
     const sql = yield* SqlClient.SqlClient;
     return HttpRouter.add(
       "GET",
@@ -3561,6 +3583,7 @@ export const layer = Layer.unwrap(
               Layer.provide(Layer.succeed(PeerLinks.PeerLinks, peerLinks)),
               Layer.provide(Layer.succeed(PeerLinkRequests.PeerLinkRequests, peerLinkRequests)),
               Layer.provide(Layer.succeed(MergeQueueService.MergeQueueService, mergeQueue)),
+              Layer.provide(Layer.succeed(TeamService.TeamService, team)),
               Layer.provide(
                 SourceControlDiscovery.layer.pipe(
                   Layer.provide(

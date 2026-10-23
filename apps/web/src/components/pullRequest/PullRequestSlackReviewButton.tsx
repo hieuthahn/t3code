@@ -16,6 +16,7 @@ import {
   buildSlackReviewMessage,
   DEFAULT_SLACK_REVIEW_ASSIGNEES,
   projectNameFromRepository,
+  resolveStoredSlackAssignees,
 } from "./slackReviewMessage";
 
 const SLACK_REVIEW_ASSIGNEES_KEY = "t3code:pr:slack-review-assignees";
@@ -41,11 +42,12 @@ export function PullRequestSlackReviewButton({
     defaultProject,
     Schema.String,
   );
-  const [assignees, setAssignees] = useLocalStorage(
+  const [storedAssignees, setAssignees] = useLocalStorage(
     SLACK_REVIEW_ASSIGNEES_KEY,
     DEFAULT_SLACK_REVIEW_ASSIGNEES,
     Schema.String,
   );
+  const assignees = resolveStoredSlackAssignees(storedAssignees);
   const message = buildSlackReviewMessage({
     project: project.trim() === "" ? defaultProject : project,
     title,
@@ -101,12 +103,7 @@ export function PullRequestSlackReviewButton({
                 onChange={(event) => setAssignees(event.target.value)}
               />
             </div>
-            <Textarea
-              aria-label="Slack review message"
-              readOnly
-              rows={4}
-              value={message}
-            />
+            <Textarea aria-label="Slack review message" readOnly rows={4} value={message} />
             <Button size="sm" className="self-end" onClick={() => void copy()}>
               <CopyIcon aria-hidden className="size-3.5" />
               Copy

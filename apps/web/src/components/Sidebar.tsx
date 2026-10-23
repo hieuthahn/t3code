@@ -249,6 +249,7 @@ import {
   sortThreadsByRecency,
 } from "./sidebar/sidebarTimeBuckets";
 import { everythingFolded, foldEverything, type SidebarFoldState } from "./sidebar/sidebarFoldAll";
+import { arrangeProjectGroups, withProjectPinned } from "./sidebar/sidebarProjectArrangement";
 import { sidebarProviderEntriesAtom } from "./sidebar/sidebarProviderEntries";
 
 const EMPTY_PROVIDER_ENTRIES: ReadonlyMap<string, SidebarProviderEntry> = new Map();
@@ -267,6 +268,8 @@ const SettledGroupIdsSchema = Schema.Array(Schema.String);
 const FANOUT_GROUPS_COLLAPSED_KEY = "t3code:sidebar:fanout-groups-collapsed";
 const FANOUT_GROUPS_EXPANDED_COMPACT_KEY = "t3code:sidebar:fanout-groups-expanded-compact";
 const COLLAPSED_BUCKETS_KEY = "t3code:sidebar:collapsed-buckets";
+const PROJECT_ORDER_KEY = "t3code:sidebar:project-order";
+const PINNED_PROJECTS_KEY = "t3code:sidebar:pinned-projects";
 
 const inboxReturns = createInboxReturnTracker();
 
@@ -439,6 +442,16 @@ function useSidebarThreads(input: {
     NO_EXPANDED_SETTLED_GROUPS,
     SettledGroupIdsSchema,
   );
+  const [projectOrder] = useLocalStorage(
+    PROJECT_ORDER_KEY,
+    NO_EXPANDED_SETTLED_GROUPS,
+    SettledGroupIdsSchema,
+  );
+  const [pinnedProjectIds, setPinnedProjectIds] = useLocalStorage(
+    PINNED_PROJECTS_KEY,
+    NO_EXPANDED_SETTLED_GROUPS,
+    SettledGroupIdsSchema,
+  );
   // Compact mode folds every group until opened, so it remembers the opened ones instead.
   const [expandedCompactFanoutGroupIds, setExpandedCompactFanoutGroupIds] = useLocalStorage(
     FANOUT_GROUPS_EXPANDED_COMPACT_KEY,
@@ -513,6 +526,7 @@ function useSidebarThreads(input: {
         marker,
         label: bucket.label,
         projectGroupId: null,
+        pinned: false,
         threadCount: threadCountByBucket.get(bucket.bucket) ?? bucket.items.length,
         ...bucketRowsOf(marker, bucket.items),
       };
@@ -534,12 +548,16 @@ function useSidebarThreads(input: {
     const threadCountByGroupId = new Map(
       groupByProject(countedList).map((group) => [group.id, group.threads.length] as const),
     );
-    return groupByProject(list).map((group) => {
+    return arrangeProjectGroups(groupByProject(list), {
+      order: projectOrder,
+      pinned: pinnedProjectIds,
+    }).map((group) => {
       const marker = projectBucketMarker(section, group.id);
       return {
         marker,
         label: group.label,
         projectGroupId: group.id,
+        pinned: pinnedProjectIds.includes(group.id),
         threadCount: threadCountByGroupId.get(group.id) ?? group.threads.length,
         ...bucketRowsOf(marker, group.threads),
       };
@@ -721,6 +739,8 @@ function useSidebarThreads(input: {
       ),
     activeBuckets,
     settledBuckets,
+    setProjectPinned: (groupId: string, pin: boolean) =>
+      setPinnedProjectIds((ids) => withProjectPinned(ids, groupId, pin)),
     toggleBucket: (marker: SidebarListMarker) =>
       setCollapsedBucketMarkers((markers) =>
         markers.includes(marker)
@@ -1345,6 +1365,7 @@ export default function Sidebar() {
     activeBuckets,
     settledBuckets,
     toggleBucket,
+    setProjectPinned,
     allCollapsed,
     setAllCollapsed,
     bucketByMarker,
@@ -2623,6 +2644,21 @@ export default function Sidebar() {
     },
   );
 
+  const showProjectGroupContextMenu = useStableCallback(
+    async (groupId: string, pinned: boolean, position: { x: number; y: number }) => {
+      const api = readLocalApi();
+      if (api === undefined) return;
+      const clicked = await api.contextMenu.show(
+        [
+          pinned
+            ? { id: "unpin" as const, label: "Unpin project", icon: "pin-off" as const }
+            : { id: "pin" as const, label: "Pin project", icon: "pin" as const },
+        ],
+        position,
+      );
+      if (clicked !== null) setProjectPinned(groupId, clicked === "pin");
+    },
+  );
   const handleThreadContextMenu = useStableCallback(
     (threadRef: ScopedThreadRef, position: { x: number; y: number }) => {
       void (async () => {
@@ -3354,6 +3390,7 @@ export default function Sidebar() {
                             onSnooze={attemptSnooze}
                             onUnsnooze={attemptUnsnooze}
                             onUnpin={attemptUnpin}
+                            onPin={attemptPin}
                             onAcknowledgeWoke={acknowledgeWoke}
                             onFileDropThreads={handleThreadFileDrop}
                           />
@@ -3515,6 +3552,22 @@ export default function Sidebar() {
                                       ? undefined
                                       : (projectGroupByScopeKey.get(compactBucket.projectGroupId) ??
                                         null)
+                                  }
+                                  pinned={compactBucket.pinned}
+                                  onPinnedChange={
+                                    compactBucket.projectGroupId === null
+                                      ? undefined
+                                      : (pin) => setProjectPinned(compactBucket.projectGroupId, pin)
+                                  }
+                                  onContextMenu={
+                                    compactBucket.projectGroupId === null
+                                      ? undefined
+                                      : (position) =>
+                                          void showProjectGroupContextMenu(
+                                            compactBucket.projectGroupId,
+                                            compactBucket.pinned,
+                                            position,
+                                          )
                                   }
                                 />,
                               );

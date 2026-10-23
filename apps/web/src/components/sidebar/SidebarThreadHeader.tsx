@@ -228,7 +228,9 @@ function SidebarViewMenu({
           <MenuRadioGroup
             value={compactGroupBy}
             onValueChange={(value) => {
-              if (value === "time" || value === "project") onCompactGroupByChange(value);
+              if (value === "time" || value === "project" || value === "status") {
+                onCompactGroupByChange(value);
+              }
             }}
           >
             <MenuRadioItem value="time" disabled={!compactMode} closeOnClick>
@@ -240,6 +242,12 @@ function SidebarViewMenu({
             <MenuRadioItem value="project" disabled={!compactMode} closeOnClick>
               <span className="flex items-center justify-between gap-2">
                 Project
+                <MenuRadioItemIndicator />
+              </span>
+            </MenuRadioItem>
+            <MenuRadioItem value="status" disabled={!compactMode} closeOnClick>
+              <span className="flex items-center justify-between gap-2">
+                Status
                 <MenuRadioItemIndicator />
               </span>
             </MenuRadioItem>

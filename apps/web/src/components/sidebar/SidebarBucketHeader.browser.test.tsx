@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
 import { act, render } from "../../../test/render";
-import { timeBucketMarker } from "../Sidebar.logic";
+import { statusBucketMarker, timeBucketMarker } from "../Sidebar.logic";
 import { SidebarBucketHeader } from "./SidebarListMarkers";
 
 function header(expanded: boolean, onToggle: () => void) {
@@ -64,6 +64,27 @@ describe("SidebarBucketHeader", () => {
     await expect
       .poll(() => document.querySelector("[data-slot=tooltip-popup]")?.textContent)
       .toBe("hora-skills-ort-furo");
+  });
+
+  it("marks a status group with no pin or reorder control", async () => {
+    await using screen = await render(
+      <ul>
+        <SidebarBucketHeader
+          marker={statusBucketMarker("active", "needs-input")}
+          label="Needs input"
+          threadCount={2}
+          expanded
+          onToggle={() => {}}
+          status="needs-input"
+        />
+      </ul>,
+    );
+    const header = screen.container.querySelector("[data-testid=sidebar-bucket-header]");
+
+    expect(header?.getAttribute("data-kind")).toBe("status");
+    expect(header?.querySelector("button")?.textContent).toBe("Needs input2 threads");
+    expect(header?.querySelector("[aria-label='Pin project']")).toBeNull();
+    expect(header?.querySelector("[data-project-group]")).toBeNull();
   });
 
   it("pins and unpins a project group from its header", async () => {

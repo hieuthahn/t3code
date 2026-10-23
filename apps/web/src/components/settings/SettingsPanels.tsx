@@ -21,6 +21,7 @@ import {
   type QuitConfirmationMode,
   LimitedThreadSwitchMode,
   AutoEffortJudge,
+  SidebarCompactGroupBy,
   SidebarProjectSortOrder,
 } from "@t3tools/contracts/settings";
 import { createModelSelection } from "@t3tools/shared/model";
@@ -120,6 +121,13 @@ const SIDEBAR_PROJECT_SORT_ORDER_LABELS: Record<SidebarProjectSortOrder, string>
   manual: "Manual",
 };
 const isSidebarProjectSortOrder = Schema.is(SidebarProjectSortOrder);
+
+const COMPACT_GROUP_BY_LABELS: Record<SidebarCompactGroupBy, string> = {
+  time: "Date",
+  project: "Project",
+  status: "Status",
+};
+const isSidebarCompactGroupBy = Schema.is(SidebarCompactGroupBy);
 
 const LIMITED_THREAD_SWITCH_LABELS: Record<LimitedThreadSwitchMode, string> = {
   off: "Off",
@@ -1249,7 +1257,7 @@ export function GeneralSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("compact-sidebar-grouping")}
-          description="Groups Active and Settled threads by date or by project in the compact sidebar."
+          description="Groups Active and Settled threads by date or project, or Active threads by status, in the compact sidebar."
           resetAction={
             settings.sidebarCompactGroupBy !== DEFAULT_UNIFIED_SETTINGS.sidebarCompactGroupBy ? (
               <SettingResetButton
@@ -1266,7 +1274,7 @@ export function GeneralSettingsPanel() {
             <Select
               value={settings.sidebarCompactGroupBy}
               onValueChange={(value) => {
-                if (value === "time" || value === "project") {
+                if (isSidebarCompactGroupBy(value)) {
                   updateSettings({ sidebarCompactGroupBy: value });
                 }
               }}
@@ -1276,9 +1284,7 @@ export function GeneralSettingsPanel() {
                 className="w-full sm:w-40"
                 aria-label="Group compact sidebar by"
               >
-                <SelectValue>
-                  {settings.sidebarCompactGroupBy === "project" ? "Project" : "Date"}
-                </SelectValue>
+                <SelectValue>{COMPACT_GROUP_BY_LABELS[settings.sidebarCompactGroupBy]}</SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
                 <SelectItem hideIndicator value="time">
@@ -1286,6 +1292,9 @@ export function GeneralSettingsPanel() {
                 </SelectItem>
                 <SelectItem hideIndicator value="project">
                   Project
+                </SelectItem>
+                <SelectItem hideIndicator value="status">
+                  Status
                 </SelectItem>
               </SelectPopup>
             </Select>

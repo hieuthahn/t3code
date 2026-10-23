@@ -5,6 +5,7 @@ import { type AppModelOption } from "../../modelSelection";
 import { CircleAlertIcon } from "lucide-react";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerControl, ComposerControlSeparator } from "./ComposerControl";
+import { ComposerTokenSaverControl } from "./ComposerTokenSaverControl";
 import {
   ComposerFooterModeControls,
   ComposerModelPicker,
@@ -178,16 +179,25 @@ export function ComposerControlsBar(props: {
     {
       id: "mode",
       content: (
-        <ComposerFooterModeControls
-          showInteractionModeToggle={planModeUiEnabled}
-          interactionMode={interactionMode}
-          runtimeMode={compatibleRuntimeMode}
-          runtimeModeOptions={compatibleRuntimeModeOptions}
-          size={composerControlsCollapsed ? "xs" : "sm"}
-          hidden={composerControlsHidden || restingHiddenBlockCount > 0}
-          onToggleInteractionMode={toggleInteractionMode}
-          onRuntimeModeChange={handleRuntimeModeChange}
-        />
+        <>
+          <ComposerFooterModeControls
+            showInteractionModeToggle={planModeUiEnabled}
+            interactionMode={interactionMode}
+            runtimeMode={compatibleRuntimeMode}
+            runtimeModeOptions={compatibleRuntimeModeOptions}
+            size={composerControlsCollapsed ? "xs" : "sm"}
+            hidden={composerControlsHidden || restingHiddenBlockCount > 0}
+            onToggleInteractionMode={toggleInteractionMode}
+            onRuntimeModeChange={handleRuntimeModeChange}
+          />
+          {routeKind === "server" ? (
+            <ComposerTokenSaverControl
+              threadRef={routeThreadRef}
+              driver={selectedProvider}
+              size={composerControlsCollapsed ? "xs" : "sm"}
+            />
+          ) : null}
+        </>
       ),
     },
   ];

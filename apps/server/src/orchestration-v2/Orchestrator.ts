@@ -117,6 +117,7 @@ import {
   decideGuestShareCommand,
   type GuestShareCommand,
 } from "./GuestShareDecider.ts";
+import { renderChildReport } from "./childReportText.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
 import { withCommandMetrics } from "../observability/Metrics.ts";
 import type { OrchestrationEffectRequestV2, PendingOrchestrationEffectV2 } from "./EffectOutbox.ts";
@@ -671,7 +672,7 @@ function legacyPullRequestLink(
 
 const DELEGATED_RESULT_INLINE_BYTES = 16_000;
 
-function delegatedCompletionWakeDetail(
+export function delegatedCompletionWakeDetail(
   taskIds: ReadonlyArray<string>,
   tasks: ReadonlyArray<OrchestrationV2Subagent>,
 ): string {
@@ -680,15 +681,27 @@ function delegatedCompletionWakeDetail(
     .map((taskId) => {
       const task = tasks.find((candidate) => candidate.id === taskId);
       const label = `Delegated task ${taskId}${task?.title == null ? "" : ` (${task.title})`}${task === undefined ? " reached a terminal state" : ` [${task.status}]`}`;
-      if (task?.result != null) {
-        const detail = `${label}:\n${task.result}`;
+      const fallback = `${label}. Use task_status with taskId ${taskId} to read the result.`;
+      const report = task?.report === undefined ? null : renderChildReport(task.report);
+      const candidates = [
+        ...(task?.result == null
+          ? []
+          : report === null
+            ? [`${label}:\n${task.result}`]
+            : [
+                `${label}:\n${task.result}\n\n${report}`,
+                `${label}:\n${task.result}\n\nUse task_status with taskId ${taskId} to read its report.`,
+              ]),
+        ...(report === null ? [] : [`${fallback}\n\n${report}`]),
+      ];
+      for (const detail of candidates) {
         const bytes = Buffer.byteLength(detail);
         if (bytes <= remainingBytes) {
           remainingBytes -= bytes;
           return detail;
         }
       }
-      return `${label}. Use task_status with taskId ${taskId} to read the result.`;
+      return fallback;
     })
     .join("\n\n");
 }

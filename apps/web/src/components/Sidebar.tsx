@@ -167,8 +167,10 @@ import {
   sortWorkingThreadsBySend,
   useThreadJumpHintVisibility,
   type SidebarListItem,
+  type SidebarListMarker,
   type SidebarSection,
   resolveSidebarRowThreadId,
+  fanoutGroupMarker,
   settledGroupIdOfMarker,
   settledGroupMarker,
   sidebarMarkerId,
@@ -221,6 +223,7 @@ import {
   SidebarDragBoundary,
   SidebarSectionHeader,
   SidebarSectionPlaceholder,
+  SidebarFanoutGroupHeader,
   SidebarSettledGroupHeader,
 } from "./sidebar/SidebarListMarkers";
 import {
@@ -229,6 +232,13 @@ import {
   settledThreadActivityMs,
   type SettledGroupTarget,
 } from "./sidebar/settledProjectGroups";
+import {
+  arrangeFanoutRows,
+  type FanoutGroupHeader,
+  type FanoutRow,
+  fanoutRowThreads,
+  resolveFanoutGroupIds,
+} from "./sidebar/fanoutGroups";
 
 function sameSidebarProviderEntries(
   left: ReadonlyMap<string, SidebarProviderEntry>,
@@ -294,6 +304,7 @@ const WORKING_SHELF_EXPANDED_KEY = "t3code:sidebar:working-expanded";
 const SETTLED_GROUPS_EXPANDED_KEY = "t3code:sidebar:settled-groups-expanded";
 const NO_EXPANDED_SETTLED_GROUPS: readonly string[] = [];
 const SettledGroupIdsSchema = Schema.Array(Schema.String);
+const FANOUT_GROUPS_COLLAPSED_KEY = "t3code:sidebar:fanout-groups-collapsed";
 
 const inboxReturns = createInboxReturnTracker();
 
@@ -434,6 +445,11 @@ function useSidebarThreads(input: {
     NO_EXPANDED_SETTLED_GROUPS,
     SettledGroupIdsSchema,
   );
+  const [collapsedFanoutGroupIds, setCollapsedFanoutGroupIds] = useLocalStorage(
+    FANOUT_GROUPS_COLLAPSED_KEY,
+    NO_EXPANDED_SETTLED_GROUPS,
+    SettledGroupIdsSchema,
+  );
   // The settled tail restarts whenever the project scope changes.
   const [settledTail, setSettledTail] = useState({
     scopeKey: projectScopeKey,
@@ -459,6 +475,16 @@ function useSidebarThreads(input: {
 
   const { pinnedThreads, activeThreads, workingThreads, snoozedThreads, settledThreads } =
     partition;
+  const fanoutGroupIdByKey = resolveFanoutGroupIds(threads, threadShellKey);
+  const collapsedFanoutGroupIdSet = new Set(collapsedFanoutGroupIds);
+  const fanoutRowsOf = (list: readonly EnvironmentThreadShell[]) =>
+    arrangeFanoutRows({
+      threads: list,
+      keyOf: threadShellKey,
+      groupIdByKey: fanoutGroupIdByKey,
+      collapsedGroupIds: collapsedFanoutGroupIdSet,
+      routeThreadKey: routeRowThreadKey,
+    });
   const settledGroups =
     settledGroupsEnabled && settledShelfExpanded
       ? groupSettledThreads({
@@ -473,7 +499,9 @@ function useSidebarThreads(input: {
             label: group.label,
             threadCount: group.threads.length,
             expanded,
-            threads: expanded ? group.threads : routeThreadOnly(group.threads, routeRowThreadKey),
+            rows: fanoutRowsOf(
+              expanded ? group.threads : routeThreadOnly(group.threads, routeRowThreadKey),
+            ),
           };
         })
       : null;
@@ -490,23 +518,59 @@ function useSidebarThreads(input: {
     }
     return visible;
   })();
+  const settledRows = fanoutRowsOf(
+    settledShelfExpanded
+      ? visibleSettledThreads
+      : routeThreadOnly(visibleSettledThreads, routeRowThreadKey),
+  );
   const renderedSettledThreads =
     settledGroups !== null
-      ? settledGroups.flatMap((group) => group.threads)
-      : settledShelfExpanded
-        ? visibleSettledThreads
-        : routeThreadOnly(visibleSettledThreads, routeRowThreadKey);
+      ? settledGroups.flatMap((group) => fanoutRowThreads(group.rows))
+      : fanoutRowThreads(settledRows);
   const visibleSnoozedThreads = snoozedShelfExpanded
     ? snoozedThreads
     : routeThreadOnly(snoozedThreads, routeRowThreadKey);
   const visibleWorkingThreads = workingShelfExpanded
     ? workingThreads
     : routeThreadOnly(workingThreads, routeRowThreadKey);
-  const orderedThreads = [
+  const pinnedRows = fanoutRowsOf(pinnedThreads);
+  const activeRows = fanoutRowsOf(activeThreads);
+  const workingRows = fanoutRowsOf(visibleWorkingThreads);
+  const snoozedRows = fanoutRowsOf(visibleSnoozedThreads);
+  const fanoutGroupByMarker = new Map<SidebarListMarker, FanoutGroupHeader>();
+  const rowsBySection: ReadonlyArray<
+    readonly [readonly FanoutRow<EnvironmentThreadShell>[], SidebarSection]
+  > = [
+    [pinnedRows, "pinned"],
+    [activeRows, "active"],
+    [workingRows, "working"],
+    [snoozedRows, "snoozed"],
+    [settledRows, "settled"],
+    ...(settledGroups ?? []).map((group) => [group.rows, "settled"] as const),
+  ];
+  for (const [rows, section] of rowsBySection) {
+    for (const row of rows) {
+      if (row.kind === "group") {
+        fanoutGroupByMarker.set(fanoutGroupMarker(section, row.group.id), row.group);
+      }
+    }
+  }
+  // A collapsed group's members stay addressable, so selecting its header acts on all of them.
+  const collapsedFanoutKeys = new Set(
+    [...fanoutGroupByMarker.values()].flatMap((group) => (group.collapsed ? group.memberKeys : [])),
+  );
+  const collapsedFanoutMembers = [
     ...pinnedThreads,
     ...activeThreads,
-    ...visibleWorkingThreads,
-    ...visibleSnoozedThreads,
+    ...workingThreads,
+    ...snoozedThreads,
+    ...settledThreads,
+  ].filter((thread) => collapsedFanoutKeys.has(threadShellKey(thread)));
+  const orderedThreads = [
+    ...fanoutRowThreads(pinnedRows),
+    ...fanoutRowThreads(activeRows),
+    ...fanoutRowThreads(workingRows),
+    ...fanoutRowThreads(snoozedRows),
     ...renderedSettledThreads,
   ];
   const sectionByThreadKey = new Map<string, SidebarSection>();
@@ -553,8 +617,22 @@ function useSidebarThreads(input: {
     renderedSettledThreads,
     visibleSnoozedThreads,
     visibleWorkingThreads,
+    pinnedRows,
+    activeRows,
+    workingRows,
+    snoozedRows,
+    settledRows,
+    fanoutGroupByMarker,
+    toggleFanoutGroup: (groupId: string) =>
+      setCollapsedFanoutGroupIds((ids) =>
+        ids.includes(groupId) ? ids.filter((id) => id !== groupId) : [...ids, groupId],
+      ),
     orderedThreadKeys: orderedThreads.map(threadShellKey),
-    threadByKey: new Map(orderedThreads.map((thread) => [threadShellKey(thread), thread] as const)),
+    threadByKey: new Map(
+      [...orderedThreads, ...collapsedFanoutMembers].map(
+        (thread) => [threadShellKey(thread), thread] as const,
+      ),
+    ),
     settledThreadKeys: new Set(settledThreads.map(threadShellKey)),
     snoozedThreadKeys: new Set(snoozedThreads.map(threadShellKey)),
     sectionByThreadKey,
@@ -1140,8 +1218,13 @@ export default function Sidebar() {
     settledGroupById,
     toggleSettledGroup,
     renderedSettledThreads,
-    visibleSnoozedThreads,
-    visibleWorkingThreads,
+    pinnedRows,
+    activeRows,
+    workingRows,
+    snoozedRows,
+    settledRows,
+    fanoutGroupByMarker,
+    toggleFanoutGroup,
     orderedThreadKeys,
     threadByKey,
     settledThreadKeys,
@@ -1686,12 +1769,17 @@ export default function Sidebar() {
   };
   const sidebarListItemsFresh = ((): readonly SidebarListItem[] => {
     const rowsOf = (
-      list: readonly EnvironmentThreadShell[],
+      rows: readonly FanoutRow<EnvironmentThreadShell>[],
       section: SidebarSection,
     ): SidebarListItem[] =>
-      list.map((thread) => {
-        const key = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
-        return { kind: "thread", key, section };
+      rows.map((row) => {
+        if (row.kind === "group") {
+          return { kind: "marker", marker: fanoutGroupMarker(section, row.group.id) };
+        }
+        const key = scopedThreadKey(scopeThreadRef(row.thread.environmentId, row.thread.id));
+        return row.nested
+          ? { kind: "thread", key, section, nested: true }
+          : { kind: "thread", key, section };
       });
     if (
       pinnedThreads.length +
@@ -1704,28 +1792,26 @@ export default function Sidebar() {
       return [];
     }
     const items: SidebarListItem[] = [{ kind: "marker", marker: "pinned-header" }];
-    const pinnedRows = rowsOf(pinnedThreads, "pinned");
-    items.push(...pinnedRows);
+    items.push(...rowsOf(pinnedRows, "pinned"));
     items.push({ kind: "marker", marker: "pinned-divider" });
-    const activeRows = rowsOf(activeThreads, "active");
     items.push({ kind: "marker", marker: "active-placeholder" });
-    items.push(...activeRows);
+    items.push(...rowsOf(activeRows, "active"));
     if (workingThreads.length > 0) {
       items.push({ kind: "marker", marker: "working-header" });
-      items.push(...rowsOf(visibleWorkingThreads, "working"));
+      items.push(...rowsOf(workingRows, "working"));
     }
     if (snoozedThreads.length > 0) {
       items.push({ kind: "marker", marker: "snoozed-header" });
-      items.push(...rowsOf(visibleSnoozedThreads, "snoozed"));
+      items.push(...rowsOf(snoozedRows, "snoozed"));
     }
     items.push({ kind: "marker", marker: "settled-header" });
     items.push({ kind: "marker", marker: "settled-placeholder" });
     if (settledGroups === null) {
-      items.push(...rowsOf(renderedSettledThreads, "settled"));
+      items.push(...rowsOf(settledRows, "settled"));
     } else {
       for (const group of settledGroups) {
         items.push({ kind: "marker", marker: settledGroupMarker(group.id) });
-        items.push(...rowsOf(group.threads, "settled"));
+        items.push(...rowsOf(group.rows, "settled"));
       }
     }
     return items;
@@ -3018,13 +3104,14 @@ export default function Sidebar() {
                       const renderThreadRow = (
                         thread: EnvironmentThreadShell,
                         section: SidebarSection,
+                        nested = false,
                       ) => {
                         const threadKey = scopedThreadKey(
                           scopeThreadRef(thread.environmentId, thread.id),
                         );
                         const isCard =
                           section === "active" || section === "pinned" || section === "working";
-                        const rowVariant = isCard ? "card" : "slim";
+                        const rowVariant = isCard && !nested ? "card" : "slim";
                         return (
                           <SortableThreadRow
                             key={threadKey}
@@ -3036,6 +3123,7 @@ export default function Sidebar() {
                               optimisticDrop !== null
                             }
                             thread={thread}
+                            nested={nested}
                             variant={rowVariant}
                             variantAction={
                               section === "snoozed"
@@ -3138,7 +3226,13 @@ export default function Sidebar() {
                       ];
                       for (const item of sidebarListItems) {
                         if (item.kind === "thread") {
-                          items.push(renderThreadRow(threadByKey.get(item.key)!, item.section));
+                          items.push(
+                            renderThreadRow(
+                              threadByKey.get(item.key)!,
+                              item.section,
+                              item.nested === true,
+                            ),
+                          );
                           continue;
                         }
                         switch (item.marker) {
@@ -3259,6 +3353,25 @@ export default function Sidebar() {
                             );
                             break;
                           default: {
+                            const fanoutGroup = fanoutGroupByMarker.get(item.marker);
+                            if (fanoutGroup !== undefined) {
+                              items.push(
+                                <SidebarFanoutGroupHeader
+                                  key={sidebarMarkerId(item.marker)}
+                                  marker={item.marker}
+                                  label={fanoutGroup.label}
+                                  memberCount={fanoutGroup.memberKeys.length}
+                                  expanded={!fanoutGroup.collapsed}
+                                  onToggle={() => toggleFanoutGroup(fanoutGroup.id)}
+                                  onSelectMembers={() =>
+                                    useThreadSelectionStore
+                                      .getState()
+                                      .addToSelection(fanoutGroup.memberKeys)
+                                  }
+                                />,
+                              );
+                              break;
+                            }
                             const groupId = settledGroupIdOfMarker(item.marker);
                             const group =
                               groupId === null ? undefined : settledGroupById.get(groupId);

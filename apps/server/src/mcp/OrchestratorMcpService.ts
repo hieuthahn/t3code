@@ -1550,6 +1550,7 @@ const make = Effect.gen(function* () {
       model: modelSelection.model,
       options: modelSelection.options ?? [],
       summary: derivedResult,
+      ...(task.report === undefined ? {} : { report: task.report }),
       resultContextTransferId,
       latestTerminalRunId: terminalRun?.id ?? null,
       latestTerminalStatus:

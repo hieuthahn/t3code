@@ -72,20 +72,23 @@ const plan = (input: {
   readonly switchNearLimit?: boolean;
   readonly newThread?: { readonly recentAssignments: ReadonlyMap<ProviderInstanceId, number> };
   readonly currentSignedOut?: boolean;
+  readonly peerPercent?: number;
 }) =>
   planEarlySwitch({
     switchPinned: input.switchPinned ?? false,
     ...(input.switchNearLimit === undefined ? {} : { switchNearLimit: input.switchNearLimit }),
     ...(input.newThread === undefined ? {} : { newThread: input.newThread }),
     command: input.command ?? command(),
-    thread: input.thread ?? (input.newThread === undefined ? thread : { ...thread, hasStartedRun: false }),
+    thread:
+      input.thread ??
+      (input.newThread === undefined ? thread : { ...thread, hasStartedRun: false }),
     providers: [
       provider(
         hieu,
         input.currentPercent,
         input.currentSignedOut === true ? "unauthenticated" : "authenticated",
       ),
-      provider(dung, 20),
+      provider(dung, input.peerPercent ?? 20),
     ],
     thresholdsFor: () => ({ sessionPercent: 90, weeklyPercent: 90 }),
     lastSwitchAtMs: input.lastSwitchAtMs,
@@ -137,11 +140,10 @@ describe("planEarlySwitch", () => {
     );
   });
 
-  it("leaves continuations, steers, other accounts and server turns alone", () => {
+  it("leaves continuations, steers and server turns alone", () => {
     const untouched = [
       command({ manualContinuationOfRunId: RunId.make("run-1") }),
       command({ dispatchMode: { type: "steer_active", targetRunId: RunId.make("run-1") } }),
-      command({ modelSelection: { instanceId: dung, model: "claude-opus-5-5" } }),
       command({ createdBy: "system" } as Partial<MessageDispatch>),
     ];
     for (const candidate of untouched) {
@@ -198,5 +200,42 @@ describe("planEarlySwitch with switching near the limit off", () => {
     const result = plan({ currentPercent: 10, switchNearLimit: false, currentSignedOut: true });
     assert.equal(result.command.modelSelection?.instanceId, dung);
     assert.equal(result.choice?.reason, "current-signed-out");
+  });
+});
+
+describe("planEarlySwitch for a turn that names another unpinned account", () => {
+  const onDung: EarlySwitchThread = {
+    ...thread,
+    modelSelection: { instanceId: dung, model: "claude-opus-5-5" },
+  };
+  const askHieu = command({ modelSelection: { instanceId: hieu, model: "claude-opus-5-5" } });
+
+  it("moves the turn off a pressured account the client still names", () => {
+    const result = plan({ thread: onDung, command: askHieu, currentPercent: 95 });
+    assert.equal(result.command.modelSelection?.instanceId, dung);
+    assert.equal(result.choice?.reason, "near-limit");
+  });
+
+  it("keeps a named account under its threshold, or one pinned by hand", () => {
+    const roomy = plan({ thread: onDung, command: askHieu, currentPercent: 50 });
+    assert.equal(roomy.command.modelSelection?.instanceId, hieu);
+    assert.equal(roomy.choice?.reason, "under-threshold");
+    const pinned = command({
+      modelSelection: { instanceId: hieu, model: "claude-opus-5-5", accountChoice: "pinned" },
+    });
+    assert.isNull(plan({ thread: onDung, command: pinned, currentPercent: 100 }).choice);
+  });
+
+  it("returns a full account's turn to the thread's own account when no peer has headroom", () => {
+    const result = plan({
+      thread: onDung,
+      command: askHieu,
+      currentPercent: 100,
+      peerPercent: 85,
+      switchNearLimit: false,
+      lastSwitchAtMs: NOW - 60_000,
+    });
+    assert.equal(result.command.modelSelection?.instanceId, dung);
+    assert.equal(result.choice?.reason, "requested-spent");
   });
 });

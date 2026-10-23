@@ -205,7 +205,7 @@ const peer = (instanceId: string, usedPercent: number): ServerProvider =>
   }) as unknown as ServerProvider;
 
 const runSweeps = (input: {
-  readonly mode: "off" | "ask" | "auto";
+  readonly mode?: "off" | "ask" | "auto";
   readonly threads: ReadonlyArray<ProjectionStore.ProjectionLimitRecoveryCandidate>;
   readonly sweeps: number;
 }) =>
@@ -243,7 +243,9 @@ const runSweeps = (input: {
           registry,
           projections,
           threads,
-          ServerSettings.layerTest({ limitedThreadSwitch: input.mode }),
+          ServerSettings.layerTest(
+            input.mode === undefined ? {} : { limitedThreadSwitch: input.mode },
+          ),
         ),
       ),
     );
@@ -260,6 +262,13 @@ describe("usage limit switch sweep", () => {
       const result = yield* runSweeps({ mode: "ask", threads: [makeThread()], sweeps: 1 });
       assert.deepEqual(result.dispatched, []);
       assert.deepEqual(result.refreshed, []);
+    }),
+  );
+
+  it.effect("switches limited threads when the mode is left at its default", () =>
+    Effect.gen(function* () {
+      const result = yield* runSweeps({ threads: [makeThread()], sweeps: 1 });
+      assert.lengthOf(result.dispatched, 1);
     }),
   );
 

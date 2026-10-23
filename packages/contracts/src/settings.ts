@@ -1206,7 +1206,7 @@ export const ServerSettings = Schema.Struct({
   /** Beta: guest links for this machine's threads. Off refuses new links and pauses existing ones. */
   guestSharingEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   limitedThreadSwitch: LimitedThreadSwitchMode.pipe(
-    Schema.withDecodingDefault(Effect.succeed("ask" as const)),
+    Schema.withDecodingDefault(Effect.succeed("auto" as const)),
   ),
   /** Show one model row per account group in the model picker and pick the account itself. */
   modelPickerMergeAccounts: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),

@@ -242,6 +242,7 @@ import {
 } from "./sidebar/fanoutGroups";
 import {
   bucketByTime,
+  countByTimeBucket,
   sidebarThreadTimeMs,
   sortThreadsByRecency,
 } from "./sidebar/sidebarTimeBuckets";
@@ -480,13 +481,16 @@ function useSidebarThreads(input: {
     list: readonly EnvironmentThreadShell[],
     section: SidebarSection,
     timeMsOf: (thread: EnvironmentThreadShell) => number,
-  ) =>
-    bucketByTime(list, timeMsOf, nowMs).map((bucket) => ({
+    countedList: readonly EnvironmentThreadShell[] = list,
+  ) => {
+    const threadCountByBucket = countByTimeBucket(countedList, timeMsOf, nowMs);
+    return bucketByTime(list, timeMsOf, nowMs).map((bucket) => ({
       marker: timeBucketMarker(section, bucket.bucket),
       label: bucket.label,
-      threadCount: bucket.items.length,
+      threadCount: threadCountByBucket.get(bucket.bucket) ?? bucket.items.length,
       rows: fanoutRowsOf(bucket.items),
     }));
+  };
   const settledGroups =
     settledGroupsEnabled && settledShelfExpanded && !compactModeEnabled
       ? groupSettledThreads({
@@ -522,7 +526,7 @@ function useSidebarThreads(input: {
   })();
   const settledTimeBuckets =
     compactModeEnabled && settledShelfExpanded
-      ? timeBucketRowsOf(visibleSettledThreads, "settled", settledThreadTimeMs)
+      ? timeBucketRowsOf(visibleSettledThreads, "settled", settledThreadTimeMs, settledThreads)
       : null;
   const settledRows =
     settledTimeBuckets !== null

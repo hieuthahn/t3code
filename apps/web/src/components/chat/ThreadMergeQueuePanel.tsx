@@ -44,6 +44,7 @@ const FAILURE_LABEL: Record<NonNullable<MergeQueueItem["failure"]>["stage"], str
   gate: "gate failed",
   merge: "could not land",
   interrupted: "interrupted by a restart",
+  error: "stopped by an error",
 };
 
 const REMOVABLE_STATUSES: ReadonlySet<MergeQueueItem["status"]> = new Set([

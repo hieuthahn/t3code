@@ -19,6 +19,7 @@ import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import { McpSchema, McpServer } from "effect/ai";
 
+import * as MergeQueueService from "../mergeQueue/MergeQueueService.ts";
 import * as ServerConfig from "../config.ts";
 import * as ThreadLaunch from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
@@ -224,6 +225,7 @@ const serveBox = (seen: Ref.Ref<Seen>, linkSession: Ref.Ref<string>) =>
       Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
       Layer.provide(Layer.mock(RemoteDelegation.RemoteDelegation)({})),
       Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
+      Layer.provide(Layer.mock(MergeQueueService.MergeQueueService)({})),
       Layer.provide(Layer.mock(PeerLinks.PeerLinks)({})),
     ),
   );
@@ -255,6 +257,7 @@ const makeLaptop = Effect.gen(function* () {
     Layer.provideMerge(McpServer.McpServer.layer),
     Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
     Layer.provide(Layer.mock(ThreadLaunch.ThreadLaunchService)({})),
+    Layer.provide(Layer.mock(MergeQueueService.MergeQueueService)({})),
     Layer.provide(
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/projects" }),
     ),

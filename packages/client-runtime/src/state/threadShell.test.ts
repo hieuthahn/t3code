@@ -76,6 +76,32 @@ describe("v2 thread shell lists", () => {
     registry.dispose();
   });
 
+  it("keeps side questions out of navigation but in the full shell list", () => {
+    const { registry, threads, snapshotAtom } = makeHarness();
+    const root = v2ThreadShell;
+    const sideQuestion = {
+      ...root,
+      id: ThreadId.make("side-question"),
+      lineage: {
+        ...root.lineage,
+        parentThreadId: root.id,
+        relationshipToParent: "fork" as const,
+        sideQuestion: true as const,
+      },
+    };
+    registry.set(snapshotAtom(environmentId), {
+      ...v2ShellSnapshot,
+      threads: [root, sideQuestion],
+    });
+    const dispose = registry.mount(threads.navigationThreadShellsAtom);
+    expect(registry.get(threads.navigationThreadShellsAtom).map((thread) => thread.id)).toEqual([
+      root.id,
+    ]);
+    expect(registry.get(threads.threadShellsAtom)).toHaveLength(2);
+    dispose();
+    registry.dispose();
+  });
+
   it("keeps navigation stable on hidden subagent updates and retains user forks", () => {
     const { registry, threads, snapshotAtom } = makeHarness();
     const root = v2ThreadShell;

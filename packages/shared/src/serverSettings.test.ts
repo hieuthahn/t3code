@@ -1,5 +1,6 @@
 import {
   DEFAULT_SERVER_SETTINGS,
+  DEFAULT_TEAM_LIMITS,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -892,5 +893,40 @@ describe("synchronized model preferences", () => {
         setModelFavorites: [{ provider, model: "sol", favorite: false }],
       }).favorites,
     ).toEqual([{ provider: otherProvider, model: "sol" }]);
+  });
+});
+
+describe("applyServerSettingsPatch team", () => {
+  const architect = createModelSelection(ProviderInstanceId.make("claudeAgent"), "claude-opus-4-1");
+  const worker = createModelSelection(ProviderInstanceId.make("codex"), "gpt-5-codex");
+  const guided = {
+    architect,
+    workers: [worker],
+    limits: DEFAULT_TEAM_LIMITS,
+    leadGuidance: "Coordinate only.",
+  };
+  const saved = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+    team: {
+      profiles: [
+        { id: "review", name: "Review", setup: guided },
+        { id: "build", name: "Build", setup: guided },
+      ],
+      defaultSetup: guided,
+    },
+  });
+
+  it("replaces the default setup whole, so cleared guidance stays cleared", () => {
+    const { leadGuidance: _cleared, ...unguided } = guided;
+    const next = applyServerSettingsPatch(saved, { team: { defaultSetup: unguided } });
+    expect(next.team.defaultSetup).toEqual(unguided);
+  });
+
+  it("removes a deleted profile and keeps the fields the patch leaves out", () => {
+    const next = applyServerSettingsPatch(saved, {
+      team: { profiles: [saved.team.profiles[1]!], newThreads: true },
+    });
+    expect(next.team.profiles.map((profile) => profile.id)).toEqual(["build"]);
+    expect(next.team.defaultSetup).toEqual(guided);
+    expect(next.team.newThreads).toBe(true);
   });
 });

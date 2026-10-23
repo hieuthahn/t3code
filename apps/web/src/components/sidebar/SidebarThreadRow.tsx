@@ -476,6 +476,28 @@ export function SortableThreadRow(
   return <SidebarThreadRow key={rowProps.variant} {...rowProps} thread={thread} sortable={bag} />;
 }
 export type SidebarSweepAction = "settle" | "unsettle" | "unsnooze";
+
+function ThreadTopStatusIcon(props: {
+  icon: "working" | "waiting" | "input" | "approval" | "failed" | "woke" | "done";
+  className: string;
+}) {
+  switch (props.icon) {
+    case "working":
+      return <CircleDashedIcon aria-hidden className={props.className} />;
+    case "waiting":
+      return <CircleDotDashedIcon aria-hidden className={props.className} />;
+    case "input":
+      return <MessageCircleQuestionIcon aria-hidden className={props.className} />;
+    case "approval":
+      return <ShieldQuestionIcon aria-hidden className={props.className} />;
+    case "failed":
+      return <CircleAlertIcon aria-hidden className={props.className} />;
+    case "done":
+      return <CircleCheckIcon aria-hidden className={props.className} />;
+    case "woke":
+      return null;
+  }
+}
 const dropVerbBadge: Record<SidebarDropVerb, ReactNode> = {
   pin: (
     <>
@@ -1333,19 +1355,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                             topStatus.className,
                           )}
                         >
-                          {topStatus.icon === "working" ? (
-                            <CircleDashedIcon aria-hidden className="size-4 shrink-0" />
-                          ) : topStatus.icon === "waiting" ? (
-                            <CircleDotDashedIcon aria-hidden className="size-4 shrink-0" />
-                          ) : topStatus.icon === "input" ? (
-                            <MessageCircleQuestionIcon aria-hidden className="size-4 shrink-0" />
-                          ) : topStatus.icon === "approval" ? (
-                            <ShieldQuestionIcon aria-hidden className="size-4 shrink-0" />
-                          ) : topStatus.icon === "failed" ? (
-                            <CircleAlertIcon aria-hidden className="size-4 shrink-0" />
-                          ) : topStatus.icon === "done" ? (
-                            <CircleCheckIcon aria-hidden className="size-4 shrink-0" />
-                          ) : null}
+                          <ThreadTopStatusIcon icon={topStatus.icon} className="size-4 shrink-0" />
                           {/* The label alone is the live region: a role="status"
                             wrapper around the ticking duration would make
                             screen readers announce every second. */}

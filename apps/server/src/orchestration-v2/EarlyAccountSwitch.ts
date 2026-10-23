@@ -15,6 +15,7 @@ import {
   type AccountChoice,
   type AccountSwitchThresholds,
   chooseAccountForTurn,
+  isSpentAccount,
   pickNewThreadAccount,
   resolveAccountSwitchThresholds,
 } from "@t3tools/shared/usageLimitSwitchCandidates";
@@ -34,8 +35,8 @@ export interface EarlySwitchThread {
 }
 
 /**
- * Tell whether a dispatch is a new user turn on the thread's own account. A launched thread's
- * first message defers its start until the workspace is ready, so it counts too.
+ * Tell whether a dispatch is a new user turn. A launched thread's first message defers its
+ * start until the workspace is ready, so it counts too.
  */
 export const isEarlySwitchCandidate = (
   command: MessageDispatch,
@@ -47,9 +48,7 @@ export const isEarlySwitchCandidate = (
   command.manualContinuationOfRunId === undefined &&
   command.restartContinuationOfRunId === undefined &&
   command.usageLimitContinuationOfRunId === undefined &&
-  command.delegatedCompletion === undefined &&
-  (command.modelSelection?.instanceId ?? thread.modelSelection.instanceId) ===
-    thread.modelSelection.instanceId;
+  command.delegatedCompletion === undefined;
 
 /**
  * Decide the account a user turn runs on, given the providers, the thread's last early
@@ -68,21 +67,25 @@ export const planEarlySwitch = (input: {
   readonly lastSwitchAtMs: number | undefined;
   readonly nowMs: number;
 }): { readonly command: MessageDispatch; readonly choice: AccountChoice | null } => {
+  const selection = input.command.modelSelection ?? input.thread.modelSelection;
+  // An unpinned pick of another account is a stale client draft, not a choice to honor.
+  const leavesSpentAccount =
+    selection.instanceId !== input.thread.modelSelection.instanceId &&
+    isSpentAccount(input.providers, selection.instanceId, input.nowMs);
   if (
     !isEarlySwitchCandidate(input.command, input.thread) ||
-    (!input.switchPinned &&
-      (input.command.modelSelection ?? input.thread.modelSelection).accountChoice === "pinned")
+    (!input.switchPinned && selection.accountChoice === "pinned")
   ) {
     return { command: input.command, choice: null };
   }
   if (
+    !leavesSpentAccount &&
     input.lastSwitchAtMs !== undefined &&
     input.nowMs - input.lastSwitchAtMs < THREAD_COOLDOWN_MS
   ) {
     return { command: input.command, choice: null };
   }
-  const selection = input.command.modelSelection ?? input.thread.modelSelection;
-  if (input.newThread !== undefined) {
+  if (input.newThread !== undefined && !leavesSpentAccount) {
     const instanceId = pickNewThreadAccount({
       providers: input.providers,
       proposedInstanceId: selection.instanceId,
@@ -100,15 +103,26 @@ export const planEarlySwitch = (input: {
       ? { command: { ...input.command, modelSelection: { ...selection, instanceId } }, choice }
       : { command: input.command, choice };
   }
-  const choice = chooseAccountForTurn({
+  const ranked = chooseAccountForTurn({
     providers: input.providers,
     currentInstanceId: selection.instanceId,
     model: selection.model,
     nowMs: input.nowMs,
     thresholdsFor: input.thresholdsFor,
   });
+  const threadInstanceId = input.thread.modelSelection.instanceId;
+  const choice: AccountChoice =
+    leavesSpentAccount &&
+    !ranked.switched &&
+    !isSpentAccount(input.providers, threadInstanceId, input.nowMs)
+      ? { instanceId: threadInstanceId, switched: true, reason: "requested-spent" }
+      : ranked;
   if (!choice.switched) return { command: input.command, choice };
-  if (input.switchNearLimit === false && choice.reason !== "current-signed-out") {
+  if (
+    input.switchNearLimit === false &&
+    choice.reason !== "current-signed-out" &&
+    !leavesSpentAccount
+  ) {
     return { command: input.command, choice: null };
   }
   return {
@@ -196,7 +210,8 @@ export const make = Effect.gen(function* () {
       return plan.command;
     }
     if (choice === null || choice.reason === "under-threshold") return plan.command;
-    const from: ProviderInstanceId = thread.modelSelection.instanceId;
+    const from: ProviderInstanceId =
+      command.modelSelection?.instanceId ?? thread.modelSelection.instanceId;
     if (!choice.switched) {
       if (choice.pressure === undefined) {
         const key = `${thread.id}\0${from}`;

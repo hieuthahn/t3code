@@ -6,6 +6,7 @@ import type {
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+import { isSpentAccount } from "@t3tools/shared/usageLimitSwitchCandidates";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -38,10 +39,18 @@ import {
 } from "./autoEffortJudgment.ts";
 
 /** Past this a turn starts on its manual effort: a judge must not hold the prompt up. */
-const JUDGE_DEADLINE_MS = 1_500;
+const JUDGE_DEADLINE_MS = 3_000;
 const JEV_TIMEOUT_MS = 1_000;
 const JEV_URL = "https://api.typesafe.ai/v1/systemone";
 const CLAUDE_DRIVER = "claudeAgent";
+
+/** Usage of the fullest window; an unmeasured account ranks after every measured one. */
+const fullestWindowPercent = (provider: ServerProvider): number => {
+  const windows = provider.usageLimits?.windows;
+  return windows === undefined || windows.length === 0
+    ? Number.POSITIVE_INFINITY
+    : Math.max(...windows.map((window) => window.usedPercent));
+};
 
 export interface AutoEffortRequest {
   readonly threadId: ThreadId;
@@ -119,11 +128,18 @@ const make = Effect.gen(function* () {
     request: AutoEffortRequest,
     providers: ReadonlyArray<ServerProvider>,
     textGenerationInstanceId: ModelSelection["instanceId"] | undefined,
+    nowMs: number,
   ) => {
-    if (request.driver === CLAUDE_DRIVER) return request.modelSelection.instanceId;
-    const claude = providers.filter(
-      (provider) => provider.driver === CLAUDE_DRIVER && provider.enabled,
-    );
+    const own = request.modelSelection.instanceId;
+    if (request.driver === CLAUDE_DRIVER && !isSpentAccount(providers, own, nowMs)) return own;
+    const claude = providers
+      .filter(
+        (provider) =>
+          provider.driver === CLAUDE_DRIVER &&
+          provider.enabled &&
+          !isSpentAccount(providers, provider.instanceId, nowMs),
+      )
+      .toSorted((left, right) => fullestWindowPercent(left) - fullestWindowPercent(right));
     return (
       claude.find((provider) => provider.instanceId === textGenerationInstanceId)?.instanceId ??
       claude[0]?.instanceId
@@ -163,6 +179,7 @@ const make = Effect.gen(function* () {
         request,
         providers,
         Option.getOrUndefined(settings)?.textGenerationModelSelection.instanceId,
+        yield* Clock.currentTimeMillis,
       );
       const verdict = yield* askHaiku(instanceId, input);
       return Option.map(verdict, (value): Judged => ({ verdict: value, by: "haiku", instanceId }));

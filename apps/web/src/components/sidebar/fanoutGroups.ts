@@ -71,6 +71,8 @@ export interface FanoutGroupHeader {
   readonly label: string;
   readonly memberKeys: readonly string[];
   readonly collapsed: boolean;
+  /** Set on the header of a parent's child sessions, which sits under the parent's row. */
+  readonly lineageParentKey?: string;
 }
 
 export type FanoutRow<T> =

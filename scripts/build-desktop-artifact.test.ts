@@ -35,6 +35,7 @@ import {
   MacPasskeySigningConfigurationResolutionError,
   MissingMacPasskeyProvisioningProfileError,
   packWindowsServerAsar,
+  pinPatchedStageDependencies,
   preflightWindowsDesktopBuild,
   renderMacPasskeyEntitlements,
   resolveMacWebAuthnEntitlements,
@@ -541,6 +542,31 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       }
     }),
   );
+
+  it("pins a patched dependency to the version its patch was made for", () => {
+    assert.deepStrictEqual(
+      pinPatchedStageDependencies(
+        {
+          "node-pty@1.2.0-beta.15": "patches/node-pty@1.2.0-beta.15.patch",
+          "@scope/tool@2.0.0": "patches/@scope__tool@2.0.0.patch",
+          unversioned: "patches/unversioned.patch",
+          "absent@1.0.0": "patches/absent@1.0.0.patch",
+        },
+        {
+          "node-pty": "^1.2.0-beta.15",
+          "@scope/tool": "^2.0.0",
+          unversioned: "^3.0.0",
+          other: "^4.0.0",
+        },
+      ),
+      {
+        "node-pty": "1.2.0-beta.15",
+        "@scope/tool": "2.0.0",
+        unversioned: "^3.0.0",
+        other: "^4.0.0",
+      },
+    );
+  });
 
   it("stages only the externals of both bundles in merged packages", () => {
     assert.deepStrictEqual(

@@ -37,6 +37,7 @@ import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import { v2Now, v2Projection, v2ThreadId } from "../state/orchestrationV2TestFixtures.ts";
 import {
   archiveThread,
+  decideThreadChildPlan,
   interruptThreadTurn,
   revertThreadCheckpoint,
   resumeThreadQueue,
@@ -171,6 +172,32 @@ describe("V2 environment commands", () => {
 
       expect(commands).toEqual([
         { type: "thread.archive", commandId: "queued-command", threadId: "thread-1" },
+      ]);
+    }).pipe(Effect.provide(layerTestCrypto)),
+  );
+
+  it.effect("sends the user's pick on a proposal card and leaves the decider to the server", () =>
+    Effect.gen(function* () {
+      const commands: OrchestrationV2Command[] = [];
+      const supervisor = yield* makeSupervisor({ commands, projects: [] });
+
+      yield* decideThreadChildPlan({
+        commandId: CommandId.make("decide-plan"),
+        threadId: ThreadId.make("thread-1"),
+        turnItemId: TurnItemId.make("turn-item:child-plan:1"),
+        revision: 2,
+        approvedKeys: ["api"],
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+
+      expect(commands).toEqual([
+        {
+          type: "child_plan.decide",
+          commandId: "decide-plan",
+          threadId: "thread-1",
+          turnItemId: "turn-item:child-plan:1",
+          revision: 2,
+          approvedKeys: ["api"],
+        },
       ]);
     }).pipe(Effect.provide(layerTestCrypto)),
   );

@@ -3309,6 +3309,12 @@ export default function Sidebar() {
                                   memberCount={fanoutGroup.memberKeys.length}
                                   expanded={!fanoutGroup.collapsed}
                                   onToggle={() => toggleFanoutGroup(fanoutGroup.id)}
+                                  onCompare={() =>
+                                    void router.navigate({
+                                      to: "/compare",
+                                      search: { threads: fanoutGroup.memberKeys.join(",") },
+                                    })
+                                  }
                                   onSelectMembers={() =>
                                     useThreadSelectionStore
                                       .getState()

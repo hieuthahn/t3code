@@ -24,6 +24,8 @@ import {
   type OrchestratorMcpDeleteScheduledTaskInput,
   type OrchestratorMcpRequestSecretInput,
   type OrchestratorMcpRequestSecretResult,
+  type OrchestratorMcpChildReportInput,
+  type OrchestratorMcpChildReportResult,
   type OrchestratorMcpDeleteScheduledTaskResult,
   type OrchestratorMcpListScheduledTasksResult,
   type OrchestratorMcpScheduledTask,
@@ -95,6 +97,7 @@ import { runOutcome } from "../orchestration-v2/RestartBackgroundNote.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import { readChildReportGitFacts } from "./childReportGitFacts.ts";
 import { isSnoozed } from "../orchestration-v2/ThreadSettlementService.ts";
 import { userFacingDispatchErrorMessage } from "../orchestration-v2/UserFacingErrors.ts";
 import * as ProjectService from "../project/ProjectService.ts";
@@ -189,6 +192,11 @@ export interface OrchestratorMcpServiceShape {
     scope: McpInvocationScope,
     input: OrchestratorMcpRequestSecretInput,
   ) => Effect.Effect<OrchestratorMcpRequestSecretResult, OrchestratorMcpFailure>;
+  /** Record a delegated child's report on its own task, beside what git shows in its checkout. */
+  readonly reportTask: (
+    scope: McpInvocationScope,
+    input: OrchestratorMcpChildReportInput,
+  ) => Effect.Effect<OrchestratorMcpChildReportResult, OrchestratorMcpFailure>;
   readonly listThreads: (
     scope: McpInvocationScope,
     input: OrchestratorMcpThreadListInput,
@@ -1977,6 +1985,59 @@ const make = Effect.gen(function* () {
         return { scheduledTaskId: existing.id, deleted: true };
       },
     ),
+    reportTask: Effect.fn("OrchestratorMcpService.reportTask")(function* (callerScope, input) {
+      const { scope, parent: child } = yield* loadThreadCaller(callerScope, "task_report");
+      const parentThreadId = child.thread.lineage.parentThreadId;
+      const parentProjection =
+        parentThreadId === null
+          ? undefined
+          : yield* threadManagement
+              .getThreadRecords(parentThreadId, ["subagents"])
+              .pipe(Effect.mapError(threadManagementFailure));
+      const task = parentProjection?.subagents.find(
+        (candidate) =>
+          candidate.origin === "app_owned" && candidate.childThreadId === child.thread.id,
+      );
+      if (parentThreadId === null || parentProjection === undefined || task === undefined) {
+        return yield* failure(
+          "task_not_found",
+          "task_report is for a thread started by delegate_task; this thread has no delegated task.",
+        );
+      }
+      const project = yield* requireProject(child.thread.projectId);
+      const observed = yield* readChildReportGitFacts(gitDriver.execute, {
+        cwd: child.thread.worktreePath ?? project.workspaceRoot,
+        baseRef: parentProjection.thread.branch,
+      });
+      const key = yield* requestKey(undefined);
+      yield* threadManagement
+        .dispatch({
+          type: "child_report.record",
+          commandId: stableCommandId({ scope, requestKey: key, operation: "task-report" }),
+          parentThreadId,
+          taskId: task.id,
+          claimed: {
+            status: input.status,
+            summary: input.summary,
+            ...(input.progress === undefined ? {} : { progress: input.progress }),
+            tests: input.tests ?? [],
+            questions: input.questions ?? [],
+          },
+          observed,
+        })
+        .pipe(
+          Effect.mapError((error) =>
+            failure("orchestration_error", `Could not record the report: ${errorMessage(error)}`),
+          ),
+        );
+      const recorded = yield* threadManagement
+        .getThreadRecords(parentThreadId, ["subagents"])
+        .pipe(Effect.mapError(threadManagementFailure));
+      const revision =
+        recorded.subagents.find((candidate) => candidate.id === task.id)?.report?.revision ??
+        (task.report?.revision ?? 0) + 1;
+      return { taskId: task.id, revision, observed };
+    }),
     requestSecret: Effect.fn("OrchestratorMcpService.requestSecret")(function* (scope, input) {
       const { scope: threadScope, parent } = yield* loadThreadCaller(scope, "request_secret");
       const threadId = threadScope.thread.threadId;

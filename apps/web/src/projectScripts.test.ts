@@ -86,6 +86,7 @@ describe("projectScripts helpers", () => {
       command: "true",
       icon: "play",
       waitForSetup: false,
+      runAsMergeGate: false,
       previewUrl: null,
       autoOpenPreview: false,
     } as const;

@@ -42,6 +42,7 @@ import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as McpAppModelContext from "../mcpApps/McpAppModelContext.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TokenSaver from "../tokenSaver/TokenSaverService.ts";
+import { resolveTeamTurn } from "../team/teamRules.ts";
 import * as CheckpointService from "./CheckpointService.ts";
 import * as EventSink from "./EventSink.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -1613,6 +1614,7 @@ export const layer: Layer.Layer<
           "tokenSaver.profile",
           tokenSaver?.instructions === undefined ? "off" : tokenSaver.profileKey,
         );
+        const team = resolveTeamTurn(input.appThread, input.session.driver);
         const turnInput = {
           appThread: input.appThread,
           threadId: input.run.threadId,
@@ -1634,6 +1636,7 @@ export const layer: Layer.Layer<
           modelSelection: input.modelSelection,
           runtimePolicy: input.runtimePolicy,
           ...(appContext.length === 0 ? {} : { appContext }),
+          ...(team === undefined ? {} : { team }),
           ...(tokenSaver?.instructions === undefined
             ? {}
             : {

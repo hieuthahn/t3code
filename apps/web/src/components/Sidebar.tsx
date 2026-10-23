@@ -154,6 +154,7 @@ import {
   resolveAdjacentThreadId,
   resolveSidebarSweepKeys,
   resolveSidebarDropTarget,
+  resolveSidebarStepTarget,
   resolveSidebarDropVerb,
   resolveSidebarThreadSection,
   searchSidebarThreads,
@@ -2085,13 +2086,10 @@ export default function Sidebar() {
       },
     );
   })();
-  const handleThreadDragEnd = (event: DragEndEvent) => {
-    const activeKey = String(event.active.id);
+  const dropThreadAt = (activeKey: string, overId: string | null) => {
     const activeSection = sectionByThreadKey.get(activeKey);
     const target =
-      event.over === null
-        ? null
-        : resolveSidebarDropTarget(sidebarListItems, activeKey, String(event.over.id));
+      overId === null ? null : resolveSidebarDropTarget(sidebarListItems, activeKey, overId);
     const activeThread = threadByKey.get(activeKey);
     if (activeSection === undefined || target === null || activeThread === undefined) return;
     const threadRef = scopeThreadRef(activeThread.environmentId, activeThread.id);
@@ -2226,6 +2224,15 @@ export default function Sidebar() {
           return;
       }
     })();
+  };
+  const handleThreadDragEnd = (event: DragEndEvent) =>
+    dropThreadAt(String(event.active.id), event.over === null ? null : String(event.over.id));
+  const stepPinnedThread = (threadRef: ScopedThreadRef, step: -1 | 1) => {
+    const threadKey = scopedThreadKey(threadRef);
+    if (sectionByThreadKey.get(threadKey) !== "pinned" || optimisticDrop !== null) return;
+    if (!draggableThreadKeys.has(threadKey)) return;
+    const overId = resolveSidebarStepTarget(sidebarListItems, threadKey, step);
+    if (overId !== null) dropThreadAt(threadKey, overId);
   };
   const performSnooze = async (
     threadRef: ScopedThreadRef,
@@ -3391,6 +3398,7 @@ export default function Sidebar() {
                             onUnsnooze={attemptUnsnooze}
                             onUnpin={attemptUnpin}
                             onPin={attemptPin}
+                            onStep={stepPinnedThread}
                             onAcknowledgeWoke={acknowledgeWoke}
                             onFileDropThreads={handleThreadFileDrop}
                           />

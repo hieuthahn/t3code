@@ -4,6 +4,10 @@ import type {
   OrchestrationV2ProviderCapabilities,
 } from "@t3tools/contracts";
 import { copySorted } from "@t3tools/shared/Array";
+import {
+  latestExecutedRun,
+  usageLimitBlockedRun,
+} from "@t3tools/shared/orchestrationV2ThreadError";
 
 import type { ThreadStructure } from "./models.ts";
 
@@ -28,10 +32,13 @@ export interface QueuedThreadRun {
   readonly context?: Message["context"];
 }
 
+export type ThreadQueueHoldReason = "failed" | "stopped" | "usage_limit";
+
 export interface ThreadQueueWorkflowState {
   readonly activeRun: Run | null;
   readonly queuedRuns: ReadonlyArray<QueuedThreadRun>;
   readonly isHeld: boolean;
+  readonly holdReason: ThreadQueueHoldReason | null;
   readonly canReorder: boolean;
   readonly canPromoteToSteer: boolean;
   readonly canSendNow: boolean;
@@ -151,10 +158,13 @@ export function deriveThreadQueueWorkflowState(projection: Projection): ThreadQu
     };
   });
 
+  const isHeld = projection.runs.some((run) => run.status === "queued" && run.queueHeld === true);
+
   return {
     activeRun,
     queuedRuns,
-    isHeld: projection.runs.some((run) => run.status === "queued" && run.queueHeld === true),
+    isHeld,
+    holdReason: deriveQueueHoldReason(projection, isHeld && activeRun === null),
     canReorder: capabilities?.supportsQueuedMessages === true,
     canSendNow:
       activeRun === null &&
@@ -165,6 +175,20 @@ export function deriveThreadQueueWorkflowState(projection: Projection): ThreadQu
       (capabilities?.supportsActiveSteering === true ||
         capabilities?.supportsSteeringByInterruptRestart === true),
   };
+}
+
+// The server leaves a usage-limited queue unheld but refuses to start it, so the
+// limit counts as a hold even without the flag.
+function deriveQueueHoldReason(
+  projection: Projection,
+  isHeld: boolean,
+): ThreadQueueHoldReason | null {
+  if (!projection.runs.some((run) => run.status === "queued")) return null;
+  if (usageLimitBlockedRun(projection.runs, projection.turnItems, null) !== null) {
+    return "usage_limit";
+  }
+  if (!isHeld) return null;
+  return latestExecutedRun(projection.runs)?.status === "failed" ? "failed" : "stopped";
 }
 
 export function canForkProjectedAssistantItem(input: {

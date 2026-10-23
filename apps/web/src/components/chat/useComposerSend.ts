@@ -55,6 +55,8 @@ import {
   parseStandaloneComposerSlashCommand,
 } from "../../composer-logic";
 import { resolvePlanFollowUpSubmission } from "../../proposedPlan";
+import { parseSideQuestionCommand } from "./sideQuestions.logic";
+import { useSideQuestion } from "./useSideQuestion";
 import { type ChatMessage } from "../../types";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { newMessageId, newThreadId } from "~/lib/utils";
@@ -324,6 +326,7 @@ export function useComposerSend(input: ComposerSendInput) {
   const startThreadTurn = useOrchestrationCommand(threadEnvironment.startTurn, {
     reportFailure: false,
   });
+  const askSideQuestion = useSideQuestion();
   const uploadThreadFeedback = useOrchestrationCommand(threadEnvironment.uploadFeedback, {
     reportFailure: false,
   });
@@ -475,6 +478,36 @@ export function useComposerSend(input: ComposerSendInput) {
     }
     if (!sendCtx?.providerAvailable) {
       notifyDirectAnnotationAttached();
+      return;
+    }
+    const sideQuestion = directAnnotation ? null : parseSideQuestionCommand(promptRef.current);
+    if (sideQuestion !== null) {
+      if (draftHasNonPromptContent(composerDraftTarget)) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "warning",
+            title: "Side questions take text only",
+            description: "Remove the attachments and context, then ask with /btw again.",
+          }),
+        );
+        return;
+      }
+      // Asking navigates to the side question, so the draft is cleared while it is still this one.
+      sendInFlightRef.current = true;
+      promptRef.current = "";
+      setComposerDraftPrompt(composerDraftTarget, "");
+      composerRef.current?.resetCursorState();
+      const asked = await askSideQuestion({
+        environmentId: activeThread.environmentId,
+        threadId: activeThread.id,
+        question: sideQuestion,
+      }).finally(() => {
+        sendInFlightRef.current = false;
+      });
+      if (!asked) {
+        promptRef.current = promptAtSend;
+        setComposerDraftPrompt(composerDraftTarget, promptAtSend);
+      }
       return;
     }
     const multipleModelSelections = sendCtx.multipleModelSelections;

@@ -39,7 +39,7 @@ import {
 } from "./autoEffortJudgment.ts";
 
 /** Past this a turn starts on its manual effort: a judge must not hold the prompt up. */
-const JUDGE_DEADLINE_MS = 1_500;
+const JUDGE_DEADLINE_MS = 3_000;
 const JEV_TIMEOUT_MS = 1_000;
 const JEV_URL = "https://api.typesafe.ai/v1/systemone";
 const CLAUDE_DRIVER = "claudeAgent";

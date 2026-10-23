@@ -3,13 +3,13 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 
 import type { DesktopSession } from "./ClaudeDesktopSyncPlan.ts";
 
 const PROFILE_PREFIX = "Claude";
 const NOT_PROFILES = new Set(["Claude-sync-backups", "Claude-shared-sessions", "Claude-3p"]);
 const FORK_OVERLAP = 0.95;
-const FORK_SCAN_BYTES = 8 * 1024 * 1024;
 const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 const decodeJsonOption = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
 
@@ -141,37 +141,101 @@ export const transcriptIds = Effect.fn("transcriptIds")(function* (projects: str
   return ids;
 });
 
-/** Return the user and assistant record uuids of one transcript, or null when it cannot be read. */
-export const transcriptUuids = Effect.fn("transcriptUuids")(function* (
-  projects: string,
-  sessionId: string,
-) {
+/** Map each transcript id to the project folder and file that hold it, in one scan. */
+export const transcriptIndex = Effect.fn("transcriptIndex")(function* (projects: string) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const index = new Map<string, { readonly folder: string; readonly file: string }>();
   for (const folder of yield* fileSystem
     .readDirectory(projects)
     .pipe(Effect.orElseSucceed(() => []))) {
-    const file = path.join(projects, folder, `${sessionId}.jsonl`);
-    const info = yield* fileSystem.stat(file).pipe(Effect.option);
-    if (Option.isNone(info)) continue;
-    if (Number(info.value.size) > FORK_SCAN_BYTES) return null;
-    const text = yield* fileSystem.readFileString(file).pipe(Effect.orElseSucceed(() => ""));
-    const uuids = new Set<string>();
-    for (const line of text.split("\n")) {
-      if (!line.includes('"uuid"')) continue;
-      const record = Option.getOrNull(decodeJsonOption(line)) as {
-        type?: unknown;
-        uuid?: unknown;
-      } | null;
-      if (
-        (record?.type === "user" || record?.type === "assistant") &&
-        typeof record.uuid === "string"
-      )
-        uuids.add(record.uuid);
+    for (const name of yield* fileSystem
+      .readDirectory(path.join(projects, folder))
+      .pipe(Effect.orElseSucceed(() => []))) {
+      if (name.endsWith(".jsonl")) {
+        index.set(name.slice(0, -".jsonl".length), {
+          folder,
+          file: path.join(projects, folder, name),
+        });
+      }
     }
-    return uuids;
   }
-  return null;
+  return index;
+});
+
+/** Return the user and assistant record uuids of one transcript file, or null when it cannot be read. */
+export const transcriptFileUuids = Effect.fn("transcriptFileUuids")(function* (file: string) {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const uuids = new Set<string>();
+  const read = yield* fileSystem.stream(file).pipe(
+    Stream.decodeText,
+    Stream.splitLines,
+    Stream.runForEach((line) =>
+      Effect.sync(() => {
+        if (!line.includes('"uuid"')) return;
+        const record = Option.getOrNull(decodeJsonOption(line)) as {
+          type?: unknown;
+          uuid?: unknown;
+        } | null;
+        if (
+          (record?.type === "user" || record?.type === "assistant") &&
+          typeof record.uuid === "string"
+        ) {
+          uuids.add(record.uuid);
+        }
+      }),
+    ),
+    Effect.as(true),
+    Effect.orElseSucceed(() => false),
+  );
+  return read ? uuids : null;
+});
+
+/**
+ * Find the T3 session each child forked from. A fork keeps its parent's cwd, so only transcripts
+ * in the child's project folder are compared, and each transcript is read at most once.
+ */
+export const findForkParents = Effect.fn("findForkParents")(function* (
+  projects: string,
+  childIds: ReadonlyArray<string>,
+  parentIds: ReadonlySet<string>,
+) {
+  const index = yield* transcriptIndex(projects);
+  const cache = new Map<string, ReadonlySet<string> | null>();
+  const uuidsOf = (id: string) =>
+    Effect.gen(function* () {
+      const cached = cache.get(id);
+      if (cached !== undefined) return cached;
+      const entry = index.get(id);
+      const uuids = entry === undefined ? null : yield* transcriptFileUuids(entry.file);
+      cache.set(id, uuids);
+      return uuids;
+    });
+  const byFolder = new Map<string, string[]>();
+  for (const id of parentIds) {
+    const entry = index.get(id);
+    if (entry !== undefined)
+      byFolder.set(entry.folder, [...(byFolder.get(entry.folder) ?? []), id]);
+  }
+  const parents = new Map<string, string | null>();
+  for (const childId of childIds) {
+    const folder = index.get(childId)?.folder;
+    const candidates =
+      folder === undefined ? [] : (byFolder.get(folder) ?? []).filter((id) => id !== childId);
+    let parent: string | null = null;
+    const child = candidates.length === 0 ? null : yield* uuidsOf(childId);
+    if (child !== null) {
+      for (const candidate of candidates) {
+        const other = yield* uuidsOf(candidate);
+        if (other !== null && isForkOf(child, other)) {
+          parent = candidate;
+          break;
+        }
+      }
+    }
+    parents.set(childId, parent);
+  }
+  return parents;
 });
 
 /** Say whether `child` is a fork of `parent`: almost every message of the child already sits in the parent. */

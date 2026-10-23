@@ -1345,13 +1345,11 @@ const WsAgentSessionsImportRpc = Rpc.make(WS_METHODS.agentSessionsImport, {
   ]),
 });
 
-
 const WsClaudeDesktopSyncRunRpc = Rpc.make(WS_METHODS.claudeDesktopSyncRun, {
   payload: ClaudeDesktopSyncRequest,
   success: ClaudeDesktopSyncResponse,
   error: Schema.Union([ClaudeDesktopSyncError, EnvironmentAuthorizationError]),
 });
-
 
 const WsAssetsCreateUrlRpc = Rpc.make(WS_METHODS.assetsCreateUrl, {
   payload: AssetCreateUrlInput,

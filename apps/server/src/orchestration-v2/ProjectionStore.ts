@@ -1693,6 +1693,7 @@ export function threadShellFromProjection(
     ...(projection.thread.tokenSaver === undefined
       ? {}
       : { tokenSaver: projection.thread.tokenSaver }),
+    ...(projection.thread.team === undefined ? {} : { team: projection.thread.team }),
     latestRunId: latestRun?.id ?? null,
     latestRunRequestedAt: latestRun?.requestedAt ?? null,
     latestRunStartedAt: latestRun?.startedAt ?? null,
@@ -2009,6 +2010,7 @@ function shellFromState(input: {
     ...(input.state.thread.tokenSaver === undefined
       ? {}
       : { tokenSaver: input.state.thread.tokenSaver }),
+    ...(input.state.thread.team === undefined ? {} : { team: input.state.thread.team }),
     latestRunId: input.state.latestRunId,
     latestRunRequestedAt: input.state.latestRunRequestedAt,
     latestRunStartedAt: input.state.latestRunStartedAt,

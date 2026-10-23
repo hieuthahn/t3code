@@ -479,7 +479,7 @@ export function QueuedRunsControl({
                               }}
                             >
                               <CornerUpRightIcon />
-                              {workflow?.canSendNow ? "Send now" : "Steer"}
+                              {workflow?.canSendNow ? "Send now" : "Steer now"}
                             </Button>
                           </TooltipTrigger>
                           <TooltipPopup>

@@ -1614,8 +1614,8 @@ const decodeRepositoryTeams = Schema.decodeUnknownOption(
 );
 
 /**
- * Offer the teams with access to the repository as reviewers, after whoever was already asked.
- * An unreadable answer (no `read:org`, an outage) leaves the people-only list as it was.
+ * Offer the owning organization's teams as reviewers, after whoever was already asked.
+ * An unreadable answer (a personal owner, no `read:org`) leaves the people-only list as it was.
  */
 export function withOrganizationTeams(
   list: PullRequestReviewerCandidateList,

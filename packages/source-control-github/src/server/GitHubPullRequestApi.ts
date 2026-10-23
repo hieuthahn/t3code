@@ -2309,8 +2309,8 @@ export const make = Effect.gen(function* () {
           api
             .rest({
               host: input.host,
-              operation: "listRepositoryTeams",
-              path: `repos/${owner}/${name}/teams?per_page=100`,
+              operation: "listOrganizationTeams",
+              path: `orgs/${owner}/teams?per_page=100`,
               allowReserve: true,
             })
             .pipe(

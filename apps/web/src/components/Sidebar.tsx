@@ -3036,7 +3036,7 @@ export default function Sidebar() {
       return;
     }
     if (isMobile) setOpenMobile(false);
-    openCommandPalette({ open: "new-thread-in" });
+    void router.navigate({ to: "/" });
   };
 
   const newThreadShortcutLabel =

@@ -12,6 +12,7 @@ import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import {
   ForwardCompatibleNullable,
+  EnvironmentId,
   ForwardCompatibleOptional,
   OmittedWhenNull,
   ProjectId,
@@ -321,6 +322,16 @@ export type ModelPreferences = {
   readonly providerModelPreferences: typeof ProviderModelPreferences.Type;
 };
 
+/** A named setup on one machine; with no folders it starts a thread without a project. */
+export const SavedEnvironment = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(80)),
+  environmentId: EnvironmentId,
+  folders: Schema.Array(ProjectId),
+  worktreePerFolder: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+});
+export type SavedEnvironment = typeof SavedEnvironment.Type;
+
 export const ClientSettingsSchema = Schema.Struct({
   notificationMode: NotificationMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("off" as const)),
@@ -433,6 +444,9 @@ export const ClientSettingsSchema = Schema.Struct({
   favorites: ModelFavorites.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   providerModelPreferences: ProviderModelPreferences.pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+  savedEnvironments: Schema.Array(SavedEnvironment).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
   ),
   pullRequestMergeMethodOverrides: Schema.Record(
     TrimmedNonEmptyString,
@@ -1777,6 +1791,7 @@ export const ClientSettingsPatch = Schema.Struct({
   persistComposerContextStrip: Schema.optionalKey(Schema.Boolean),
   favorites: Schema.optionalKey(ModelFavorites),
   providerModelPreferences: Schema.optionalKey(ProviderModelPreferences),
+  savedEnvironments: Schema.optionalKey(Schema.Array(SavedEnvironment)),
   pullRequestMergeMethodOverrides: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, PullRequestMergeMethod),
   ),

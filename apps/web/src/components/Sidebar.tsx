@@ -188,6 +188,7 @@ import {
   resolveSidebarRowThreadId,
   fanoutGroupMarker,
   timeBucketMarker,
+  projectBucketMarker,
   settledGroupIdOfMarker,
   settledGroupMarker,
   sidebarMarkerId,
@@ -413,6 +414,7 @@ function useSidebarThreads(input: {
   );
   const settledGroupsEnabled = useClientSettings((s) => s.sidebarSettledProjectGroupsEnabled);
   const compactModeEnabled = useClientSettings((s) => s.sidebarCompactModeEnabled);
+  const compactGroupBy = useClientSettings((s) => s.sidebarCompactGroupBy);
   const nowMinute = useNowMinute();
   const nowMs = Date.parse(`${nowMinute}:00.000Z`);
   // Minute-quantized clocks would delay second-precise snooze wakes by up to a minute.
@@ -518,6 +520,30 @@ function useSidebarThreads(input: {
       rows: fanoutRowsOf(bucket.items),
     }));
   };
+  const projectBucketRowsOf = (
+    list: readonly EnvironmentThreadShell[],
+    section: SidebarSection,
+    activityMsOf: (thread: EnvironmentThreadShell) => number,
+    countedList: readonly EnvironmentThreadShell[] = list,
+  ) => {
+    const groupByProject = (threadsToGroup: readonly EnvironmentThreadShell[]) =>
+      groupSettledThreads({
+        threads: threadsToGroup,
+        targets: settledGroupTargets,
+        projectKeyOf: (thread) => `${thread.environmentId}:${thread.projectId}`,
+        activityMsOf,
+      });
+    const threadCountByGroupId = new Map(
+      groupByProject(countedList).map((group) => [group.id, group.threads.length] as const),
+    );
+    return groupByProject(list).map((group) => ({
+      marker: projectBucketMarker(section, group.id),
+      label: group.label,
+      threadCount: threadCountByGroupId.get(group.id) ?? group.threads.length,
+      rows: fanoutRowsOf(group.threads),
+    }));
+  };
+  const compactBucketRowsOf = compactGroupBy === "project" ? projectBucketRowsOf : timeBucketRowsOf;
   const settledGroups =
     settledGroupsEnabled && settledShelfExpanded && !compactModeEnabled
       ? groupSettledThreads({
@@ -552,13 +578,13 @@ function useSidebarThreads(input: {
     }
     return visible.length === settledThreads.length ? settledThreads : visible;
   })();
-  const settledTimeBuckets =
+  const settledBuckets =
     compactModeEnabled && settledShelfExpanded
-      ? timeBucketRowsOf(visibleSettledThreads, "settled", settledThreadTimeMs, settledThreads)
+      ? compactBucketRowsOf(visibleSettledThreads, "settled", settledThreadTimeMs, settledThreads)
       : null;
   const settledRows =
-    settledTimeBuckets !== null
-      ? settledTimeBuckets.flatMap((bucket) => bucket.rows)
+    settledBuckets !== null
+      ? settledBuckets.flatMap((bucket) => bucket.rows)
       : fanoutRowsOf(
           settledShelfExpanded
             ? visibleSettledThreads
@@ -575,12 +601,12 @@ function useSidebarThreads(input: {
     ? workingThreads
     : routeThreadOnly(workingThreads, routeRowThreadKey);
   const pinnedRows = fanoutRowsOf(pinnedThreads);
-  const activeTimeBuckets = compactModeEnabled
-    ? timeBucketRowsOf(activeThreads, "active", sidebarThreadTimeMs)
+  const activeBuckets = compactModeEnabled
+    ? compactBucketRowsOf(activeThreads, "active", sidebarThreadTimeMs)
     : null;
   const activeRows =
-    activeTimeBuckets !== null
-      ? activeTimeBuckets.flatMap((bucket) => bucket.rows)
+    activeBuckets !== null
+      ? activeBuckets.flatMap((bucket) => bucket.rows)
       : fanoutRowsOf(activeThreads);
   const workingRows = fanoutRowsOf(visibleWorkingThreads);
   const snoozedRows = fanoutRowsOf(visibleSnoozedThreads);
@@ -677,10 +703,10 @@ function useSidebarThreads(input: {
       (compactModeEnabled ? setExpandedCompactFanoutGroupIds : setCollapsedFanoutGroupIds)((ids) =>
         ids.includes(groupId) ? ids.filter((id) => id !== groupId) : [...ids, groupId],
       ),
-    activeTimeBuckets,
-    settledTimeBuckets,
-    timeBucketByMarker: new Map(
-      [...(activeTimeBuckets ?? []), ...(settledTimeBuckets ?? [])].map(
+    activeBuckets,
+    settledBuckets,
+    bucketByMarker: new Map(
+      [...(activeBuckets ?? []), ...(settledBuckets ?? [])].map(
         (bucket) => [bucket.marker, bucket] as const,
       ),
     ),
@@ -1311,9 +1337,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     settledRows,
     fanoutGroupByMarker,
     toggleFanoutGroup,
-    activeTimeBuckets,
-    settledTimeBuckets,
-    timeBucketByMarker,
+    activeBuckets,
+    settledBuckets,
+    bucketByMarker,
     orderedThreadKeys,
     threadByKey,
     settledThreadKeys,
@@ -1959,9 +1985,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     items.push(...rowsOf(pinnedRows, "pinned"));
     items.push({ kind: "marker", marker: "pinned-divider" });
     items.push({ kind: "marker", marker: "active-placeholder" });
-    if (activeTimeBuckets === null) items.push(...rowsOf(activeRows, "active"));
+    if (activeBuckets === null) items.push(...rowsOf(activeRows, "active"));
     else {
-      for (const bucket of activeTimeBuckets) {
+      for (const bucket of activeBuckets) {
         items.push({ kind: "marker", marker: bucket.marker });
         items.push(...rowsOf(bucket.rows, "active"));
       }
@@ -1976,8 +2002,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     }
     items.push({ kind: "marker", marker: "settled-header" });
     items.push({ kind: "marker", marker: "settled-placeholder" });
-    if (settledTimeBuckets !== null) {
-      for (const bucket of settledTimeBuckets) {
+    if (settledBuckets !== null) {
+      for (const bucket of settledBuckets) {
         items.push({ kind: "marker", marker: bucket.marker });
         items.push(...rowsOf(bucket.rows, "settled"));
       }
@@ -3522,14 +3548,14 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             );
                             break;
                           default: {
-                            const timeBucket = timeBucketByMarker.get(item.marker);
-                            if (timeBucket !== undefined) {
+                            const compactBucket = bucketByMarker.get(item.marker);
+                            if (compactBucket !== undefined) {
                               items.push(
                                 <SidebarBucketHeader
                                   key={sidebarMarkerId(item.marker)}
                                   marker={item.marker}
-                                  label={timeBucket.label}
-                                  threadCount={timeBucket.threadCount}
+                                  label={compactBucket.label}
+                                  threadCount={compactBucket.threadCount}
                                 />,
                               );
                               break;

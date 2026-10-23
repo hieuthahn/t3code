@@ -1955,6 +1955,26 @@ export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthori
   { error: EnvironmentAuthorizationError },
 ) {}
 
+/** The thread procedures, kept as their own group so the server implements them apart. */
+export const WsOrchestrationV2RpcGroup = RpcGroup.make(
+  WsOrchestrationV2DispatchCommandRpc,
+  WsOrchestrationV2GetWorkflowScriptRpc,
+  WsOrchestrationV2StopWorkflowRpc,
+  WsOrchestrationV2GetTurnItemRpc,
+  WsOrchestrationV2GetTurnDiffRpc,
+  WsOrchestrationV2GetFullThreadDiffRpc,
+  WsOrchestrationV2SearchThreadsRpc,
+  WsOrchestrationV2SearchThreadRpc,
+  WsOrchestrationV2SearchThreadStreamRpc,
+  WsOrchestrationV2GetArchivedShellSnapshotRpc,
+  WsOrchestrationV2GetThreadProjectionRpc,
+  WsOrchestrationV2LaunchThreadRpc,
+  WsOrchestrationV2SubscribeArchivedShellRpc,
+  WsOrchestrationV2SubscribeShellRpc,
+  WsOrchestrationV2SubscribeThreadRpc,
+  WsOrchestrationV2SubscribeCommandOutputRpc,
+);
+
 export const WsRpcGroup = RpcGroup.make(
   WsServerProbeRpc,
   WsServerGetConfigRpc,
@@ -2146,20 +2166,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeAuthAccessRpc,
   WsSubscribeBackgroundPolicyRpc,
   WsSubscribeResourceTelemetryRpc,
-  WsOrchestrationV2DispatchCommandRpc,
-  WsOrchestrationV2GetWorkflowScriptRpc,
-  WsOrchestrationV2StopWorkflowRpc,
-  WsOrchestrationV2GetTurnItemRpc,
-  WsOrchestrationV2GetTurnDiffRpc,
-  WsOrchestrationV2GetFullThreadDiffRpc,
-  WsOrchestrationV2SearchThreadsRpc,
-  WsOrchestrationV2SearchThreadRpc,
-  WsOrchestrationV2SearchThreadStreamRpc,
-  WsOrchestrationV2GetArchivedShellSnapshotRpc,
-  WsOrchestrationV2GetThreadProjectionRpc,
-  WsOrchestrationV2LaunchThreadRpc,
-  WsOrchestrationV2SubscribeArchivedShellRpc,
-  WsOrchestrationV2SubscribeShellRpc,
-  WsOrchestrationV2SubscribeThreadRpc,
-  WsOrchestrationV2SubscribeCommandOutputRpc,
-).middleware(RpcScopeAuthorization);
+)
+  .merge(WsOrchestrationV2RpcGroup)
+  .middleware(RpcScopeAuthorization);

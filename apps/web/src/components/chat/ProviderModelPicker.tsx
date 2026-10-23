@@ -61,6 +61,11 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     accountChoice?: ThreadAccountChoice,
   ) => void;
   activeAccountPinned?: boolean;
+  onAccountChoiceChange?: (
+    instanceId: ProviderInstanceId,
+    model: string,
+    accountChoice: ThreadAccountChoice,
+  ) => void;
 }) {
   const composerFloatingLayerProps = useComposerMenuProps();
   const [uncontrolledIsMenuOpen, setUncontrolledIsMenuOpen] = useState(false);
@@ -324,6 +329,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             ? { getModelDisabledReason: props.getModelDisabledReason }
             : {})}
           {...(props.activeAccountPinned ? { activeAccountPinned: true } : {})}
+          onAccountChoiceChange={(instanceId, model, accountChoice) => {
+            if (!props.disabled) props.onAccountChoiceChange?.(instanceId, model, accountChoice);
+          }}
           onInstanceModelChange={handleInstanceModelChange}
         />
         {props.selectedModels === undefined ? (

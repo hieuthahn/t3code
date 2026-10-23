@@ -309,6 +309,9 @@ export function ComposerModelPicker({
           }
         : {})}
       {...(selectedModelSelection.accountChoice === "pinned" ? { activeAccountPinned: true } : {})}
+      onAccountChoiceChange={(instanceId, model, accountChoice) =>
+        onProviderModelSelect(instanceId, model, { accountChoice, focusComposer: false })
+      }
       onInstanceModelChange={(instanceId, model, accountChoice) => {
         onMultipleModelSelectionsChange(null);
         onProviderModelSelect(instanceId, model, accountChoice ? { accountChoice } : undefined);

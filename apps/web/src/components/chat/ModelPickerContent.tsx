@@ -413,6 +413,12 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   ) => void;
   /** Whether the thread is pinned to the active account rather than following Auto. */
   activeAccountPinned?: boolean;
+  /** Apply an Account footer pick to the active model while the picker stays open. */
+  onAccountChoiceChange?: (
+    instanceId: ProviderInstanceId,
+    model: string,
+    accountChoice: ThreadAccountChoice,
+  ) => void;
 }) {
   const {
     keybindings: providedKeybindings,
@@ -588,6 +594,17 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       if (action.kind === "toggle") onToggleModel?.(action.instanceId, resolvedModel);
       else onInstanceModelChange(action.instanceId, resolvedModel, action.accountChoice);
     }
+  };
+
+  const applyAccountPick = (pick: ProviderInstanceId | "auto") => {
+    if (props.multiSelectMode === true) return;
+    const instanceId = pick === "auto" ? props.activeInstanceId : pick;
+    const entry = instanceEntries.find((candidate) => candidate.instanceId === instanceId);
+    const options = modelOptionsByInstance.get(instanceId);
+    const model =
+      entry && options ? resolveSelectableModel(entry.driverKind, props.model, options) : null;
+    if (!model) return;
+    props.onAccountChoiceChange?.(instanceId, model, pick === "auto" ? "auto" : "pinned");
   };
 
   const modelJumpShortcutContext = {
@@ -1170,6 +1187,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                         );
                         if (signedOut === undefined) {
                           setAccountPick(value);
+                          applyAccountPick(value);
                           return;
                         }
                         onRequestClose?.();

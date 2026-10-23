@@ -28,6 +28,7 @@ import {
   shouldRecedeSidebarThread,
   sortInboxThreadsByReturn,
   resolveSidebarDropTarget,
+  resolveSidebarStepTarget,
   planSidebarThreadDrop,
   sortPinnedThreadsForSidebar,
   sortProjectsForSidebar,
@@ -1114,6 +1115,35 @@ describe("Working shelf (beta)", () => {
         activeOrder: ["a1", "a2", "p1"],
       });
       expect(resolveSidebarDropVerb("active", "working")).toBeNull();
+    });
+
+    it("steps a pinned thread past its pinned neighbour and stops at the section edge", () => {
+      const pinned: readonly SidebarListItem[] = [
+        marker("pinned-header"),
+        row("p1", "pinned"),
+        row("p2", "pinned"),
+        row("p3", "pinned"),
+        marker("pinned-divider"),
+        row("a1", "active"),
+      ];
+      expect(resolveSidebarStepTarget(pinned, "p2", -1)).toBe("p1");
+      expect(resolveSidebarStepTarget(pinned, "p2", 1)).toBe("p3");
+      expect(resolveSidebarStepTarget(pinned, "p1", -1)).toBeNull();
+      expect(resolveSidebarStepTarget(pinned, "p3", 1)).toBeNull();
+      expect(resolveSidebarDropTarget(pinned, "p2", "p1")?.pinnedOrder).toEqual(["p2", "p1", "p3"]);
+      expect(resolveSidebarDropTarget(pinned, "p2", "p3")?.pinnedOrder).toEqual(["p1", "p3", "p2"]);
+    });
+
+    it("does not step a thread nested in a fanout group", () => {
+      const grouped: readonly SidebarListItem[] = [
+        marker("pinned-header"),
+        row("p1", "pinned"),
+        marker(fanoutGroupMarker("pinned", "env-1:send-1")),
+        { kind: "thread", key: "g1", section: "pinned", nested: true },
+        row("p2", "pinned"),
+      ];
+      expect(resolveSidebarStepTarget(grouped, "g1", -1)).toBeNull();
+      expect(resolveSidebarStepTarget(grouped, "p2", -1)).toBe("p1");
     });
 
     it("keeps a fanout group header out of the section and the inbox order", () => {

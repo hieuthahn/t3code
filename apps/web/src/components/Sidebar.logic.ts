@@ -25,6 +25,7 @@ import {
 } from "../lib/threadSort";
 import type { SidebarThreadSummary, Thread } from "../types";
 import type { SidebarTimeBucket } from "./sidebar/sidebarTimeBuckets";
+import { isNestedChildThread, resolveLineageChildren } from "./sidebar/lineageRows";
 import type { SidebarStatusBucket } from "./sidebar/sidebarStatusBuckets";
 import { normalizeSearchText } from "../lib/utils";
 import { isLatestRunSettled } from "../session-logic";
@@ -584,17 +585,25 @@ export function buildMultiSelectThreadContextMenuItems(input: {
   ];
 }
 
-function isSidebarSubagentThread(thread: Pick<SidebarThreadSummary, "lineage">): boolean {
-  return thread.lineage.relationshipToParent === "subagent" || thread.lineage.sideQuestion === true;
+type LineageSource = { readonly source: Pick<SidebarThreadSummary["source"], "creationSource"> };
+
+function isSidebarSubagentThread(
+  thread: Pick<SidebarThreadSummary, "lineage"> & LineageSource,
+): boolean {
+  return (
+    (thread.lineage.relationshipToParent === "subagent" && !isNestedChildThread(thread)) ||
+    thread.lineage.sideQuestion === true
+  );
 }
 
-// Subagent threads and side questions have no sidebar row, so an open one is
+// Provider-native subagents and side questions have no sidebar row, so an open one is
 // represented by its nearest ancestor that has a row. A broken chain (missing parent, cycle,
 // other environment) resolves to the thread itself, which then matches no row.
 export function resolveSidebarRowThreadId(
   threadId: ThreadId,
   environmentId: EnvironmentId,
-  threads: readonly Pick<SidebarThreadSummary, "id" | "environmentId" | "lineage">[],
+  threads: readonly (Pick<SidebarThreadSummary, "id" | "environmentId" | "lineage"> &
+    LineageSource)[],
 ): ThreadId {
   const findThread = (id: ThreadId) =>
     threads.find((thread) => thread.id === id && thread.environmentId === environmentId);
@@ -611,27 +620,54 @@ export function resolveSidebarRowThreadId(
 /**
  * `delegatedUnderParent` holds the tasks linked environments run for a thread
  * the sidebar lists, by thread key; they show under that thread, as subagents do.
+ * A child session whose parent has no row is listed itself, so its work stays in reach.
  */
 export function filterSidebarV2VisibleThreads<
-  T extends Pick<SidebarThreadSummary, "archivedAt" | "environmentId" | "id" | "lineage"> & {
-    projectId: string;
-  },
+  T extends Pick<
+    SidebarThreadSummary,
+    "archivedAt" | "createdAt" | "environmentId" | "id" | "lineage"
+  > &
+    LineageSource & {
+      projectId: string;
+    },
 >(
   threads: readonly T[],
   scopedProjectKeys: ReadonlySet<string> | null,
   delegatedUnderParent: ReadonlySet<string>,
 ): T[] {
-  return threads.filter(
+  const inScope = (thread: T) =>
+    thread.archivedAt === null &&
+    (scopedProjectKeys === null ||
+      scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`));
+  const listed = threads.filter(
     (thread) =>
-      thread.archivedAt === null &&
+      inScope(thread) &&
       !isShownUnderParent(
         { environmentId: thread.environmentId, threadId: thread.id },
         thread.lineage,
         delegatedUnderParent,
-      ) &&
-      (scopedProjectKeys === null ||
-        scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)),
+      ),
   );
+  const keyOf = (thread: Pick<T, "environmentId" | "id">) => `${thread.environmentId}:${thread.id}`;
+  const rowed = new Set(listed.map(keyOf));
+  const childrenByParentKey = resolveLineageChildren(threads.filter(inScope), keyOf);
+  const attach = (parentKey: string) => {
+    for (const child of childrenByParentKey.get(parentKey) ?? []) {
+      const childKey = keyOf(child);
+      if (rowed.has(childKey)) continue;
+      rowed.add(childKey);
+      attach(childKey);
+    }
+  };
+  for (const thread of listed) attach(keyOf(thread));
+  const orphanKeys = new Set(
+    [...childrenByParentKey.values()]
+      .flat()
+      .filter((child) => !rowed.has(keyOf(child)))
+      .map(keyOf),
+  );
+  const listedKeys = new Set(listed.map(keyOf));
+  return threads.filter((thread) => listedKeys.has(keyOf(thread)) || orphanKeys.has(keyOf(thread)));
 }
 
 export function buildBulkTitleRegenerationContextMenuItem(input: {
@@ -1385,7 +1421,8 @@ export function sortLogicalProjectsForSidebar<
 export function sortSidebarV2ProjectGroups<
   TProject extends LogicalSidebarProject,
   TThread extends ScopedSidebarThread &
-    Pick<SidebarThreadSummary, "environmentId" | "id" | "lineage">,
+    Pick<SidebarThreadSummary, "environmentId" | "id" | "lineage"> &
+    LineageSource,
 >(
   projects: readonly TProject[],
   threads: readonly TThread[],

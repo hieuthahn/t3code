@@ -7,6 +7,7 @@ import {
   ContextTransferId,
   EnvironmentId,
   IsoDateTime,
+  MergeQueueItemId,
   MessageId,
   NodeId,
   NonNegativeInt,
@@ -43,6 +44,7 @@ import {
   OrchestrationV2TurnItemStatus,
 } from "./orchestrationV2.ts";
 import { ProviderOptionSelection, ProviderOptionSelectionValue } from "./model.ts";
+import { MergeQueueItemStatus } from "./mergeQueue.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 
 const OrchestratorMcpPrompt = TrimmedNonEmptyString.check(Schema.isMaxLength(120_000)).annotate({
@@ -861,6 +863,25 @@ export const OrchestratorMcpProposeTasksResult = Schema.Struct({
   }),
 });
 export type OrchestratorMcpProposeTasksResult = typeof OrchestratorMcpProposeTasksResult.Type;
+
+export const OrchestratorMcpMergeEnqueueInput = Schema.Struct({
+  childThreadId: ThreadId.annotate({
+    description:
+      "A child this thread started with delegate_task in its own worktree, once it reports done.",
+  }),
+});
+export type OrchestratorMcpMergeEnqueueInput = typeof OrchestratorMcpMergeEnqueueInput.Type;
+
+export const OrchestratorMcpMergeEnqueueResult = Schema.Struct({
+  itemId: MergeQueueItemId,
+  status: MergeQueueItemStatus.annotate({
+    description: "awaiting_user until the user approves the exact commit in headSha.",
+  }),
+  trunkRef: TrimmedNonEmptyString,
+  childBranch: TrimmedNonEmptyString,
+  headSha: TrimmedNonEmptyString,
+});
+export type OrchestratorMcpMergeEnqueueResult = typeof OrchestratorMcpMergeEnqueueResult.Type;
 
 export const OrchestratorMcpEnvironmentLinkInput = Schema.Struct({
   environmentId: Schema.optional(EnvironmentId).annotate({

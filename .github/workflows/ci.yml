@@ -182,6 +182,12 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: node apps/desktop/scripts/verify-preload-bundle.mjs
 
+      # The server build depends on the web build, so apps/web/dist exists here.
+      - name: Check web startup bundle budget
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: apps/web
+        run: vp test run --project bundle
+
       - name: Typecheck
         if: ${{ !cancelled() && steps.typecheck.outcome == 'success' }}
         timeout-minutes: 5

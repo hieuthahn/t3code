@@ -68,6 +68,7 @@ const clientSettings: ClientSettings = {
   legacySidebarEnabled: false,
   sidebarWorkingShelfEnabled: false,
   sidebarSettledProjectGroupsEnabled: true,
+  sidebarCompactModeEnabled: false,
   loadBalancingEnabled: false,
   loadBalancingWeights: { "environment-1": 75, "environment-2": 0 },
   pullRequestMergeMethodOverrides: {},

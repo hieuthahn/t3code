@@ -54,6 +54,90 @@ const forkCases = (
   return { driver, status, instanceId, modelSelection, layer };
 });
 
+it.effect("a side question forks a thread whose turn is still running without touching it", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const eventSink = yield* EventSink.EventSinkV2;
+    const now = yield* DateTime.now;
+    const { instanceId, modelSelection } = forkCases[0]!;
+    const sourceThreadId = ThreadId.make("side-question-source");
+    const targetThreadId = ThreadId.make("side-question-target");
+    const settledRunId = RunId.make("side-question-settled-run");
+    const runningRunId = RunId.make("side-question-running-run");
+
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make("side-question-create"),
+      threadId: sourceThreadId,
+      projectId: ProjectId.make("side-question-project"),
+      title: "Busy main thread",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdBy: "user",
+      creationSource: "web",
+    });
+    yield* eventSink.write({
+      events: (
+        [
+          [settledRunId, 1, "completed"],
+          [runningRunId, 2, "running"],
+        ] as const
+      ).map(([runId, ordinal, status]) => ({
+        id: EventId.make(`${runId}:created`),
+        type: "run.created" as const,
+        threadId: sourceThreadId,
+        runId,
+        occurredAt: now,
+        payload: {
+          id: runId,
+          threadId: sourceThreadId,
+          ordinal,
+          providerInstanceId: instanceId,
+          modelSelection,
+          providerThreadId: null,
+          userMessageId: MessageId.make(`${runId}:message`),
+          rootNodeId: null,
+          activeAttemptId: null,
+          status,
+          requestedAt: now,
+          startedAt: now,
+          completedAt: status === "completed" ? now : null,
+          checkpointId: null,
+          contextHandoffId: null,
+        },
+      })),
+    });
+    const sourceBefore = yield* orchestrator.getThreadShell(sourceThreadId);
+
+    yield* orchestrator.dispatch({
+      type: "thread.fork",
+      commandId: CommandId.make("side-question-fork"),
+      sourceThreadId,
+      targetThreadId,
+      sourcePoint: { type: "run", runId: settledRunId },
+      title: "What does this branch change?",
+      sideQuestion: true,
+      createdBy: "user",
+      creationSource: "web",
+    });
+
+    const sideQuestion = yield* orchestrator.getThreadShell(targetThreadId);
+    assert.deepEqual(sideQuestion?.lineage, {
+      parentThreadId: sourceThreadId,
+      relationshipToParent: "fork",
+      rootThreadId: sourceThreadId,
+      sideQuestion: true,
+    });
+    assert.equal(sideQuestion?.runtimeMode, "approval-required");
+    assert.deepEqual(yield* orchestrator.getThreadShell(sourceThreadId), sourceBefore);
+    const source = yield* orchestrator.getThreadProjection(sourceThreadId);
+    assert.equal(source.runs.find((run) => run.id === runningRunId)?.status, "running");
+  }).pipe(Effect.provide(forkCases[0]!.layer)),
+);
+
 it.effect("a persisted fork leaves PR watching with its parent until explicitly opted in", () =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;

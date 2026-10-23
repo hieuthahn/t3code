@@ -64,16 +64,23 @@ it("changes the rules key whenever the rules change", () => {
 });
 
 it("gives rules to an architect only, never to a worker or a single agent", () => {
-  assert.isDefined(resolveTeamTurn({ team, lineage: rootLineage }));
-  assert.isUndefined(resolveTeamTurn({ lineage: rootLineage }));
+  assert.isDefined(resolveTeamTurn({ team, lineage: rootLineage }, "claudeAgent"));
+  assert.isUndefined(resolveTeamTurn({ lineage: rootLineage }, "claudeAgent"));
   assert.isUndefined(
-    resolveTeamTurn({
-      team,
-      lineage: {
-        ...rootLineage,
-        parentThreadId: ThreadId.make("thread:architect"),
-        relationshipToParent: "subagent",
+    resolveTeamTurn(
+      {
+        team,
+        lineage: {
+          ...rootLineage,
+          parentThreadId: ThreadId.make("thread:architect"),
+          relationshipToParent: "subagent",
+        },
       },
-    }),
+      "codex",
+    ),
   );
+});
+
+it("gives no rules to a driver that has no place for them", () => {
+  assert.isUndefined(resolveTeamTurn({ team, lineage: rootLineage }, "opencode"));
 });

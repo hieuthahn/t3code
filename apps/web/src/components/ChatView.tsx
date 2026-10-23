@@ -88,6 +88,7 @@ import {
 import { threadSupportsProviderHandoff } from "@t3tools/client-runtime/state/thread-workflows";
 import { resolvePendingHandoff } from "@t3tools/client-runtime/handoff";
 import { HandoffRow } from "./chat/V2LifecycleRow";
+import { TurnRecapCard } from "./chat/TurnRecapCard";
 import {
   codexFeedbackMessage,
   isCompleteTurnItemRow,
@@ -253,6 +254,7 @@ import {
   useThreadHistory,
   useQuietThreadShell,
   useThreadCheckpointSummaries,
+  useThreadTurnRecap,
 } from "../state/entities";
 import { useEnvironmentShellHasSnapshot } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
@@ -1913,6 +1915,11 @@ export default function ChatView(props: ChatViewProps) {
     }
   };
   const sendAppMessageStable = useStableCallback(sendAppMessage);
+  const turnRecap = useThreadTurnRecap(isServerThread ? activeThreadRef : null);
+  const turnRecapCard =
+    turnRecap === null || !settings.turnRecaps || isWorking ? null : (
+      <TurnRecapCard key={turnRecap.summary} recap={turnRecap} onReply={sendAppMessageStable} />
+    );
   const queuedRunsControlRef = useRef<QueuedRunsControlHandle>(null);
 
   const {
@@ -3416,6 +3423,7 @@ export default function ChatView(props: ChatViewProps) {
                 footer={
                   paintOnlyDisplayedTimeline ||
                   (pendingHandoff === null &&
+                    turnRecapCard === null &&
                     pendingGuestMessageCount === 0 &&
                     threadStatusLine === null) ? null : (
                     <>
@@ -3429,6 +3437,7 @@ export default function ChatView(props: ChatViewProps) {
                           />
                         </div>
                       )}
+                      {pendingHandoff === null ? turnRecapCard : null}
                       {pendingGuestMessageCount > 0 && isServerThread && activeThread ? (
                         <GuestPendingMessages
                           threadRef={scopeThreadRef(activeThread.environmentId, activeThread.id)}

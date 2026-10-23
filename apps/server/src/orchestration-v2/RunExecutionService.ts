@@ -52,6 +52,7 @@ import {
   makeProviderFailureTurnItem,
 } from "@t3tools/provider-core/server/failure";
 import * as PromptSuggestionHub from "./PromptSuggestionHub.ts";
+import * as TurnRecapHub from "./TurnRecapHub.ts";
 import * as RunFinalizationService from "./RunFinalizationService.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 
@@ -612,6 +613,7 @@ export const layer: Layer.Layer<
     const turnItemPositions = yield* TurnItemPositionStore.TurnItemPositionStoreV2;
     const finalizationObserver = yield* RunFinalizationService.RunFinalizationObserver;
     const promptSuggestions = yield* Effect.serviceOption(PromptSuggestionHub.PromptSuggestionHub);
+    const turnRecaps = yield* Effect.serviceOption(TurnRecapHub.TurnRecapHub);
 
     const writeFinalRunEvents = Effect.fn("RunExecutionService.writeFinalRunEvents")(
       function* (input: {
@@ -886,6 +888,9 @@ export const layer: Layer.Layer<
           Option.isSome(promptSuggestions) &&
           input.appThread.lineage.relationshipToParent !== "subagent";
         if (offersSuggestions) yield* promptSuggestions.value.clear(input.run.threadId);
+        const offersRecaps =
+          Option.isSome(turnRecaps) && input.appThread.lineage.relationshipToParent !== "subagent";
+        if (offersRecaps) yield* turnRecaps.value.clear(input.run.threadId);
         // Startup failure and stream shutdown can report the same attempt.
         const refreshAfterTurn = yield* Effect.cached(
           finalizationObserver.refreshAfterTurn(input.appThread.projectId).pipe(
@@ -1096,6 +1101,12 @@ export const layer: Layer.Layer<
                 runId: input.run.id,
                 driver: input.providerThread.driver,
               }),
+              scope,
+            );
+          }
+          if (offersRecaps && terminal.status === "completed") {
+            yield* Effect.forkIn(
+              turnRecaps.value.recapAfterRun({ threadId: input.run.threadId, runId: input.run.id }),
               scope,
             );
           }

@@ -19,6 +19,7 @@ import {
   resolveSidebarSweepKeys,
   resolveSidebarThreadStatus,
   resolveSidebarV2TopStatus,
+  compactRowShowsStatus,
   resolveThreadStatusPill,
   resolveWorkingStartedAt,
   searchSidebarThreads,
@@ -1329,5 +1330,21 @@ describe("pendingSidebarRouteReveal", () => {
     pendingSidebarRouteReveal(reveal, "env:a1");
     expect(pendingSidebarRouteReveal(reveal, null)).toBeNull();
     expect(pendingSidebarRouteReveal(reveal, "env:a1")).toBe("env:a1");
+  });
+});
+
+describe("compactRowShowsStatus", () => {
+  it.each([
+    ["working", true],
+    ["approval", true],
+    ["input", true],
+    ["failed", true],
+    ["limited", true],
+    ["done", true],
+    ["woke", true],
+    ["waiting", false],
+    [null, false],
+  ] as const)("shows %s as status: %s", (kind, shown) => {
+    expect(compactRowShowsStatus(kind)).toBe(shown);
   });
 });

@@ -8,6 +8,8 @@ import { AsyncResult } from "effect/reactivity";
 import {
   archiveSelectedThreadEntries,
   deleteSelectedThreadEntries,
+  describeChildSessions,
+  formatChildSessionUsage,
   fanoutGroupMarker,
   filterSidebarV2VisibleThreads,
   timeBucketMarker,
@@ -343,6 +345,40 @@ describe("orderItemsByPreferredIds", () => {
       "physical-a",
       "physical-b",
     ]);
+  });
+});
+
+describe("child session labels", () => {
+  const runtime = {
+    status: "running" as const,
+    activeRunId: null,
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    providerName: "Codex",
+    lastError: null,
+    updatedAt: "2026-03-09T10:00:00.000Z",
+  };
+  const idle = { hasPendingApprovals: false, hasPendingUserInput: false, runtime: null };
+
+  it("counts child sessions by what they are doing, leaving out empty counts", () => {
+    expect(
+      describeChildSessions([
+        { ...idle, runtime },
+        { ...idle, hasPendingApprovals: true },
+        { ...idle, runtime: { ...runtime, status: "failed" as const } },
+        idle,
+        idle,
+      ]),
+    ).toBe("5 child sessions · 1 working · 1 needs you · 1 failed · 2 done");
+    expect(describeChildSessions([{ ...idle, runtime }])).toBe("1 child session · 1 working");
+  });
+
+  it("shows a child's USD cost, or its tokens when the provider reports no cost", () => {
+    expect(formatChildSessionUsage({ totalTokens: 12_345, costUsd: 0.4234 })).toBe("$0.42");
+    expect(formatChildSessionUsage({ totalTokens: 12_345, costUsd: 0.004 })).toBe("<$0.01");
+    expect(formatChildSessionUsage({ totalTokens: 12_345, costUsd: null })).toBe("12.3k tokens");
+    expect(formatChildSessionUsage({ totalTokens: 1_250_000, costUsd: null })).toBe("1.3M tokens");
+    expect(formatChildSessionUsage({ totalTokens: 950, costUsd: null })).toBe("950 tokens");
+    expect(formatChildSessionUsage(undefined)).toBeNull();
   });
 });
 

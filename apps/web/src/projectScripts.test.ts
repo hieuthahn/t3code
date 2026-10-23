@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { settleProjectScript, setupProjectScript } from "@t3tools/shared/projectScripts";
 
 import {
+  buildProjectScript,
   commandForProjectScript,
   nextProjectScriptId,
   primaryProjectScript,
@@ -22,6 +23,24 @@ describe("projectScripts helpers", () => {
       ]);
     },
   );
+
+  it("keeps the merge gate flag only on scripts the user marked", () => {
+    const input = {
+      name: "Unit tests",
+      command: "vp test run",
+      icon: "test" as const,
+      runOnWorktreeCreate: false,
+      waitForSetup: false,
+      runOnSettle: false,
+      runAsMergeGate: true,
+      previewUrl: null,
+      autoOpenPreview: false,
+    };
+    expect(buildProjectScript("unit-tests", input).runAsMergeGate).toBe(true);
+    expect(
+      buildProjectScript("unit-tests", { ...input, runAsMergeGate: false }),
+    ).not.toHaveProperty("runAsMergeGate");
+  });
 
   it("slugifies and dedupes project script ids", () => {
     expect(nextProjectScriptId("Run Tests", [])).toBe("run-tests");

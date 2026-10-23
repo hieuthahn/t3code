@@ -28,6 +28,7 @@ export const MergeQueueFailureStage = Schema.Literals([
   "gate",
   "merge",
   "interrupted",
+  "error",
 ]);
 export type MergeQueueFailureStage = typeof MergeQueueFailureStage.Type;
 

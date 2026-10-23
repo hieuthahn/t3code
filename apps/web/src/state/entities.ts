@@ -18,6 +18,7 @@ import type { ScopedProjectRef, ScopedThreadRef } from "@t3tools/contracts";
 import type {
   EnvironmentId,
   OrchestrationV2ProjectedTurnItem,
+  OrchestrationV2TurnRecap,
   OrchestrationV2ThreadProjection,
   OrchestrationV2ThreadShell,
   ThreadId,
@@ -67,6 +68,9 @@ const EMPTY_THREAD_HISTORY_ATOM = Atom.make<ThreadHistoryMeta>(EMPTY_THREAD_HIST
 );
 const EMPTY_PROMPT_SUGGESTION_ATOM = Atom.make<string | null>(null).pipe(
   Atom.withLabel("web-thread-prompt-suggestion:empty"),
+);
+const EMPTY_TURN_RECAP_ATOM = Atom.make<OrchestrationV2TurnRecap | null>(null).pipe(
+  Atom.withLabel("web-thread-turn-recap:empty"),
 );
 
 const activeEnvironmentIdAtom = Atom.make<EnvironmentId | null>(null).pipe(
@@ -182,6 +186,13 @@ export function useThreadPromptSuggestion(ref: ScopedThreadRef | null): string |
     ref === null
       ? EMPTY_PROMPT_SUGGESTION_ATOM
       : environmentThreadDetails.promptSuggestionAtom(ref),
+  );
+}
+
+/** The recap the server sent after the thread's last multi-step run. */
+export function useThreadTurnRecap(ref: ScopedThreadRef | null): OrchestrationV2TurnRecap | null {
+  return useAtomValue(
+    ref === null ? EMPTY_TURN_RECAP_ATOM : environmentThreadDetails.turnRecapAtom(ref),
   );
 }
 

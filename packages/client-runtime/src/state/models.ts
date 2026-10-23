@@ -15,6 +15,7 @@ import type {
   ProviderInstanceId,
   RunId,
   ThreadId,
+  TokenSaverConfig,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
@@ -105,6 +106,8 @@ export interface EnvironmentThreadShell {
   readonly delegatedFrom: OrchestrationV2ThreadShell["delegatedFrom"] | null;
   /** Shared by the threads one multiple-models send started. */
   readonly fanoutGroupId?: string | null;
+  /** Null when the thread follows the server's Token Saver defaults. */
+  readonly tokenSaver?: TokenSaverConfig | null;
   readonly activeProviderThreadId: OrchestrationV2ThreadShell["activeProviderThreadId"];
   readonly latestRun: ThreadRunSummary | null;
   readonly runtime: ThreadRuntimeSummary | null;
@@ -254,6 +257,7 @@ export function presentThreadShell(
     linkOrigin: thread.linkOrigin ?? null,
     delegatedFrom: thread.delegatedFrom ?? null,
     fanoutGroupId: thread.fanoutGroupId ?? null,
+    tokenSaver: thread.tokenSaver ?? null,
     activeProviderThreadId: thread.activeProviderThreadId,
     latestRun,
     runtime,

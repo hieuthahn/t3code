@@ -81,6 +81,7 @@ import {
   toPullRequestWatchFingerprint,
   toReviewDismissalsPage,
   toReviewerCandidates,
+  withOrganizationTeams,
   toReviewThreadCommentsPage,
   toReviewThreadPage,
   toStackMembership,
@@ -2300,13 +2301,24 @@ export const make = Effect.gen(function* () {
     listReviewerCandidates: (input) => {
       const { owner, name } = parseRepositorySelector(input.repository);
       const operation = "listReviewerCandidates";
-      return client
-        .ReviewerCandidates({ owner, name, number: input.number })
-        .pipe(
-          graphql({ ...input, operation, allowReserve: true }),
-          Effect.map(toReviewerCandidates),
-          Effect.flatMap(found({ ...input, operation })),
-        );
+      return client.ReviewerCandidates({ owner, name, number: input.number }).pipe(
+        graphql({ ...input, operation, allowReserve: true }),
+        Effect.map(toReviewerCandidates),
+        Effect.flatMap(found({ ...input, operation })),
+        Effect.flatMap((list) =>
+          api
+            .rest({
+              host: input.host,
+              operation: "listOrganizationTeams",
+              path: `orgs/${owner}/teams?per_page=100`,
+              allowReserve: true,
+            })
+            .pipe(
+              Effect.map((response) => withOrganizationTeams(list, owner, response.body)),
+              Effect.catch(() => Effect.succeed(list)),
+            ),
+        ),
+      );
     },
 
     setReviewerRequest: (input) => {

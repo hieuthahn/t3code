@@ -22,6 +22,7 @@ import {
   toCanWrite,
   toReviewThreadPage,
   toViewerPermissions,
+  withOrganizationTeams,
 } from "./gitHubPullRequestJson.ts";
 import { PullRequestWatchFingerprint } from "./pullRequestBatches.graphql.ts";
 import {
@@ -1668,5 +1669,56 @@ describe("pull request watch fingerprints", () => {
     expect(summaryEdited.remarks).not.toBe(before.remarks);
     expect(summaryEdited.status).toBe(before.status);
     expect(replied.remarks).not.toBe(before.remarks);
+  });
+});
+
+describe("withOrganizationTeams", () => {
+  const user = (login: string, isRequested = false) => ({
+    id: login,
+    kind: "user" as const,
+    login,
+    name: null,
+    avatarUrl: null,
+    isRequested,
+  });
+  const requestedTeam = {
+    id: "ort-core",
+    kind: "team" as const,
+    login: "openreachtech/ort-core",
+    name: "ort-core",
+    avatarUrl: null,
+    isRequested: true,
+  };
+  const teamsJson = JSON.stringify([
+    { slug: "ort-internal", name: "ort-internal" },
+    { slug: "ort-core", name: "ort-core" },
+    { slug: "  ", name: "blank" },
+  ]);
+
+  it("offers the organization teams after the requested reviewers and before the people", () => {
+    const list = { candidates: [requestedTeam, user("alice")], truncated: false };
+
+    expect(withOrganizationTeams(list, "openreachtech", teamsJson)).toEqual({
+      candidates: [
+        requestedTeam,
+        {
+          id: "ort-internal",
+          kind: "team",
+          login: "openreachtech/ort-internal",
+          name: "ort-internal",
+          avatarUrl: null,
+          isRequested: false,
+        },
+        user("alice"),
+      ],
+      truncated: false,
+    });
+  });
+
+  it("keeps the list as it is when the teams answer cannot be read", () => {
+    const list = { candidates: [user("alice")], truncated: true };
+
+    expect(withOrganizationTeams(list, "openreachtech", "not json")).toBe(list);
+    expect(withOrganizationTeams(list, "openreachtech", "{}")).toBe(list);
   });
 });

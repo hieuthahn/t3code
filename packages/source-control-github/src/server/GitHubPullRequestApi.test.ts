@@ -3556,43 +3556,46 @@ layer("GitHubPullRequestApi.layer", (it) => {
     }),
   );
 
-  it.effect("reads who may review and who already has in one request", () =>
-    Effect.gen(function* () {
-      mockedExecute.mockReturnValue(
-        Effect.succeed(
-          output(
-            encodeJson({
-              data: {
-                repository: {
-                  assignableUsers: {
-                    pageInfo: { hasNextPage: false },
-                    nodes: ["bilal", "octocat", "hubot"].map((login) => ({
-                      login,
+  const reviewerCandidatesAnswer = () =>
+    output(
+      encodeJson({
+        data: {
+          repository: {
+            assignableUsers: {
+              pageInfo: { hasNextPage: false },
+              nodes: ["bilal", "octocat", "hubot"].map((login) => ({
+                login,
+                name: null,
+                avatarUrl: `https://avatars/${login}`,
+              })),
+            },
+            pullRequest: {
+              author: { __typename: "User", login: "bilal" },
+              reviewRequests: {
+                nodes: [
+                  {
+                    requestedReviewer: {
+                      __typename: "User",
+                      login: "octocat",
                       name: null,
-                      avatarUrl: `https://avatars/${login}`,
-                    })),
-                  },
-                  pullRequest: {
-                    author: { __typename: "User", login: "bilal" },
-                    reviewRequests: {
-                      nodes: [
-                        {
-                          requestedReviewer: {
-                            __typename: "User",
-                            login: "octocat",
-                            name: null,
-                            avatarUrl: "https://avatars/octocat",
-                          },
-                        },
-                      ],
+                      avatarUrl: "https://avatars/octocat",
                     },
                   },
-                },
+                ],
               },
-            }),
-          ),
-        ),
-      );
+            },
+          },
+        },
+      }),
+    );
+
+  it.effect("reads who may review in one request and the organization teams in a second", () =>
+    Effect.gen(function* () {
+      mockedExecute
+        .mockReturnValueOnce(Effect.succeed(reviewerCandidatesAnswer()))
+        .mockReturnValueOnce(
+          Effect.succeed(output(encodeJson([{ slug: "ort-internal", name: "ort-internal" }]))),
+        );
       const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
 
       const list = yield* cli.listReviewerCandidates({
@@ -3602,12 +3605,46 @@ layer("GitHubPullRequestApi.layer", (it) => {
         number: 7,
       });
 
-      assert.strictEqual(mockedExecute.mock.calls.length, 1);
+      assert.strictEqual(mockedExecute.mock.calls.length, 2);
       expect(varsAt(0)).toMatchObject({ owner: "acme", name: "web", number: 7 });
-      expect(list.candidates.map((candidate) => [candidate.login, candidate.isRequested])).toEqual([
-        ["octocat", true],
-        ["hubot", false],
+      expect(callAt(1)).toMatchObject({ kind: "rest", path: "orgs/acme/teams?per_page=100" });
+      expect(
+        list.candidates.map((candidate) => [
+          candidate.login,
+          candidate.kind,
+          candidate.isRequested,
+        ]),
+      ).toEqual([
+        ["octocat", "user", true],
+        ["acme/ort-internal", "team", false],
+        ["hubot", "user", false],
       ]);
+    }),
+  );
+
+  it.effect("keeps the people when the organization teams cannot be read", () =>
+    Effect.gen(function* () {
+      mockedExecute
+        .mockReturnValueOnce(Effect.succeed(reviewerCandidatesAnswer()))
+        .mockReturnValueOnce(
+          Effect.fail(
+            new GitHubRequestPolicy.GitHubApiResponseError({
+              host: "github.com",
+              operation: "listOrganizationTeams",
+              status: 403,
+            }),
+          ),
+        );
+      const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+
+      const list = yield* cli.listReviewerCandidates({
+        cwd: "/w",
+        repository: "acme/web",
+        host: "github.com",
+        number: 7,
+      });
+
+      expect(list.candidates.map((candidate) => candidate.login)).toEqual(["octocat", "hubot"]);
     }),
   );
 

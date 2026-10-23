@@ -2493,3 +2493,26 @@ code {
     --blur-xl: 0px;
   }
 }
+
+@media (prefers-contrast: more) {
+  :root,
+  [data-app-sidebar] {
+    --contrast-border: color-mix(in srgb, var(--border), var(--foreground) 45%);
+    --contrast-input: color-mix(in srgb, var(--input), var(--foreground) 55%);
+    --contrast-toolbar-border: color-mix(
+      in srgb,
+      var(--toolbar-border),
+      var(--toolbar-foreground) 45%
+    );
+    --contrast-sidebar-border: color-mix(
+      in srgb,
+      var(--sidebar-border),
+      var(--sidebar-foreground) 45%
+    );
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring) !important;
+    outline-offset: 2px !important;
+  }
+}

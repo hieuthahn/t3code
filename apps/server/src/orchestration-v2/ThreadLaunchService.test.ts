@@ -1741,6 +1741,22 @@ it.effect("creates a strong provider-thread mapping for an imported native sessi
   }).pipe(Effect.provide(harness.layer));
 });
 
+it.effect("stamps the launched thread with the fanout group it was sent in", () => {
+  const harness = makeHarness();
+  return Effect.gen(function* () {
+    const launches = yield* ThreadLaunch.ThreadLaunchService;
+    const launched = yield* launches.launch({
+      ...launchInput({
+        command: "command:launch:fanout",
+        thread: "thread:launch:fanout",
+      }),
+      fanoutGroupId: "fanout-7",
+    });
+
+    assert.equal(launched.projection.thread.fanoutGroupId, "fanout-7");
+  }).pipe(Effect.provide(harness.layer));
+});
+
 it.effect("shared intake preserves durable attachment bytes after a lost launch result", () => {
   const harness = makeHarness();
   const layerFiles = ServerConfig.layerTest(process.cwd(), { prefix: "t3-message-intake-" }).pipe(

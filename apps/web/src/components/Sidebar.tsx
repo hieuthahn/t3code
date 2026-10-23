@@ -513,6 +513,7 @@ function useSidebarThreads(input: {
       return {
         marker,
         label: bucket.label,
+        projectGroupId: null,
         threadCount: threadCountByBucket.get(bucket.bucket) ?? bucket.items.length,
         ...bucketRowsOf(marker, bucket.items),
       };
@@ -539,6 +540,7 @@ function useSidebarThreads(input: {
       return {
         marker,
         label: group.label,
+        projectGroupId: group.id,
         threadCount: threadCountByGroupId.get(group.id) ?? group.threads.length,
         ...bucketRowsOf(marker, group.threads),
       };
@@ -3497,6 +3499,12 @@ export default function Sidebar() {
                                   threadCount={compactBucket.threadCount}
                                   expanded={compactBucket.expanded}
                                   onToggle={() => toggleBucket(compactBucket.marker)}
+                                  project={
+                                    compactBucket.projectGroupId === null
+                                      ? undefined
+                                      : (projectGroupByScopeKey.get(compactBucket.projectGroupId) ??
+                                        null)
+                                  }
                                 />,
                               );
                               break;

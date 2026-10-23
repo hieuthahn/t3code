@@ -59,6 +59,8 @@ export const TeamSetup = Schema.Struct({
     Schema.isMaxLength(TEAM_MAX_WORKERS),
   ),
   limits: TeamLimits,
+  /** Workers start without the user's card, within the limits. Off unless the user turns it on. */
+  autonomous: Schema.optionalKey(Schema.Boolean),
   /** Added after the built-in rules; it never replaces them. */
   leadGuidance: Schema.optionalKey(Schema.String.check(isUnderLeadGuidanceLimit)),
 });

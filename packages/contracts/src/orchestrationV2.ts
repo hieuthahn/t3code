@@ -1523,6 +1523,64 @@ const OrchestrationV2LinkRequestFields = {
   failure: Schema.optional(Schema.String),
 } as const;
 
+export const OrchestrationV2ChildPlanStatus = Schema.Literals([
+  "pending",
+  "approved",
+  "partially_approved",
+  "declined",
+  "expired",
+  "cancelled",
+]);
+export type OrchestrationV2ChildPlanStatus = typeof OrchestrationV2ChildPlanStatus.Type;
+
+/** One child session an agent proposes, resolved to the model and mode it would start with. */
+export const OrchestrationV2ChildProposal = Schema.Struct({
+  /** Stable within the plan, such as "api" or "ui". */
+  key: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
+  title: TrimmedNonEmptyString,
+  brief: TrimmedNonEmptyString,
+  role: Schema.optional(TrimmedNonEmptyString),
+  isolation: Schema.Literals(["shared", "worktree"]),
+  modelSelection: ModelSelection,
+  runtimeMode: RuntimeMode,
+  interactionMode: ProviderInteractionMode,
+});
+export type OrchestrationV2ChildProposal = typeof OrchestrationV2ChildProposal.Type;
+
+/** The card's `completedAt` is when the decision was made. */
+export const OrchestrationV2ChildPlanDecision = Schema.Struct({
+  decidedBy: OrchestrationV2RuntimeRequestDecider,
+  /** The revision the user saw when deciding. */
+  revision: PositiveInt,
+  approvedKeys: Schema.Array(TrimmedNonEmptyString),
+  declinedKeys: Schema.Array(TrimmedNonEmptyString),
+});
+export type OrchestrationV2ChildPlanDecision = typeof OrchestrationV2ChildPlanDecision.Type;
+
+export const OrchestrationV2ChildPlanLaunch = Schema.Struct({
+  key: TrimmedNonEmptyString,
+  taskId: Schema.optional(NodeId),
+  childThreadId: Schema.optional(ThreadId),
+  failure: Schema.optional(Schema.String),
+});
+export type OrchestrationV2ChildPlanLaunch = typeof OrchestrationV2ChildPlanLaunch.Type;
+
+/**
+ * An agent proposed child sessions and waits while the user picks which start.
+ * No child exists until the user decides, and only the user can decide.
+ */
+const OrchestrationV2ChildPlanRequestFields = {
+  type: Schema.Literal("child_plan_request"),
+  planId: TrimmedNonEmptyString,
+  /** Rises when the agent changes the proposal, so a decision on an older one is refused. */
+  revision: PositiveInt,
+  planStatus: OrchestrationV2ChildPlanStatus,
+  reason: Schema.optional(Schema.String),
+  children: Schema.Array(OrchestrationV2ChildProposal),
+  planDecision: Schema.NullOr(OrchestrationV2ChildPlanDecision),
+  launches: Schema.optional(Schema.Array(OrchestrationV2ChildPlanLaunch)),
+} as const;
+
 export const OrchestrationV2TurnItem = Schema.Union([
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -1710,6 +1768,10 @@ export const OrchestrationV2TurnItem = Schema.Union([
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
     ...OrchestrationV2LinkRequestFields,
+  }),
+  Schema.Struct({
+    ...OrchestrationV2TurnItemBaseFields,
+    ...OrchestrationV2ChildPlanRequestFields,
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -2492,6 +2554,10 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
     ...OrchestrationV2LinkRequestFields,
+  }),
+  Schema.Struct({
+    ...OrchestrationV2TurnItemJsonBaseFields,
+    ...OrchestrationV2ChildPlanRequestFields,
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
@@ -3366,6 +3432,43 @@ const OrchestrationV2InternalCommand = Schema.Union([
     reason: Schema.String,
     placeholder: Schema.optional(Schema.String),
     secretStatus: OrchestrationV2SecretRequestStatus,
+  }),
+  /**
+   * Records or closes the proposal card of an agent's child sessions. Internal
+   * so the card only ever comes from the MCP tool that waits on it.
+   */
+  Schema.Struct({
+    type: Schema.Literal("child_plan.record"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    runId: RunId,
+    nodeId: NodeId,
+    turnItemId: TurnItemId,
+    planId: TrimmedNonEmptyString,
+    reason: Schema.optional(Schema.String),
+    children: Schema.Array(OrchestrationV2ChildProposal),
+    planStatus: Schema.Literals(["pending", "expired", "cancelled"]),
+  }),
+  /**
+   * The user's answer to a proposal card. Internal so only the server, which
+   * stamps `decidedBy` from the connection, can decide a plan.
+   */
+  Schema.Struct({
+    type: Schema.Literal("child_plan.decide"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    turnItemId: TurnItemId,
+    revision: PositiveInt,
+    approvedKeys: Schema.Array(TrimmedNonEmptyString),
+    decidedBy: OrchestrationV2RuntimeRequestDecider,
+  }),
+  /** Records which approved children started, and why any did not. */
+  Schema.Struct({
+    type: Schema.Literal("child_plan.launched"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    turnItemId: TurnItemId,
+    launches: Schema.Array(OrchestrationV2ChildPlanLaunch),
   }),
   /**
    * Records or updates a link an agent asked the user to make. Internal so no

@@ -58,6 +58,9 @@ import {
   childInputBannerItem,
   goalBannerItem,
 } from "./ThreadActivityBanners";
+import { ChildApprovalBanner } from "./ChildApprovalBanner";
+import { planChildRequestBanners } from "./childRequestBanners.logic";
+import type { ComposerBannerStackContent } from "./ComposerBannerStack";
 import type { useLocalDispatchState } from "./useLocalDispatchState";
 const RELATED_THREAD_SHELL_WAIT_MS = 1_000;
 
@@ -442,13 +445,22 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
   };
   const onOpenRelatedThreadStable = useStableCallback(onOpenRelatedThread);
   const childThreadInputs = useChildThreadInputs(activeThreadRef);
-  const childInputBanner = childInputBannerItem({
+  const childRequests = planChildRequestBanners({
     childThreadInputs,
     parentAwaitingUser: Boolean(
       activePendingApproval || activePendingUserInput || activeThreadShell?.hasPendingUserInput,
     ),
+  });
+  const childInputBanner = childInputBannerItem({
+    childThreadInputs: childRequests.questions,
     onOpenThread: onOpenRelatedThreadStable,
   });
+  const childApprovalBanners = childRequests.approvals.map((child): ComposerBannerStackContent => ({
+    id: `child-approval:${child.environmentId}:${child.id}`,
+    variant: "warning",
+    priority: "urgent",
+    content: <ChildApprovalBanner child={child} onOpenThread={onOpenRelatedThreadStable} />,
+  }));
 
   const sendStandaloneCommand = async (text: string, failureMessage: string) => {
     if (!activeThread || !clientSettingsHydrated || sendInFlightRef.current) return;
@@ -601,6 +613,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
     acknowledgeActiveThreadWoke,
     activeBranchMismatchKey,
     backgroundWorkBanner,
+    childApprovalBanners,
     childInputBanner,
     goalBanner,
     handleSwitchCheckoutToThread,

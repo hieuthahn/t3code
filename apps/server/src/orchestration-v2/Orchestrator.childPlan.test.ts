@@ -4,6 +4,7 @@ import {
   CommandId,
   MessageId,
   NodeId,
+  type OrchestrationV2RuntimeRequestDecider,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -102,7 +103,12 @@ const startParent = Effect.gen(function* () {
       children,
       planStatus,
     });
-  const decide = (id: string, revision: number, approvedKeys: ReadonlyArray<string>) =>
+  const decide = (
+    id: string,
+    revision: number,
+    approvedKeys: ReadonlyArray<string>,
+    decider: OrchestrationV2RuntimeRequestDecider = decidedBy,
+  ) =>
     orchestrator.dispatch({
       type: "child_plan.decide",
       commandId: CommandId.make(id),
@@ -110,7 +116,7 @@ const startParent = Effect.gen(function* () {
       turnItemId,
       revision,
       approvedKeys,
-      decidedBy,
+      decidedBy: decider,
     });
   const card = Effect.map(projections.getThreadProjection(parentThreadId), (projection) => {
     const item = projection.turnItems.find((candidate) => candidate.id === turnItemId);
@@ -161,7 +167,7 @@ it.effect("records a proposal card and the user's decision on it", () =>
   }).pipe(Effect.provide(layerTest)),
 );
 
-it.effect("rejects a decision on a changed, decided or unknown proposal", () =>
+it.effect("rejects a decision by an agent, or on a changed, decided or unknown proposal", () =>
   Effect.gen(function* () {
     const { record, decide, card } = yield* startParent;
     yield* record("plan-record-1", "pending");
@@ -171,6 +177,11 @@ it.effect("rejects a decision on a changed, decided or unknown proposal", () =>
     ]);
     assert.equal((yield* card)?.revision, 2);
 
+    const byAgent = yield* decide("plan-decide-agent", 2, ["api"], {
+      actor: "agent",
+      threadId: parentThreadId,
+    }).pipe(Effect.result);
+    assert.isTrue(Result.isFailure(byAgent));
     const stale = yield* decide("plan-decide-stale", 1, ["api"]).pipe(Effect.result);
     assert.isTrue(Result.isFailure(stale));
     const unknown = yield* decide("plan-decide-unknown", 2, ["ui"]).pipe(Effect.result);

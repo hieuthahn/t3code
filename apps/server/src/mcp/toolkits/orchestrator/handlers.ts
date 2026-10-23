@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 
 import { enqueueChildMerge } from "../../../mergeQueue/mergeEnqueueTool.ts";
 import * as PeerForwarding from "../../../peer/PeerForwarding.ts";
+import * as TeamService from "../../../team/TeamService.ts";
 import * as PeerLinkRequests from "../../../peer/PeerLinkRequests.ts";
 import * as PeerLinks from "../../../peer/PeerLinks.ts";
 import { readCaller } from "../../threadAccess.ts";
@@ -108,6 +109,20 @@ const handlers = {
     }),
   ),
   merge_enqueue: McpToolAccess.actsAsCaller(enqueueChildMerge),
+  team_assign: McpToolAccess.actsAsCaller((input) =>
+    Effect.gen(function* () {
+      const scope = yield* McpInvocationContext.McpInvocationContext;
+      const team = yield* TeamService.TeamService;
+      return yield* team.assign(scope, input);
+    }),
+  ),
+  team_finish: McpToolAccess.actsAsCaller((input) =>
+    Effect.gen(function* () {
+      const scope = yield* McpInvocationContext.McpInvocationContext;
+      const team = yield* TeamService.TeamService;
+      return yield* team.finish(scope, input);
+    }),
+  ),
   task_report: McpToolAccess.actsAsCaller((input) =>
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.McpInvocationContext;

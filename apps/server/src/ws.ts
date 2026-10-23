@@ -1894,6 +1894,10 @@ const makeWsRpcLayer = (
           Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
             Effect.andThen(team.stop(input)),
           ),
+        [WS_METHODS.mergeQueueDiff]: (input) =>
+          Effect.annotateCurrentSpan({ "merge_queue.item_id": input.itemId }).pipe(
+            Effect.andThen(mergeQueue.diff(input)),
+          ),
         [WS_METHODS.scheduledTasksListWebhookDeliveries]: (input) =>
           Effect.annotateCurrentSpan({ "scheduled_task.id": input.id }).pipe(
             Effect.andThen(scheduledTasks.listWebhookDeliveries(input)),

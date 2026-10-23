@@ -373,6 +373,8 @@ import {
 import {
   MergeQueueApproveInput,
   MergeQueueCancelInput,
+  MergeQueueDiff,
+  MergeQueueDiffInput,
   MergeQueueError,
   MergeQueueSubscribeInput,
   MergeQueueView,
@@ -553,6 +555,7 @@ export const WS_METHODS = {
   teamPause: "team.pause",
   teamResume: "team.resume",
   teamStop: "team.stop",
+  mergeQueueDiff: "mergeQueue.diff",
   scheduledTasksListWebhookDeliveries: "scheduledTasks.listWebhookDeliveries",
   scheduledTasksGetWebhookDelivery: "scheduledTasks.getWebhookDelivery",
 
@@ -1938,6 +1941,12 @@ const WsTeamStopRpc = Rpc.make(WS_METHODS.teamStop, {
   error: Schema.Union([TeamError, EnvironmentAuthorizationError]),
 });
 
+const WsMergeQueueDiffRpc = Rpc.make(WS_METHODS.mergeQueueDiff, {
+  payload: MergeQueueDiffInput,
+  success: MergeQueueDiff,
+  error: Schema.Union([MergeQueueError, EnvironmentAuthorizationError]),
+});
+
 const WsScheduledTasksListWebhookDeliveriesRpc = Rpc.make(
   WS_METHODS.scheduledTasksListWebhookDeliveries,
   {
@@ -2073,6 +2082,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsTeamPauseRpc,
   WsTeamResumeRpc,
   WsTeamStopRpc,
+  WsMergeQueueDiffRpc,
   WsScheduledTasksListWebhookDeliveriesRpc,
   WsScheduledTasksGetWebhookDeliveryRpc,
   WsServerReportClientActivityRpc,

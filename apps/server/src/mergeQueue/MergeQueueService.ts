@@ -5,6 +5,8 @@ import {
   MessageId,
   type MergeQueueApproveInput,
   type MergeQueueCancelInput,
+  type MergeQueueDiff,
+  type MergeQueueDiffInput,
   type MergeQueueItem,
   type MergeQueueTrunk,
   type MergeQueueView,
@@ -50,6 +52,22 @@ import { makeItemTransition } from "./mergeQueueTransition.ts";
 
 export type { MergeQueueItem };
 
+const PATCH_LIMIT_BYTES = 512 * 1024;
+
+/** Read `git diff --numstat`, where a binary file counts "-" for both sides. */
+const parseNumstat = (output: string) =>
+  output
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const [additions = "-", deletions = "-", ...path] = line.split("\t");
+      return {
+        path: path.join("\t"),
+        additions: additions === "-" ? null : Number(additions),
+        deletions: deletions === "-" ? null : Number(deletions),
+      };
+    });
+
 const squashedMessage = (cause: Cause.Cause<unknown>) => {
   const error = Cause.squash(cause);
   return error instanceof Error ? error.message : String(error);
@@ -68,6 +86,8 @@ export class MergeQueueService extends Context.Service<
       decidedBy: OrchestrationV2RuntimeRequestDecider,
     ) => Effect.Effect<void, MergeQueueError>;
     readonly cancel: (input: MergeQueueCancelInput) => Effect.Effect<void, MergeQueueError>;
+    /** The changes the child adds at the commit awaiting approval, so the user reads them first. */
+    readonly diff: (input: MergeQueueDiffInput) => Effect.Effect<MergeQueueDiff, MergeQueueError>;
     readonly view: (ownerThreadId: ThreadId) => Effect.Effect<MergeQueueView, MergeQueueError>;
     readonly subscribe: (ownerThreadId: ThreadId) => Stream.Stream<MergeQueueView, MergeQueueError>;
     /** Land every approved item, one at a time, and return once none is left. */
@@ -96,7 +116,7 @@ export const layerWith = (options: { readonly drainOnApprove: boolean }) =>
         new MergeQueueError({ message, ...(itemId === undefined ? {} : { itemId }), cause });
       const now = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 
-      const { git, gitOutput } = mergeQueueGit;
+      const { git, gitOutput, gitCapped } = mergeQueueGit;
       const readRows = (query: Effect.Effect<ReadonlyArray<unknown>, SqlError>) =>
         query.pipe(
           Effect.flatMap(decodeRows),
@@ -377,6 +397,50 @@ export const layerWith = (options: { readonly drainOnApprove: boolean }) =>
         },
       );
 
+      const diff: MergeQueueService["Service"]["diff"] = Effect.fn("MergeQueue.diff")(function* ({
+        itemId,
+        headSha,
+      }) {
+        const row = yield* readItem(itemId);
+        if (row.head_sha_at_enqueue !== headSha) {
+          return yield* new MergeQueueError({
+            message: "The child was queued again at a newer commit. Review that one instead.",
+            itemId,
+          });
+        }
+        const fail = queueError("Could not read the child's changes.", itemId);
+        const base = yield* gitOutput(row.child_worktree, [
+          "merge-base",
+          `refs/heads/${row.trunk_ref}`,
+          row.head_sha_at_enqueue,
+        ]).pipe(Effect.mapError(fail));
+        const numstat = yield* gitOutput(row.child_worktree, [
+          "diff",
+          "--numstat",
+          base,
+          row.head_sha_at_enqueue,
+        ]).pipe(Effect.mapError(fail));
+        const patch = yield* gitCapped(
+          row.child_worktree,
+          ["diff", "--no-color", "--no-ext-diff", base, row.head_sha_at_enqueue],
+          PATCH_LIMIT_BYTES,
+        ).pipe(Effect.mapError(fail));
+        if (patch.exitCode !== 0) {
+          return yield* new MergeQueueError({
+            message: `Could not read the child's changes: ${patch.stderr.trim()}`,
+            itemId,
+          });
+        }
+        return {
+          itemId,
+          baseSha: base,
+          headSha: row.head_sha_at_enqueue,
+          files: parseNumstat(numstat),
+          patch: patch.stdout,
+          truncated: patch.stdoutTruncated,
+        };
+      });
+
       const view: MergeQueueService["Service"]["view"] = Effect.fn("MergeQueue.view")(
         function* (ownerThreadId) {
           const rows = yield* readRows(
@@ -439,7 +503,7 @@ export const layerWith = (options: { readonly drainOnApprove: boolean }) =>
       }
       yield* Effect.forkIn(drain, scope);
 
-      return MergeQueueService.of({ enqueue, approve, cancel, view, subscribe, drain });
+      return MergeQueueService.of({ enqueue, approve, cancel, diff, view, subscribe, drain });
     }),
   );
 

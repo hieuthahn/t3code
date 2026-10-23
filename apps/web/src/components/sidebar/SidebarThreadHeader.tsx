@@ -1,4 +1,12 @@
-import { FolderPlusIcon, Rows3Icon, SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
+import {
+  ChevronsDownUpIcon,
+  ChevronsUpDownIcon,
+  FolderPlusIcon,
+  Rows3Icon,
+  SearchIcon,
+  SquarePenIcon,
+  XIcon,
+} from "lucide-react";
 import {
   type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -15,6 +23,7 @@ import {
   Menu,
   MenuGroup,
   MenuGroupLabel,
+  MenuItem,
   MenuPopup,
   MenuRadioGroup,
   MenuRadioItem,
@@ -33,6 +42,8 @@ export interface SidebarThreadHeaderProps {
   onCompactModeChange: (compact: boolean) => void;
   compactGroupBy: SidebarCompactGroupBy;
   onCompactGroupByChange: (groupBy: SidebarCompactGroupBy) => void;
+  bucketsCollapsed: boolean | null;
+  onBucketsCollapsedChange: (collapsed: boolean) => void;
   onNewProject: () => void;
   onNewThread: (event: ReactMouseEvent) => void;
   newThreadDisabled: boolean;
@@ -57,6 +68,8 @@ export function SidebarThreadHeader({
   onCompactModeChange,
   compactGroupBy,
   onCompactGroupByChange,
+  bucketsCollapsed,
+  onBucketsCollapsedChange,
   onNewProject,
   onNewThread,
   newThreadDisabled,
@@ -130,6 +143,8 @@ export function SidebarThreadHeader({
           onCompactModeChange={onCompactModeChange}
           compactGroupBy={compactGroupBy}
           onCompactGroupByChange={onCompactGroupByChange}
+          bucketsCollapsed={bucketsCollapsed}
+          onBucketsCollapsedChange={onBucketsCollapsedChange}
         />
         {hasProjects ? (
           <>
@@ -169,9 +184,16 @@ function SidebarViewMenu({
   onCompactModeChange,
   compactGroupBy,
   onCompactGroupByChange,
+  bucketsCollapsed,
+  onBucketsCollapsedChange,
 }: Pick<
   SidebarThreadHeaderProps,
-  "compactMode" | "onCompactModeChange" | "compactGroupBy" | "onCompactGroupByChange"
+  | "compactMode"
+  | "onCompactModeChange"
+  | "compactGroupBy"
+  | "onCompactGroupByChange"
+  | "bucketsCollapsed"
+  | "onBucketsCollapsedChange"
 >) {
   return (
     <Menu>
@@ -222,6 +244,15 @@ function SidebarViewMenu({
             </MenuRadioItem>
           </MenuRadioGroup>
         </MenuGroup>
+        {bucketsCollapsed === null ? null : (
+          <>
+            <MenuSeparator />
+            <MenuItem onClick={() => onBucketsCollapsedChange(!bucketsCollapsed)}>
+              {bucketsCollapsed ? <ChevronsUpDownIcon /> : <ChevronsDownUpIcon />}
+              {bucketsCollapsed ? "Expand all groups" : "Collapse all groups"}
+            </MenuItem>
+          </>
+        )}
       </MenuPopup>
     </Menu>
   );

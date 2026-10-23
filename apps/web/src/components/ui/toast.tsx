@@ -24,6 +24,8 @@ import {
   shouldHideCollapsedToastContent,
   shouldRenderThreadScopedToast,
 } from "./toast.logic";
+import { attentionToastOptions } from "./toastHistory.logic";
+import { useRecordToasts } from "./toastHistory";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip";
 import { useThreadRouteTarget } from "~/hooks/useThreadRouteTarget";
 
@@ -62,7 +64,27 @@ export type ThreadToastData = {
     | "secondary";
 };
 
-const toastManager = Toast.createToastManager<ThreadToastData>();
+const baseToastManager = Toast.createToastManager<ThreadToastData>();
+const toastTimeoutById = new Map<string, number | undefined>();
+const toastManager: typeof baseToastManager = {
+  ...baseToastManager,
+  add: (options) => {
+    const held = attentionToastOptions(options);
+    const id = baseToastManager.add(held);
+    toastTimeoutById.set(id, held.timeout);
+    return id;
+  },
+  update: (id, updates) => {
+    const held = attentionToastOptions(updates, toastTimeoutById.get(id));
+    if (held.timeout !== undefined) toastTimeoutById.set(id, held.timeout);
+    baseToastManager.update(id, held);
+  },
+  close: (id) => {
+    if (id === undefined) toastTimeoutById.clear();
+    else toastTimeoutById.delete(id);
+    baseToastManager.close(id);
+  },
+};
 const anchoredToastManager = Toast.createToastManager<ThreadToastData>();
 type ToastId = ReturnType<typeof toastManager.add>;
 const threadToastVisibleTimeoutRemainingMs = new Map<ToastId, number>();
@@ -433,9 +455,11 @@ function useActiveThreadRefFromRoute(): ScopedThreadRef | null {
 function ThreadToastVisibleAutoDismiss({
   toastId,
   dismissAfterVisibleMs,
+  hovered,
 }: {
   toastId: ToastId;
   dismissAfterVisibleMs: number | undefined;
+  hovered: boolean;
 }) {
   useEffect(() => {
     if (!dismissAfterVisibleMs || dismissAfterVisibleMs <= 0) return;
@@ -483,7 +507,7 @@ function ThreadToastVisibleAutoDismiss({
     };
 
     const syncTimer = () => {
-      const shouldRun = document.visibilityState === "visible" && document.hasFocus();
+      const shouldRun = !hovered && document.visibilityState === "visible" && document.hasFocus();
       if (shouldRun) {
         start();
         return;
@@ -503,7 +527,7 @@ function ThreadToastVisibleAutoDismiss({
       pause();
       clearTimer();
     };
-  }, [dismissAfterVisibleMs, toastId]);
+  }, [dismissAfterVisibleMs, hovered, toastId]);
 
   return null;
 }
@@ -520,6 +544,8 @@ function ToastProvider({ children, position = "top-right", ...props }: ToastProv
 function Toasts({ position }: { position: ToastPosition }) {
   const { toasts } = Toast.useToastManager<ThreadToastData>();
   const activeThreadRef = useActiveThreadRefFromRoute();
+  const [hovered, setHovered] = useState(false);
+  useRecordToasts(toasts);
   const isTop = position.startsWith("top");
   const visibleToasts = toasts.filter((toast) =>
     shouldRenderThreadScopedToast(toast.data, activeThreadRef),
@@ -548,6 +574,8 @@ function Toasts({ position }: { position: ToastPosition }) {
         )}
         data-position={position}
         data-slot="toast-viewport"
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
         style={
           {
             "--toast-frontmost-height": `${visibleToastLayout.frontmostHeight}px`,
@@ -622,6 +650,7 @@ function Toasts({ position }: { position: ToastPosition }) {
             >
               <ThreadToastVisibleAutoDismiss
                 dismissAfterVisibleMs={toast.data?.dismissAfterVisibleMs}
+                hovered={hovered}
                 toastId={toast.id}
               />
               <div className={toastCornerDismissClass}>
@@ -676,6 +705,7 @@ function AnchoredToastProvider({ children, ...props }: Toast.Provider.Props) {
 
 function AnchoredToasts() {
   const { toasts } = Toast.useToastManager<ThreadToastData>();
+  useRecordToasts(toasts);
   const activeThreadRef = useActiveThreadRefFromRoute();
 
   return (

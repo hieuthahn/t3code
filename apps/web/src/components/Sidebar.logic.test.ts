@@ -172,15 +172,18 @@ describe("sidebar thread lineage helpers", () => {
     const environmentId = EnvironmentId.make("environment-row");
     const otherEnvironmentId = EnvironmentId.make("environment-other");
     const subagentOf = (id: string, parentId: ThreadId, environment = environmentId) =>
-      makeThreadFixture({
-        id: ThreadId.make(id),
-        environmentId: environment,
-        lineage: {
-          rootThreadId: parentId,
-          parentThreadId: parentId,
-          relationshipToParent: "subagent",
-        },
-      });
+      withCreationSource(
+        makeThreadFixture({
+          id: ThreadId.make(id),
+          environmentId: environment,
+          lineage: {
+            rootThreadId: parentId,
+            parentThreadId: parentId,
+            relationshipToParent: "subagent",
+          },
+        }),
+        "provider",
+      );
     const root = makeThreadFixture({ id: ThreadId.make("thread-root"), environmentId });
     const fork = makeThreadFixture({
       id: ThreadId.make("thread-fork"),
@@ -206,6 +209,58 @@ describe("sidebar thread lineage helpers", () => {
     const loopA = subagentOf("thread-loop-a", ThreadId.make("thread-loop-b"));
     const loopB = subagentOf("thread-loop-b", loopA.id);
     expect(resolveSidebarRowThreadId(loopA.id, environmentId, [loopA, loopB])).toBe(loopA.id);
+  });
+
+  it("keeps an open child session on its own row, since it has one", () => {
+    const environmentId = EnvironmentId.make("environment-row");
+    const root = makeThreadFixture({ id: ThreadId.make("thread-root"), environmentId });
+    const child = childSessionOf("thread-child", root.id, environmentId);
+    const nativeTask = withCreationSource(
+      childSessionOf("thread-native-task", child.id, environmentId),
+      "provider",
+    );
+    const threads = [root, child, nativeTask];
+
+    expect(resolveSidebarRowThreadId(child.id, environmentId, threads)).toBe(child.id);
+    expect(resolveSidebarRowThreadId(nativeTask.id, environmentId, threads)).toBe(child.id);
+  });
+
+  it("lists a child session as a root row only when its parent has no row", () => {
+    const environmentId = EnvironmentId.make("environment-row");
+    const root = makeThreadFixture({ id: ThreadId.make("thread-root"), environmentId });
+    const archivedRoot = makeThreadFixture({
+      id: ThreadId.make("thread-archived-root"),
+      environmentId,
+      archivedAt: "2026-01-02T00:00:00.000Z",
+    });
+    const child = childSessionOf("thread-child", root.id, environmentId);
+    const grandchild = childSessionOf("thread-grandchild", child.id, environmentId);
+    const orphanOfArchived = childSessionOf(
+      "thread-orphan-archived",
+      archivedRoot.id,
+      environmentId,
+    );
+    const orphanOfMissing = childSessionOf(
+      "thread-orphan-missing",
+      ThreadId.make("thread-missing"),
+      environmentId,
+    );
+    const nativeOrphan = withCreationSource(
+      childSessionOf("thread-native-orphan", ThreadId.make("thread-missing"), environmentId),
+      "provider",
+    );
+
+    const visible = filterSidebarV2VisibleThreads(
+      [root, archivedRoot, child, grandchild, orphanOfArchived, orphanOfMissing, nativeOrphan],
+      null,
+      new Set(),
+    );
+
+    expect(visible.map((thread) => thread.id)).toEqual([
+      root.id,
+      orphanOfArchived.id,
+      orphanOfMissing.id,
+    ]);
   });
 });
 
@@ -234,6 +289,25 @@ describe("sidebar side questions", () => {
     );
   });
 });
+
+function withCreationSource(thread: Thread, creationSource: Thread["source"]["creationSource"]) {
+  return { ...thread, source: { ...thread.source, creationSource } };
+}
+
+function childSessionOf(id: string, parentId: ThreadId, environmentId: EnvironmentId): Thread {
+  return withCreationSource(
+    makeThreadFixture({
+      id: ThreadId.make(id),
+      environmentId,
+      lineage: {
+        rootThreadId: parentId,
+        parentThreadId: parentId,
+        relationshipToParent: "subagent",
+      },
+    }),
+    "mcp",
+  );
+}
 
 function makeLatestRun(overrides?: {
   completedAt?: string | null;

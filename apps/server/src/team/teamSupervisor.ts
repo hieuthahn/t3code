@@ -1,18 +1,18 @@
 import { TEAM_SILENCE_LIMIT_MS, type TeamRunStatus } from "@t3tools/contracts";
 
-export interface WatchedThread {
-  readonly threadId: string;
+export interface WatchedThread<Id extends string = string> {
+  readonly threadId: Id;
   readonly hasActiveRun: boolean;
   readonly waitingOnUser: boolean;
   /** When this thread last recorded an event, as far as the team has seen. */
   readonly lastEventSeenAt: number;
 }
 
-export interface TeamTick {
+export interface TeamTick<Id extends string = string> {
   readonly status: TeamRunStatus;
   readonly now: number;
-  readonly architect: WatchedThread & { readonly latestRunId: string | null };
-  readonly workers: ReadonlyArray<WatchedThread>;
+  readonly architect: WatchedThread<Id> & { readonly latestRunId: string | null };
+  readonly workers: ReadonlyArray<WatchedThread<Id>>;
   readonly runningAssignments: number;
   readonly startableAssignments: number;
   /** A wake already went out after the architect's latest run. */
@@ -23,11 +23,11 @@ export interface TeamTick {
   readonly lastStallRunId: string | null;
 }
 
-export type TeamAction =
+export type TeamAction<Id extends string = string> =
   | { readonly type: "wake_architect"; readonly reason: "start_queued" }
   | { readonly type: "continue_plan"; readonly stalls: number; readonly runId: string | null }
   | { readonly type: "pause"; readonly report: string; readonly runId: string | null }
-  | { readonly type: "interrupt"; readonly threadId: string };
+  | { readonly type: "interrupt"; readonly threadId: Id };
 
 const silent = (thread: WatchedThread, now: number) =>
   thread.hasActiveRun &&
@@ -35,9 +35,11 @@ const silent = (thread: WatchedThread, now: number) =>
   now - thread.lastEventSeenAt >= TEAM_SILENCE_LIMIT_MS;
 
 /** Decide what a running team needs from the app on this tick. */
-export function decideTeamTick(tick: TeamTick): ReadonlyArray<TeamAction> {
+export function decideTeamTick<Id extends string>(
+  tick: TeamTick<Id>,
+): ReadonlyArray<TeamAction<Id>> {
   if (tick.status !== "running") return [];
-  const interrupts: Array<TeamAction> = [tick.architect, ...tick.workers]
+  const interrupts: Array<TeamAction<Id>> = [tick.architect, ...tick.workers]
     .filter((thread) => silent(thread, tick.now))
     .map((thread) => ({ type: "interrupt", threadId: thread.threadId }));
   const { architect } = tick;

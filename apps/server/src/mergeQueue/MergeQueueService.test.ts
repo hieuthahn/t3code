@@ -327,6 +327,31 @@ it.live("runs the gates saved in the environment's project settings", () =>
   ),
 );
 
+it.live("lands on the branch the owner's checkout has out when its thread records none", () =>
+  withQueue(({ fixture, queue }) =>
+    Effect.gen(function* () {
+      fixture.shells.set(
+        ownerThreadId,
+        shell({
+          id: ownerThreadId,
+          title: "Refactor retry",
+          branch: null,
+          worktreePath: null,
+          parentThreadId: null,
+        }),
+      );
+      const api = yield* addChild(fixture, "api", "api.txt");
+      const item = yield* queue.enqueue({
+        callerThreadId: ownerThreadId,
+        childThreadId: api.childThreadId,
+      });
+      assert.equal(item.trunkRef, "main");
+      yield* approveAndDrain(queue, item);
+      assert.equal((yield* queue.view(ownerThreadId)).items[0]?.status, "merged");
+    }),
+  ),
+);
+
 it.live("refuses commits the user did not approve", () =>
   withQueue(({ fixture, queue }) =>
     Effect.gen(function* () {

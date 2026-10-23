@@ -3213,6 +3213,17 @@ export const OrchestrationV2Command = Schema.Union([
     /** Set by the server; one sent by a client is replaced. */
     decidedBy: Schema.optional(OrchestrationV2RuntimeRequestDecider),
   }),
+  /** The user's pick of which proposed child sessions start; the rest are declined. */
+  Schema.Struct({
+    type: Schema.Literal("child_plan.decide"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    turnItemId: TurnItemId,
+    revision: PositiveInt,
+    approvedKeys: Schema.Array(TrimmedNonEmptyString),
+    /** Set by the server; one sent by a client is replaced. */
+    decidedBy: Schema.optional(OrchestrationV2RuntimeRequestDecider),
+  }),
   Schema.Struct({
     type: Schema.Literal("thread.user-input.dismiss"),
     commandId: CommandId,
@@ -3448,19 +3459,6 @@ const OrchestrationV2InternalCommand = Schema.Union([
     reason: Schema.optional(Schema.String),
     children: Schema.Array(OrchestrationV2ChildProposal),
     planStatus: Schema.Literals(["pending", "expired", "cancelled"]),
-  }),
-  /**
-   * The user's answer to a proposal card. Internal so only the server, which
-   * stamps `decidedBy` from the connection, can decide a plan.
-   */
-  Schema.Struct({
-    type: Schema.Literal("child_plan.decide"),
-    commandId: CommandId,
-    threadId: ThreadId,
-    turnItemId: TurnItemId,
-    revision: PositiveInt,
-    approvedKeys: Schema.Array(TrimmedNonEmptyString),
-    decidedBy: OrchestrationV2RuntimeRequestDecider,
   }),
   /** Records which approved children started, and why any did not. */
   Schema.Struct({

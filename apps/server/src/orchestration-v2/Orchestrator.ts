@@ -8103,7 +8103,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 
   const readChildPlanCard = Effect.fn("orchestrationV2.readChildPlanCard")(function* (
     command: Extract<
-      OrchestrationV2InternalCommand,
+      OrchestrationV2ServerCommand,
       { readonly type: "child_plan.record" | "child_plan.decide" | "child_plan.launched" }
     >,
   ) {
@@ -8131,7 +8131,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 
   const emitChildPlanCard = (
     command: Extract<
-      OrchestrationV2InternalCommand,
+      OrchestrationV2ServerCommand,
       { readonly type: "child_plan.record" | "child_plan.decide" | "child_plan.launched" }
     >,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
@@ -8208,7 +8208,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 
   /** Records the user's decision on a proposal the agent still waits on. */
   const dispatchChildPlanDecide = Effect.fn("orchestrationV2.dispatch.childPlanDecide")(function* (
-    command: Extract<OrchestrationV2InternalCommand, { readonly type: "child_plan.decide" }>,
+    command: Extract<OrchestrationV2Command, { readonly type: "child_plan.decide" }>,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
   ) {
     const { projection, existing } = yield* readChildPlanCard(command);
@@ -8218,6 +8218,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         commandType: command.type,
         cause,
       });
+    if (command.decidedBy?.actor !== "user") {
+      return yield* reject("Only the user can decide which child sessions start.");
+    }
     if (existing === undefined || existing.planStatus !== "pending") {
       return yield* reject(`Proposal ${command.turnItemId} is not waiting for a decision.`);
     }

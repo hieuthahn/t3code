@@ -1272,6 +1272,8 @@ export const ServerSettings = Schema.Struct({
   autoEffortDefault: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /** Whether the composer offers a predicted next prompt after each turn. */
   promptSuggestions: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /** Whether a multi-step turn ends with a recap card under its last message. */
+  turnRecaps: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   sidebarAutoSettleKeepPullRequests: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
@@ -1643,6 +1645,7 @@ export const ServerSettingsPatch = Schema.Struct({
   autoEffortJudge: Schema.optionalKey(AutoEffortJudge),
   autoEffortDefault: Schema.optionalKey(Schema.Boolean),
   promptSuggestions: Schema.optionalKey(Schema.Boolean),
+  turnRecaps: Schema.optionalKey(Schema.Boolean),
   snoozeLimitedThreads: Schema.optionalKey(Schema.Boolean),
   backgroundActivity: Schema.optionalKey(
     Schema.Struct({

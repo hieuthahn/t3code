@@ -24,6 +24,7 @@ import {
   type ThreadSortInput,
 } from "../lib/threadSort";
 import type { SidebarThreadSummary, Thread } from "../types";
+import type { SidebarTimeBucket } from "./sidebar/sidebarTimeBuckets";
 import { normalizeSearchText } from "../lib/utils";
 import { isLatestRunSettled } from "../session-logic";
 
@@ -142,10 +143,12 @@ export type SidebarListMarker =
   | "snoozed-header"
   | "settled-header"
   | `${typeof SETTLED_GROUP_MARKER_PREFIX}${string}`
-  | `${typeof FANOUT_GROUP_MARKER_PREFIX}${string}`;
+  | `${typeof FANOUT_GROUP_MARKER_PREFIX}${string}`
+  | `${typeof TIME_BUCKET_MARKER_PREFIX}${string}`;
 
 const SETTLED_GROUP_MARKER_PREFIX = "settled-group:";
 const FANOUT_GROUP_MARKER_PREFIX = "fanout-group:";
+const TIME_BUCKET_MARKER_PREFIX = "time-bucket:";
 
 export function sidebarMarkerId(marker: SidebarListMarker): string {
   return `${SIDEBAR_MARKER_PREFIX}${marker}`;
@@ -163,6 +166,13 @@ export function settledGroupIdOfMarker(marker: SidebarListMarker): string | null
 
 export function fanoutGroupMarker(section: SidebarSection, groupId: string): SidebarListMarker {
   return `${FANOUT_GROUP_MARKER_PREFIX}${section}:${groupId}`;
+}
+
+export function timeBucketMarker(
+  section: SidebarSection,
+  bucket: SidebarTimeBucket,
+): SidebarListMarker {
+  return `${TIME_BUCKET_MARKER_PREFIX}${section}:${bucket}`;
 }
 
 export type SidebarListItem =

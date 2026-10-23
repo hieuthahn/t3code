@@ -535,6 +535,8 @@ type SidebarThreadRowProps = {
   thread: SidebarThreadSummary;
   /** Shown as one model's branch under its multiple-models group header. */
   nested?: boolean;
+  /** Shown as one dense line, with live status in place of the time, as the compact sidebar does. */
+  compact?: boolean;
   variant: "card" | "slim";
   variantAction: SidebarSweepAction;
   settlementSupported: boolean;
@@ -990,7 +992,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         className={cn(
           "min-w-0 flex-1 text-start text-sm transition-opacity motion-reduce:transition-none",
           shouldRecede ? "font-normal" : "font-medium",
-          variant === "card" || props.nested
+          variant === "card" || props.nested || (props.compact && variantAction === "settle")
             ? cn(
                 "truncate",
                 shouldRecede
@@ -1106,7 +1108,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         {...sortableRootProps}
         {...(fileDropHandlers ?? {})}
         className={cn(
-          "list-none [content-visibility:auto] [contain-intrinsic-size:auto_36px]",
+          "list-none [content-visibility:auto]",
+          props.compact
+            ? "[contain-intrinsic-size:auto_28px]"
+            : "[contain-intrinsic-size:auto_36px]",
           props.nested &&
             "relative pl-5 before:pointer-events-none before:absolute before:inset-y-0 before:left-[1.0625rem] before:w-px before:bg-sidebar-muted-foreground/25",
           sortable?.isDragging && "relative z-20",
@@ -1123,7 +1128,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 aria-current={accessibility.current}
                 data-testid="sidebar-row-slim"
                 aria-busy={isRegeneratingTitle || undefined}
-                className={cn(rowSurfaceClassName, "flex h-9 items-center gap-2.5 px-2.5")}
+                className={cn(
+                  rowSurfaceClassName,
+                  "flex items-center gap-2.5 px-2.5",
+                  props.compact ? "h-7" : "h-9",
+                )}
                 onClick={handleClick}
                 onDoubleClick={handleDoubleClick}
                 onKeyDown={handleKeyDown}
@@ -1189,7 +1198,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       />
                       <TooltipPopup side="top">Dismiss Woke notification</TooltipPopup>
                     </Tooltip>
-                  ) : props.nested && topStatus && variantAction !== "unsettle" ? (
+                  ) : (props.nested || props.compact) &&
+                    topStatus &&
+                    variantAction !== "unsettle" ? (
                     <span
                       className={cn(
                         "inline-flex items-center gap-1 text-xs font-medium",

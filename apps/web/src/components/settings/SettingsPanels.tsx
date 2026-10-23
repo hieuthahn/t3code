@@ -457,6 +457,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     DEFAULT_UNIFIED_SETTINGS.sidebarSettledProjectGroupsEnabled
       ? ["Settled project groups"]
       : []),
+    ...(settings.sidebarCompactModeEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarCompactModeEnabled
+      ? ["Compact sidebar"]
+      : []),
     ...(settings.sidebarAutoSettleAfterDays !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
       ? ["Auto-settle inactive threads"]
       : []),
@@ -651,6 +654,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
       sidebarSettledProjectGroupsEnabled:
         DEFAULT_UNIFIED_SETTINGS.sidebarSettledProjectGroupsEnabled,
+      sidebarCompactModeEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarCompactModeEnabled,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleKeepPullRequests: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
@@ -1231,6 +1235,33 @@ export function GeneralSettingsPanel() {
                 updateSettings({ sidebarSettledProjectGroupsEnabled: Boolean(checked) })
               }
               aria-label="Group settled threads by project"
+            />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("compact-sidebar")}
+          description="Show every thread on one line, group threads by Today, This week and Older, and fold multiple-models groups."
+          resetAction={
+            settings.sidebarCompactModeEnabled !==
+            DEFAULT_UNIFIED_SETTINGS.sidebarCompactModeEnabled ? (
+              <SettingResetButton
+                label="compact sidebar"
+                onClick={() =>
+                  updateSettings({
+                    sidebarCompactModeEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarCompactModeEnabled,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.sidebarCompactModeEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ sidebarCompactModeEnabled: Boolean(checked) })
+              }
+              aria-label="Compact sidebar"
             />
           }
         />

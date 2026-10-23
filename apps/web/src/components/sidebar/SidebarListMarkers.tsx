@@ -1,7 +1,7 @@
 import { CollapsibleSectionHeader } from "../ui/collapsible-section-header";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ChevronRightIcon, Columns3Icon, FolderIcon } from "lucide-react";
+import { ChevronRightIcon, Columns3Icon, FolderIcon, PinIcon, PinOffIcon } from "lucide-react";
 import { type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { cn } from "~/lib/utils";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
@@ -177,8 +177,12 @@ export function SidebarBucketHeader(props: {
   expanded: boolean;
   onToggle: () => void;
   project?: ProjectFaviconProject | null | undefined;
+  pinned?: boolean | undefined;
+  onPinnedChange?: ((pinned: boolean) => void) | undefined;
+  onContextMenu?: ((position: { x: number; y: number }) => void) | undefined;
 }) {
   const isProject = props.project !== undefined;
+  const canPin = isProject && props.onPinnedChange !== undefined;
   return (
     <SortableSidebarMarker
       marker={props.marker}
@@ -186,53 +190,97 @@ export function SidebarBucketHeader(props: {
       data-kind={isProject ? "project" : "date"}
       className={cn("mx-0.5 h-7", isProject && "not-first:h-9")}
     >
-      <button
-        type="button"
-        aria-expanded={props.expanded}
-        onClick={props.onToggle}
-        className={cn(
-          "flex h-full w-full cursor-pointer items-end gap-1.5 rounded-md px-2 pb-1 text-left text-xs outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-          isProject
-            ? "font-semibold text-sidebar-foreground"
-            : "font-medium text-sidebar-muted-foreground hover:text-sidebar-foreground",
-        )}
+      <div
+        className="group/bucket relative h-full"
+        onContextMenu={
+          props.onContextMenu === undefined
+            ? undefined
+            : (event) => {
+                event.preventDefault();
+                props.onContextMenu?.({ x: event.clientX, y: event.clientY });
+              }
+        }
       >
-        {isProject ? (
-          <span aria-hidden className="mb-px flex size-3.5 shrink-0 self-end">
-            {props.project ? (
-              <ProjectFavicon project={props.project} className="size-3.5" />
-            ) : (
-              <FolderIcon className="size-3.5 text-sidebar-muted-foreground" />
-            )}
-          </span>
-        ) : null}
-        {isProject ? (
-          <Tooltip>
-            <TooltipTrigger render={<span className="min-w-0 truncate" />}>
-              {props.label}
-            </TooltipTrigger>
-            <TooltipPopup side="right">{props.label}</TooltipPopup>
-          </Tooltip>
-        ) : (
-          <span>{props.label}</span>
-        )}
-        <span
+        <button
+          type="button"
+          aria-expanded={props.expanded}
+          onClick={props.onToggle}
           className={cn(
-            "tabular-nums font-medium text-sidebar-muted-foreground/60",
-            isProject && "ms-auto",
+            "flex h-full w-full cursor-pointer items-end gap-1.5 rounded-md px-2 pb-1 text-left text-xs outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+            isProject
+              ? "font-semibold text-sidebar-foreground"
+              : "font-medium text-sidebar-muted-foreground hover:text-sidebar-foreground",
           )}
         >
-          {props.threadCount}
-          <span className="sr-only"> threads</span>
-        </span>
-        <ChevronRightIcon
-          aria-hidden
-          className={cn(
-            "mb-px size-3 shrink-0 text-sidebar-muted-foreground transition-transform motion-reduce:transition-none",
-            props.expanded && "rotate-90",
+          {isProject ? (
+            <span aria-hidden className="mb-px flex size-3.5 shrink-0 self-end">
+              {props.project ? (
+                <ProjectFavicon project={props.project} className="size-3.5" />
+              ) : (
+                <FolderIcon className="size-3.5 text-sidebar-muted-foreground" />
+              )}
+            </span>
+          ) : null}
+          {isProject ? (
+            <Tooltip>
+              <TooltipTrigger render={<span className="min-w-0 truncate" />}>
+                {props.label}
+              </TooltipTrigger>
+              <TooltipPopup side="right">{props.label}</TooltipPopup>
+            </Tooltip>
+          ) : (
+            <span>{props.label}</span>
           )}
-        />
-      </button>
+          {props.pinned ? (
+            <PinIcon
+              aria-label="Pinned"
+              role="img"
+              className="mb-px size-3 shrink-0 text-sidebar-muted-foreground"
+            />
+          ) : null}
+          <span
+            className={cn(
+              "flex items-end gap-1.5",
+              isProject && "ms-auto",
+              canPin &&
+                "transition-opacity group-hover/bucket:opacity-0 group-has-[:focus-visible]/bucket:opacity-0",
+            )}
+          >
+            <span className="tabular-nums font-medium text-sidebar-muted-foreground/60">
+              {props.threadCount}
+              <span className="sr-only"> threads</span>
+            </span>
+            <ChevronRightIcon
+              aria-hidden
+              className={cn(
+                "mb-px size-3 shrink-0 text-sidebar-muted-foreground transition-transform motion-reduce:transition-none",
+                props.expanded && "rotate-90",
+              )}
+            />
+          </span>
+        </button>
+        {canPin ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label={props.pinned ? "Unpin project" : "Pin project"}
+                  onClick={() => props.onPinnedChange?.(!props.pinned)}
+                  className="pointer-events-none absolute inset-y-0 right-0 flex cursor-pointer items-end rounded-md px-2 pb-1 text-sidebar-muted-foreground opacity-0 outline-none transition-opacity hover:text-sidebar-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring group-hover/bucket:pointer-events-auto group-hover/bucket:opacity-100 group-has-[:focus-visible]/bucket:opacity-100"
+                />
+              }
+            >
+              {props.pinned ? (
+                <PinOffIcon aria-hidden className="mb-px size-3.5" />
+              ) : (
+                <PinIcon aria-hidden className="mb-px size-3.5" />
+              )}
+            </TooltipTrigger>
+            <TooltipPopup side="top">{props.pinned ? "Unpin project" : "Pin project"}</TooltipPopup>
+          </Tooltip>
+        ) : null}
+      </div>
     </SortableSidebarMarker>
   );
 }

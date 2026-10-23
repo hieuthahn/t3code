@@ -76,6 +76,7 @@ import {
   ToolActivitySource,
 } from "./providerRuntime.ts";
 import { ThreadTokenUsageSnapshot } from "./providerRuntime.ts";
+import { TeamSetup } from "./team.ts";
 import { TokenSaverConfig } from "./tokenSaver.ts";
 
 export const OrchestrationV2Actor = Schema.Literals(["user", "agent", "system"]);
@@ -431,6 +432,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
   fanoutGroupId: Schema.optional(TrimmedNonEmptyString),
   /** Absent means the thread follows the server's Token Saver defaults. */
   tokenSaver: Schema.optional(TokenSaverConfig),
+  /** Present while the thread runs as a team's architect; absent means a single agent. */
+  team: Schema.optional(TeamSetup),
   lineage: OrchestrationV2AppThreadLineage,
   forkedFrom: Schema.NullOr(
     Schema.Union([
@@ -2091,6 +2094,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
   fanoutGroupId: Schema.optional(TrimmedNonEmptyString),
   tokenSaver: Schema.optional(TokenSaverConfig),
+  team: Schema.optional(TeamSetup),
   latestRunId: Schema.NullOr(RunId),
   latestRunRequestedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   latestRunStartedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
@@ -2989,6 +2993,8 @@ export const OrchestrationV2Command = Schema.Union([
     linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
     /** Override (object) or follow the server defaults again (null); absent leaves it unchanged. */
     tokenSaver: Schema.optional(Schema.NullOr(TokenSaverConfig)),
+    /** Run as a team (object) or as a single agent again (null); absent leaves it unchanged. */
+    team: Schema.optional(Schema.NullOr(TeamSetup)),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.pull-request.link"),

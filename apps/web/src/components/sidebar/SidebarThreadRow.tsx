@@ -533,6 +533,8 @@ const dropVerbBadge: Record<SidebarDropVerb, ReactNode> = {
 
 type SidebarThreadRowProps = {
   thread: SidebarThreadSummary;
+  /** Shown as one model's branch under its multiple-models group header. */
+  nested?: boolean;
   variant: "card" | "slim";
   variantAction: SidebarSweepAction;
   settlementSupported: boolean;
@@ -959,8 +961,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       </span>
     ) : null;
 
+  const visibleTitle = props.nested ? modelLabel : thread.title;
   const accessibility = resolveSidebarRowAccessibility({
-    title: thread.title,
+    title: props.nested ? `${thread.title} (${modelLabel})` : thread.title,
     statusLabel: topStatus?.label ?? null,
     projectDisplayName: props.projectDisplayName,
     isActive: props.isActive,
@@ -987,7 +990,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         className={cn(
           "min-w-0 flex-1 text-start text-sm transition-opacity motion-reduce:transition-none",
           shouldRecede ? "font-normal" : "font-medium",
-          variant === "card"
+          variant === "card" || props.nested
             ? cn(
                 "truncate",
                 shouldRecede
@@ -1010,9 +1013,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               ),
           isRegeneratingTitle && "opacity-55",
         )}
-        dir={textDirection(thread.title)}
+        dir={textDirection(visibleTitle)}
       >
-        {thread.title}
+        {visibleTitle}
       </span>
     );
   const accessibleTitle = isRenaming ? null : <span className="sr-only">{thread.title}</span>;
@@ -1104,6 +1107,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         {...(fileDropHandlers ?? {})}
         className={cn(
           "list-none [content-visibility:auto] [contain-intrinsic-size:auto_36px]",
+          props.nested &&
+            "relative pl-5 before:pointer-events-none before:absolute before:inset-y-0 before:left-[1.0625rem] before:w-px before:bg-sidebar-muted-foreground/25",
           sortable?.isDragging && "relative z-20",
         )}
       >
@@ -1184,6 +1189,16 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       />
                       <TooltipPopup side="top">Dismiss Woke notification</TooltipPopup>
                     </Tooltip>
+                  ) : props.nested && topStatus && variantAction !== "unsettle" ? (
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1 text-xs font-medium",
+                        topStatus.className,
+                      )}
+                    >
+                      <ThreadTopStatusIcon icon={topStatus.icon} className="size-3.5 shrink-0" />
+                      <span role="status">{topStatus.label}</span>
+                    </span>
                   ) : (
                     <span className="text-xs">
                       <RelativeTimeLabel

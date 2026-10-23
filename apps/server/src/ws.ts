@@ -266,6 +266,7 @@ import {
   withUsageLimitsCommands,
 } from "@t3tools/shared/usageLimits";
 import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
+import * as ClaudeDesktopSync from "./claudeDesktopSync/ClaudeDesktopSync.ts";
 import * as AgentSessionImporter from "./project/AgentSessionImporter.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 
@@ -1318,6 +1319,7 @@ export const layerWsRpc = (
       const projectEnrichment = yield* ProjectEnrichmentService.ProjectEnrichmentService;
       const agentSessionScanner = yield* AgentSessionScanner.AgentSessionScanner;
       const agentSessionImporter = yield* AgentSessionImporter.AgentSessionImporter;
+      const claudeDesktopSync = yield* ClaudeDesktopSync.ClaudeDesktopSync;
       const checkpointDiffQuery = yield* CheckpointDiffQuery.CheckpointDiffQuery;
       const keybindings = yield* Keybindings.Keybindings;
       const environmentTheme = yield* EnvironmentTheme.EnvironmentThemeService;
@@ -2891,6 +2893,7 @@ export const layerWsRpc = (
         [WS_METHODS.agentSessionsScan]: () => agentSessionScanner.scan,
         [WS_METHODS.agentSessionsImport]: (input) =>
           agentSessionImporter.importRecentAgentThreads(input),
+        [WS_METHODS.claudeDesktopSyncRun]: (request) => claudeDesktopSync.run(request),
         [WS_METHODS.assetsCreateUrl]:
           /* Request instrumentation already owns the span; keep this helper in that context. */
           Effect.fnUntraced(function* (input) {
@@ -3327,6 +3330,7 @@ export const layer = Layer.unwrap(
     const serverBrowser = yield* ServerBrowser.ServerBrowser;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const pullRequests = yield* PullRequestService.PullRequestService;
+    const claudeDesktopSyncService = yield* ClaudeDesktopSync.ClaudeDesktopSync;
     const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
     const peerLinks = yield* PeerLinks.PeerLinks;
     const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
@@ -3411,6 +3415,7 @@ export const layer = Layer.unwrap(
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),
               // Share server-lifetime PR caches so WS mutations invalidate every client's HTTP diffs.
               Layer.provide(Layer.succeed(PullRequestService.PullRequestService, pullRequests)),
+              Layer.provide(Layer.succeed(ClaudeDesktopSync.ClaudeDesktopSync, claudeDesktopSyncService)),
               Layer.provide(OtlpEndpointCheck.layer),
               Layer.provide(
                 Layer.succeed(

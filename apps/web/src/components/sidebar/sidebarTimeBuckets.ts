@@ -53,6 +53,20 @@ export function bucketByTime<T>(
   });
 }
 
+/** Count items per bucket, so a header can count threads a paged list has not loaded yet. */
+export function countByTimeBucket<T>(
+  items: readonly T[],
+  timeMsOf: (item: T) => number,
+  nowMs: number,
+): Map<SidebarTimeBucket, number> {
+  const counts = new Map<SidebarTimeBucket, number>();
+  for (const item of items) {
+    const bucket = sidebarTimeBucketOf(timeMsOf(item), nowMs);
+    counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
+  }
+  return counts;
+}
+
 /** Return when a thread last took a prompt, or its last update when it never did. */
 export function sidebarThreadTimeMs(
   thread: Pick<EnvironmentThreadShell, "latestUserMessageAt" | "updatedAt">,

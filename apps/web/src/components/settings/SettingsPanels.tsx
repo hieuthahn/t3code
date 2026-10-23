@@ -460,6 +460,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.sidebarCompactModeEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarCompactModeEnabled
       ? ["Compact sidebar"]
       : []),
+    ...(settings.sidebarCompactGroupBy !== DEFAULT_UNIFIED_SETTINGS.sidebarCompactGroupBy
+      ? ["Group compact sidebar by"]
+      : []),
     ...(settings.sidebarAutoSettleAfterDays !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
       ? ["Auto-settle inactive threads"]
       : []),
@@ -655,6 +658,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarSettledProjectGroupsEnabled:
         DEFAULT_UNIFIED_SETTINGS.sidebarSettledProjectGroupsEnabled,
       sidebarCompactModeEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarCompactModeEnabled,
+      sidebarCompactGroupBy: DEFAULT_UNIFIED_SETTINGS.sidebarCompactGroupBy,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleKeepPullRequests: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
@@ -1263,6 +1267,51 @@ export function GeneralSettingsPanel() {
               }
               aria-label="Compact sidebar"
             />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("compact-sidebar-grouping")}
+          description="Groups Active and Settled threads by date or by project in the compact sidebar."
+          resetAction={
+            settings.sidebarCompactGroupBy !== DEFAULT_UNIFIED_SETTINGS.sidebarCompactGroupBy ? (
+              <SettingResetButton
+                label="compact sidebar grouping"
+                onClick={() =>
+                  updateSettings({
+                    sidebarCompactGroupBy: DEFAULT_UNIFIED_SETTINGS.sidebarCompactGroupBy,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.sidebarCompactGroupBy}
+              onValueChange={(value) => {
+                if (value === "time" || value === "project") {
+                  updateSettings({ sidebarCompactGroupBy: value });
+                }
+              }}
+            >
+              <SelectTrigger
+                size="sm"
+                className="w-full sm:w-40"
+                aria-label="Group compact sidebar by"
+              >
+                <SelectValue>
+                  {settings.sidebarCompactGroupBy === "project" ? "Project" : "Date"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="time">
+                  Date
+                </SelectItem>
+                <SelectItem hideIndicator value="project">
+                  Project
+                </SelectItem>
+              </SelectPopup>
+            </Select>
           }
         />
 

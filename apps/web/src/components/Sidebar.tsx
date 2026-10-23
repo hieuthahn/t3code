@@ -3181,14 +3181,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 </Combobox>
               }
               compactMode={compactModeEnabled}
-              onToggleCompactMode={() =>
-                void updateClientSettings({ sidebarCompactModeEnabled: !compactModeEnabled })
+              onCompactModeChange={(compact) =>
+                void updateClientSettings({ sidebarCompactModeEnabled: compact })
               }
-              compactGroupedByProject={compactGroupBy === "project"}
-              onToggleCompactGroupBy={() =>
-                void updateClientSettings({
-                  sidebarCompactGroupBy: compactGroupBy === "project" ? "time" : "project",
-                })
+              compactGroupBy={compactGroupBy}
+              onCompactGroupByChange={(groupBy) =>
+                void updateClientSettings({ sidebarCompactGroupBy: groupBy })
               }
               onNewProject={openAddProjectCommandPalette}
               onNewThread={handleNewThreadClick}

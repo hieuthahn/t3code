@@ -88,3 +88,12 @@ export function sortThreadsByRecency<
     (left, right) => timeMs(right) - timeMs(left) || left.id.localeCompare(right.id),
   );
 }
+
+/** Keep a collapsed bucket's open thread in view, so the route never hides behind a fold. */
+export function visibleBucketItems<T>(
+  items: readonly T[],
+  collapsed: boolean,
+  isRoute: (item: T) => boolean,
+): readonly T[] {
+  return collapsed ? items.filter(isRoute) : items;
+}

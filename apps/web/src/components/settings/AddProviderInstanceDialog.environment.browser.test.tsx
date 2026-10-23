@@ -163,7 +163,7 @@ describe("AddProviderInstanceDialog environment routing", () => {
         driver: "codex",
         enabled: true,
         displayName: "Codex",
-        config: { setupMode: "existing" },
+        config: { shadowHomePath: "~/.codex-t3/codex_3", setupMode: "existing" },
       },
     });
   });

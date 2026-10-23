@@ -9,6 +9,7 @@ import {
   archiveSelectedThreadEntries,
   deleteSelectedThreadEntries,
   fanoutGroupMarker,
+  timeBucketMarker,
   getFallbackThreadIdAfterDelete,
   hasUnseenCompletion,
   resolveSidebarRowThreadId,
@@ -1130,6 +1131,28 @@ describe("Working shelf (beta)", () => {
         pinnedOrder: [],
         activeOrder: ["g1", "g2", "a1"],
       });
+    });
+
+    it("keeps time bucket headers out of the section and the inbox order", () => {
+      const bucketed: readonly SidebarListItem[] = [
+        marker("pinned-header"),
+        row("p1", "pinned"),
+        marker("pinned-divider"),
+        marker(timeBucketMarker("active", "today")),
+        row("a1", "active"),
+        marker(timeBucketMarker("active", "week")),
+        row("a2", "active"),
+        marker("settled-header"),
+        marker(timeBucketMarker("settled", "older")),
+        row("s1", "settled"),
+      ];
+
+      expect(resolveSidebarDropTarget(bucketed, "p1", "a2")).toEqual({
+        section: "active",
+        pinnedOrder: [],
+        activeOrder: ["a1", "a2", "p1"],
+      });
+      expect(resolveSidebarDropTarget(bucketed, "a1", "s1")?.section).toBe("settled");
     });
 
     it.each([

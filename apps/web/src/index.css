@@ -2477,3 +2477,42 @@ code {
     }
   }
 }
+
+/* Glass and blur read as low contrast, so both preferences turn them solid.
+   The utilities and composer surfaces all read these tokens. */
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  :root,
+  :root.dark {
+    --glass-blur: 0px;
+    --glass-opacity: 100%;
+    --glass-saturation: 1;
+    --blur-xs: 0px;
+    --blur-sm: 0px;
+    --blur-md: 0px;
+    --blur-lg: 0px;
+    --blur-xl: 0px;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root,
+  [data-app-sidebar] {
+    --contrast-border: color-mix(in srgb, var(--border), var(--foreground) 45%);
+    --contrast-input: color-mix(in srgb, var(--input), var(--foreground) 55%);
+    --contrast-toolbar-border: color-mix(
+      in srgb,
+      var(--toolbar-border),
+      var(--toolbar-foreground) 45%
+    );
+    --contrast-sidebar-border: color-mix(
+      in srgb,
+      var(--sidebar-border),
+      var(--sidebar-foreground) 45%
+    );
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring) !important;
+    outline-offset: 2px !important;
+  }
+}

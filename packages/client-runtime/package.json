@@ -351,6 +351,10 @@
       "types": "./src/state/vcs.ts",
       "default": "./src/state/vcs.ts"
     },
+    "./work-log/request-resolution": {
+      "types": "./src/work-log/requestResolution.ts",
+      "default": "./src/work-log/requestResolution.ts"
+    },
     "./work-log/user-input": {
       "types": "./src/work-log/userInput.ts",
       "default": "./src/work-log/userInput.ts"

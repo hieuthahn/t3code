@@ -9,6 +9,7 @@ import {
   deleteSelectedThreadEntries,
   fanoutGroupMarker,
   timeBucketMarker,
+  projectBucketMarker,
   getFallbackThreadIdAfterDelete,
   hasUnseenCompletion,
   resolveSidebarRowThreadId,
@@ -19,6 +20,7 @@ import {
   resolveSidebarSweepKeys,
   resolveSidebarThreadStatus,
   resolveSidebarV2TopStatus,
+  compactRowShowsStatus,
   resolveThreadStatusPill,
   resolveWorkingStartedAt,
   searchSidebarThreads,
@@ -1205,6 +1207,29 @@ describe("Working shelf (beta)", () => {
       expect(resolveSidebarDropTarget(bucketed, "a1", "s1")?.section).toBe("settled");
     });
 
+    it("keeps project bucket headers out of the section and the inbox order", () => {
+      const bucketed: readonly SidebarListItem[] = [
+        marker("pinned-divider"),
+        marker(projectBucketMarker("active", "env-1:project-a")),
+        row("a1", "active"),
+        marker(projectBucketMarker("active", "scratch")),
+        row("a2", "active"),
+        marker("settled-header"),
+        marker(projectBucketMarker("settled", "env-1:project-a")),
+        row("s1", "settled"),
+      ];
+
+      expect(projectBucketMarker("active", "env-1:project-a")).not.toBe(
+        projectBucketMarker("settled", "env-1:project-a"),
+      );
+      expect(resolveSidebarDropTarget(bucketed, "s1", "a2")).toEqual({
+        section: "active",
+        pinnedOrder: [],
+        activeOrder: ["a1", "s1", "a2"],
+      });
+      expect(resolveSidebarDropTarget(bucketed, "a1", "s1")?.section).toBe("settled");
+    });
+
     it.each([
       ["pinned", "p1"],
       ["active", "a2"],
@@ -1329,5 +1354,21 @@ describe("pendingSidebarRouteReveal", () => {
     pendingSidebarRouteReveal(reveal, "env:a1");
     expect(pendingSidebarRouteReveal(reveal, null)).toBeNull();
     expect(pendingSidebarRouteReveal(reveal, "env:a1")).toBe("env:a1");
+  });
+});
+
+describe("compactRowShowsStatus", () => {
+  it.each([
+    ["working", true],
+    ["approval", true],
+    ["input", true],
+    ["failed", true],
+    ["limited", true],
+    ["done", true],
+    ["woke", true],
+    ["waiting", false],
+    [null, false],
+  ] as const)("shows %s as status: %s", (kind, shown) => {
+    expect(compactRowShowsStatus(kind)).toBe(shown);
   });
 });

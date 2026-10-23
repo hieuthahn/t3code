@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   bucketByTime,
+  countByTimeBucket,
   sidebarThreadTimeMs,
   sidebarTimeBucketOf,
   sortThreadsByRecency,
@@ -60,6 +61,18 @@ describe("bucketByTime", () => {
       bucketByTime([localMs(1)], (timeMs) => timeMs, NOW_MS).map((group) => group.bucket),
     ).toEqual(["older"]);
     expect(bucketByTime([], (timeMs: number) => timeMs, NOW_MS)).toEqual([]);
+  });
+});
+
+describe("countByTimeBucket", () => {
+  it("counts every item, including ones the list has not loaded", () => {
+    const counts = countByTimeBucket(
+      [localMs(23, 9), localMs(20), localMs(10), localMs(1), Number.NaN],
+      (timeMs) => timeMs,
+      NOW_MS,
+    );
+
+    expect(Object.fromEntries(counts)).toEqual({ today: 1, week: 1, older: 3 });
   });
 });
 

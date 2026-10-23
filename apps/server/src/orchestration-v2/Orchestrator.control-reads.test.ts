@@ -1,10 +1,12 @@
 import { assert, it } from "@effect/vitest";
 import {
+  AuthSessionId,
   CommandId,
   MessageId,
   EventId,
   NodeId,
   type OrchestrationV2DomainEvent,
+  type OrchestrationV2Subagent,
   PlanId,
   ProjectId,
   ProviderDriverKind,
@@ -274,6 +276,10 @@ it.effect(
           },
         });
         const answers = { text: "Blue", list: ["Red"], codex: { answers: ["Green"] } };
+        const decidedBy = {
+          actor: "user",
+          authSessionId: AuthSessionId.make("session:control-reads"),
+        } as const;
         const normalizedAnswers = { ...answers, codex: ["Green"] };
         if (mode === "live") {
           const pending = yield* projections.getRuntimeResponseContext(threadId, requestId);
@@ -312,6 +318,7 @@ it.effect(
                 threadId,
                 requestId,
                 answers,
+                decidedBy,
               }
             : {
                 type: "thread.user-input.dismiss",
@@ -329,9 +336,11 @@ it.effect(
         assert.equal(response.item?.status, mode === "live" ? "completed" : "cancelled");
         if (mode === "live") {
           assert.deepEqual(response.request?.answers, normalizedAnswers);
+          assert.deepEqual(response.request?.decidedBy, decidedBy);
           assert.equal(response.item?.type, "user_input_request");
           if (response.item?.type === "user_input_request") {
             assert.deepEqual(response.item.questionAnswer?.answers, normalizedAnswers);
+            assert.deepEqual(response.item.decidedBy, decidedBy);
           }
           const effects = yield* outbox.listByCommandId(CommandId.make(`respond:${mode}`));
           assert.deepEqual(
@@ -399,6 +408,129 @@ it.effect(
       });
       assert.isNotNull((yield* projections.getThread(threadId)).deletedAt);
     }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("records the decision and who made it on an answered approval", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const outbox = yield* EffectOutbox.EffectOutboxV2;
+    const threadId = ThreadId.make("thread:approval-decider");
+    const sessionId = ProviderSessionId.make("session:approval-decider");
+    const requestId = RuntimeRequestId.make("request:approval-decider");
+    const nodeId = NodeId.make("node:approval-decider");
+    const itemId = TurnItemId.make("item:approval-decider");
+    const now = yield* DateTime.now;
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make("create-approval-decider"),
+      threadId,
+      projectId: ProjectId.make("project:approval-decider"),
+      title: "Approval",
+      modelSelection,
+      runtimeMode: "approval-required",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdBy: "user",
+      creationSource: "web",
+    });
+    yield* projections.apply({
+      id: EventId.make("attach-approval-decider"),
+      type: "provider-session.attached",
+      threadId,
+      occurredAt: now,
+      payload: {
+        id: sessionId,
+        driver: adapter.driver,
+        providerInstanceId: instanceId,
+        status: "ready",
+        cwd: "/repo",
+        model: modelSelection.model,
+        capabilities: CodexProviderCapabilitiesV2,
+        createdAt: now,
+        updatedAt: now,
+        lastError: null,
+      },
+    });
+    yield* projections.apply({
+      id: EventId.make("request:approval-decider"),
+      type: "runtime-request.updated",
+      threadId,
+      occurredAt: now,
+      payload: {
+        id: requestId,
+        nodeId,
+        providerTurnId: null,
+        nativeRequestRef: null,
+        kind: "command",
+        status: "pending",
+        responseCapability: { type: "live", providerSessionId: sessionId },
+        createdAt: now,
+        resolvedAt: null,
+      },
+    });
+    yield* projections.apply({
+      id: EventId.make("item:approval-decider"),
+      type: "turn-item.updated",
+      threadId,
+      occurredAt: now,
+      payload: {
+        id: itemId,
+        threadId,
+        runId: null,
+        nodeId,
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal: 1,
+        status: "waiting",
+        title: null,
+        startedAt: now,
+        completedAt: null,
+        updatedAt: now,
+        type: "approval_request",
+        requestId,
+        requestKind: "command",
+        prompt: "git push",
+      },
+    });
+    const decidedBy = {
+      actor: "user",
+      authSessionId: AuthSessionId.make("session:approval-decider"),
+    } as const;
+    yield* orchestrator.dispatch({
+      type: "runtime-request.respond",
+      commandId: CommandId.make("respond-approval-decider"),
+      threadId,
+      requestId,
+      decision: "accept",
+      decidedBy,
+    });
+
+    const response = yield* projections.getRuntimeResponseContext(threadId, requestId);
+    assert.equal(response.request?.decision, "accept");
+    assert.deepEqual(response.request?.decidedBy, decidedBy);
+    assert.equal(response.item?.type, "approval_request");
+    if (response.item?.type === "approval_request") {
+      assert.equal(response.item.decision, "accept");
+      assert.deepEqual(response.item.decidedBy, decidedBy);
+    }
+    // The provider gets the decision alone; who made it stays in T3.
+    const effects = yield* outbox.listByCommandId(CommandId.make("respond-approval-decider"));
+    assert.deepEqual(
+      effects.map((effect) => effect.request),
+      [
+        {
+          type: "runtime-request.respond",
+          providerSessionId: sessionId,
+          requestId,
+          decision: "accept",
+        },
+      ],
+    );
+  }).pipe(Effect.provide(layerTest)),
 );
 
 it.effect("implements a proposed plan that the command projection leaves out", () =>
@@ -1125,6 +1257,140 @@ it.effect.each([false, true])("rejects thread.create for an existing id (deleted
     assert.include(retried.message, refused.message);
   }).pipe(Effect.provide(layerTest)),
 );
+
+const childReportClaim = {
+  status: "needs_decision",
+  summary: "Built the banner; one choice is left.",
+  tests: [{ command: "vp test run banner.test.ts", outcome: "passed", passed: 4, failed: 0 }],
+  questions: [
+    {
+      id: "keep-old",
+      question: "Keep the old banner?",
+      options: [{ label: "Keep", description: "Both stay" }],
+      allowCustom: true,
+      audience: "parent",
+    },
+  ],
+} as const;
+
+it.effect("records each report from a delegated child with a rising revision", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const parentThreadId = ThreadId.make("thread:report-parent");
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make("create-report-parent"),
+      threadId: parentThreadId,
+      projectId: ProjectId.make("project:report"),
+      title: "Parent",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdBy: "user",
+      creationSource: "web",
+    });
+    yield* orchestrator.dispatch({
+      type: "message.dispatch",
+      commandId: CommandId.make("start-report-parent"),
+      threadId: parentThreadId,
+      messageId: MessageId.make("message:report-parent"),
+      text: "Delegate the banner",
+      attachments: [],
+      dispatchMode: { type: "start_immediately" },
+      createdBy: "user",
+      creationSource: "web",
+    });
+    const parentRun = (yield* projections.getThreadProjection(parentThreadId)).runs[0]!;
+    yield* orchestrator.dispatch({
+      type: "delegated_task.request",
+      commandId: CommandId.make("delegate-report-task"),
+      parentThreadId,
+      parentRunId: parentRun.id,
+      parentNodeId: parentRun.rootNodeId!,
+      task: "Build the banner",
+      completionWake: "settled_only",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      createdBy: "agent",
+      creationSource: "mcp",
+    });
+    const task = (yield* projections.getThreadProjection(parentThreadId)).subagents[0]!;
+    const observed = {
+      branch: "update/banner",
+      headSha: "1111111111111111111111111111111111111111",
+      baseRef: null,
+      baseSha: null,
+      aheadBy: null,
+      behindBy: null,
+      dirty: false,
+      filesChanged: [],
+      filesTruncated: false,
+    };
+    yield* orchestrator.dispatch({
+      type: "child_report.record",
+      commandId: CommandId.make("report-1"),
+      parentThreadId,
+      taskId: task.id,
+      claimed: { ...childReportClaim, status: "working" },
+      observed: null,
+    });
+    yield* orchestrator.dispatch({
+      type: "child_report.record",
+      commandId: CommandId.make("report-2"),
+      parentThreadId,
+      taskId: task.id,
+      claimed: childReportClaim,
+      observed,
+    });
+    const reported = (yield* projections.getThreadProjection(parentThreadId)).subagents[0]!;
+    assert.equal(reported.report?.revision, 2);
+    assert.deepEqual(reported.report?.claimed, childReportClaim);
+    assert.deepEqual(reported.report?.observed, observed);
+    assert.equal(reported.status, task.status);
+
+    const missing = yield* orchestrator
+      .dispatch({
+        type: "child_report.record",
+        commandId: CommandId.make("report-missing"),
+        parentThreadId,
+        taskId: NodeId.make("node:not-a-task"),
+        claimed: childReportClaim,
+        observed: null,
+      })
+      .pipe(Effect.result);
+    assert.isTrue(Result.isFailure(missing));
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it("puts the child's report after its result in the parent's wake text", () => {
+  const task = {
+    id: NodeId.make("node:wake-report"),
+    title: "Banner",
+    status: "completed",
+    result: "Done.",
+    report: {
+      revision: 1,
+      reportedAt: "2026-10-23T10:00:00.000Z",
+      claimed: childReportClaim,
+      observed: null,
+    },
+  } as unknown as OrchestrationV2Subagent;
+  const detail = Orchestrator.delegatedCompletionWakeDetail([task.id], [task]);
+  assert.isTrue(
+    detail.startsWith("Delegated task node:wake-report (Banner) [completed]:\nDone.\n\n"),
+  );
+  assert.include(detail, "Child report revision 1. The child wrote this part");
+  assert.include(detail, "- keep-old for parent: Keep the old banner?");
+
+  const longResult = { ...task, result: "x".repeat(15_800) } as OrchestrationV2Subagent;
+  const trimmed = Orchestrator.delegatedCompletionWakeDetail([task.id], [longResult]);
+  assert.include(trimmed, "Use task_status with taskId node:wake-report to read its report.");
+  assert.notInclude(trimmed, "Child report revision");
+});
 
 it.effect("replays a thread.create receipt without changing the thread", () =>
   Effect.gen(function* () {

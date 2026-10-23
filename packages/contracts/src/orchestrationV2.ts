@@ -6,6 +6,7 @@ import * as SchemaGetter from "effect/SchemaGetter";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 
 import {
+  AuthSessionId,
   CheckpointId,
   CheckpointRef,
   CheckpointScopeId,
@@ -763,6 +764,68 @@ export const OrchestrationV2RemoteTaskChild = Schema.Struct({
 });
 export type OrchestrationV2RemoteTaskChild = typeof OrchestrationV2RemoteTaskChild.Type;
 
+const boundedText = (maximum: number) => Schema.String.check(Schema.isMaxLength(maximum));
+
+/** What a delegated child says about its own work. The parent reads it as the child's claim. */
+export const OrchestrationV2ChildReportClaim = Schema.Struct({
+  status: Schema.Literals(["working", "blocked", "needs_decision", "done", "failed"]),
+  summary: boundedText(4_000),
+  progress: Schema.optional(
+    Schema.Struct({ done: NonNegativeInt, total: NonNegativeInt, label: boundedText(200) }),
+  ),
+  tests: Schema.Array(
+    Schema.Struct({
+      command: boundedText(500),
+      outcome: Schema.Literals(["passed", "failed", "skipped", "not_run"]),
+      passed: Schema.optional(NonNegativeInt),
+      failed: Schema.optional(NonNegativeInt),
+      note: Schema.optional(boundedText(500)),
+    }),
+  ).check(Schema.isMaxLength(20)),
+  questions: Schema.Array(
+    Schema.Struct({
+      id: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
+      question: boundedText(1_000),
+      options: Schema.Array(
+        Schema.Struct({ label: boundedText(200), description: boundedText(500) }),
+      ).check(Schema.isMaxLength(6)),
+      allowCustom: Schema.Boolean,
+      audience: Schema.Literals(["user", "parent"]),
+    }),
+  ).check(Schema.isMaxLength(5)),
+});
+export type OrchestrationV2ChildReportClaim = typeof OrchestrationV2ChildReportClaim.Type;
+
+/** What the server read from git in the child's checkout when it reported. */
+export const OrchestrationV2ChildReportGitFacts = Schema.Struct({
+  branch: Schema.NullOr(Schema.String),
+  headSha: Schema.NullOr(Schema.String),
+  baseRef: Schema.NullOr(Schema.String),
+  baseSha: Schema.NullOr(Schema.String),
+  aheadBy: Schema.NullOr(NonNegativeInt),
+  behindBy: Schema.NullOr(NonNegativeInt),
+  dirty: Schema.Boolean,
+  filesChanged: Schema.Array(
+    Schema.Struct({
+      path: Schema.String,
+      status: Schema.String,
+      additions: Schema.NullOr(NonNegativeInt),
+      deletions: Schema.NullOr(NonNegativeInt),
+    }),
+  ),
+  filesTruncated: Schema.Boolean,
+});
+export type OrchestrationV2ChildReportGitFacts = typeof OrchestrationV2ChildReportGitFacts.Type;
+
+export const OrchestrationV2ChildReport = Schema.Struct({
+  revision: PositiveInt,
+  reportedAt: IsoDateTime,
+  claimed: OrchestrationV2ChildReportClaim,
+  /** Null when the child's checkout is not a git repository. */
+  observed: Schema.NullOr(OrchestrationV2ChildReportGitFacts),
+});
+export type OrchestrationV2ChildReport = typeof OrchestrationV2ChildReport.Type;
+
 export const OrchestrationV2Subagent = Schema.Struct({
   id: NodeId,
   threadId: ThreadId,
@@ -794,6 +857,8 @@ export const OrchestrationV2Subagent = Schema.Struct({
   ]),
   progress: Schema.optional(Schema.String),
   workflow: Schema.optional(OrchestrationV2SubagentWorkflow),
+  /** The latest structured report an app-owned child sent about its work. */
+  report: Schema.optional(OrchestrationV2ChildReport),
   result: Schema.NullOr(Schema.String),
   startedAt: Schema.NullOr(Schema.DateTimeUtc),
   completedAt: Schema.NullOr(Schema.DateTimeUtc),
@@ -1077,6 +1142,16 @@ export function latestProviderTurnForAttempt<
   return latest;
 }
 
+/**
+ * Who answered a runtime request. The server stamps it from the connection the
+ * answer arrived on, so a client cannot claim to be the user.
+ */
+export const OrchestrationV2RuntimeRequestDecider = Schema.Union([
+  Schema.Struct({ actor: Schema.Literal("user"), authSessionId: AuthSessionId }),
+  Schema.Struct({ actor: Schema.Literal("agent"), threadId: Schema.NullOr(ThreadId) }),
+]);
+export type OrchestrationV2RuntimeRequestDecider = typeof OrchestrationV2RuntimeRequestDecider.Type;
+
 export const OrchestrationV2RuntimeRequest = Schema.Struct({
   id: RuntimeRequestId,
   nodeId: NodeId,
@@ -1096,6 +1171,7 @@ export const OrchestrationV2RuntimeRequest = Schema.Struct({
   resolvedAt: Schema.NullOr(Schema.DateTimeUtc),
   decision: Schema.optional(ProviderApprovalDecision),
   answers: Schema.optional(ProviderUserInputAnswers),
+  decidedBy: Schema.optional(OrchestrationV2RuntimeRequestDecider),
 });
 export type OrchestrationV2RuntimeRequest = typeof OrchestrationV2RuntimeRequest.Type;
 
@@ -1494,6 +1570,7 @@ export const OrchestrationV2TurnItem = Schema.Union([
     questions: Schema.Array(OrchestrationV2UserInputQuestion),
     questionAnswer: Schema.optional(UserInputAttachmentAnswerPayload),
     responseMode: Schema.optional(Schema.Literal("message")),
+    decidedBy: Schema.optional(OrchestrationV2RuntimeRequestDecider),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -1538,6 +1615,8 @@ export const OrchestrationV2TurnItem = Schema.Union([
     fullAccessOverride: Schema.optional(ProviderApprovalFullAccessOverride),
     appName: Schema.optional(Schema.String),
     options: Schema.optional(Schema.Array(ProviderApprovalOption)),
+    decision: Schema.optional(ProviderApprovalDecision),
+    decidedBy: Schema.optional(OrchestrationV2RuntimeRequestDecider),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -2264,6 +2343,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     questions: Schema.Array(OrchestrationV2UserInputQuestion),
     questionAnswer: Schema.optional(UserInputAttachmentAnswerPayload),
     responseMode: Schema.optional(Schema.Literal("message")),
+    decidedBy: Schema.optional(OrchestrationV2RuntimeRequestDecider),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
@@ -2308,6 +2388,8 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     fullAccessOverride: Schema.optional(ProviderApprovalFullAccessOverride),
     appName: Schema.optional(Schema.String),
     options: Schema.optional(Schema.Array(ProviderApprovalOption)),
+    decision: Schema.optional(ProviderApprovalDecision),
+    decidedBy: Schema.optional(OrchestrationV2RuntimeRequestDecider),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
@@ -3044,6 +3126,8 @@ export const OrchestrationV2Command = Schema.Union([
     decision: Schema.optional(ProviderApprovalDecision),
     answers: Schema.optional(ProviderUserInputAnswers),
     attachmentsByQuestionId: Schema.optional(UserInputAttachments),
+    /** Set by the server; one sent by a client is replaced. */
+    decidedBy: Schema.optional(OrchestrationV2RuntimeRequestDecider),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.user-input.dismiss"),
@@ -3199,6 +3283,15 @@ const OrchestrationV2InternalCommand = Schema.Union([
     stoppedThere: Schema.optional(Schema.Literals(["ran-out", "stopped"])),
     /** The stop generation this report acknowledges; absent for the original unnumbered stop. */
     stopCount: Schema.optional(NonNegativeInt),
+  }),
+  /** Records the report a delegated child sent about its own work. */
+  Schema.Struct({
+    type: Schema.Literal("child_report.record"),
+    commandId: CommandId,
+    parentThreadId: ThreadId,
+    taskId: NodeId,
+    claimed: OrchestrationV2ChildReportClaim,
+    observed: Schema.NullOr(OrchestrationV2ChildReportGitFacts),
   }),
   /**
    * Owes a stop to the thread there of a remote task that already has its

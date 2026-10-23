@@ -20,6 +20,7 @@ import {
   type OrchestrationV2ServerCommand,
   type OrchestrationV2ConversationMessage,
   type OrchestrationV2CreationSource,
+  type OrchestrationV2RuntimeRequestDecider,
   type OrchestrationV2Run,
   type OrchestrationV2ThreadShellSnapshot,
   type OrchestrationV2ThreadProjection,
@@ -87,6 +88,14 @@ export function withCreationProvenance(
   }
 }
 
+/** Stamps who answered a runtime request, replacing any decider the sender supplied. */
+export function withRuntimeRequestDecider(
+  command: OrchestrationV2Command,
+  decidedBy: OrchestrationV2RuntimeRequestDecider,
+): OrchestrationV2Command {
+  return command.type === "runtime-request.respond" ? { ...command, decidedBy } : command;
+}
+
 function existingThreadIdsForCommand(
   command: OrchestrationV2ServerCommand,
 ): ReadonlyArray<ThreadId> {
@@ -113,6 +122,7 @@ function existingThreadIdsForCommand(
     case "delegated_task.remote.request":
     case "delegated_task.remote.complete":
     case "delegated_task.remote.stop":
+    case "child_report.record":
       return [command.parentThreadId];
     case "thread.created.record":
       return command.parentThreadId === command.targetThreadId

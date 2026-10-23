@@ -1,5 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import {
+  AuthSessionId,
   CommandId,
   EnvironmentId,
   MessageId,
@@ -10,6 +11,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   RunId,
+  RuntimeRequestId,
   type ServerProvider,
   ThreadId,
 } from "@t3tools/contracts";
@@ -65,6 +67,30 @@ it("stamps authoritative provenance on commands that create threads or messages"
   });
   expect(stamped).not.toHaveProperty("linkOrigin");
   expect(stamped).not.toHaveProperty("delegatedFrom");
+});
+
+it("replaces the decider a sender supplies on runtime-request.respond", () => {
+  const respond: OrchestrationV2Command = {
+    type: "runtime-request.respond",
+    commandId: CommandId.make("command:thread-management:respond"),
+    threadId: ThreadId.make("thread:thread-management:respond"),
+    requestId: RuntimeRequestId.make("request:thread-management:respond"),
+    decision: "accept",
+    // A client cannot pass an agent's answer off as the user's, or the reverse.
+    decidedBy: { actor: "agent", threadId: null },
+  };
+  const decidedBy = { actor: "user", authSessionId: AuthSessionId.make("session:web") } as const;
+
+  expect(ThreadManagementService.withRuntimeRequestDecider(respond, decidedBy)).toMatchObject({
+    decision: "accept",
+    decidedBy,
+  });
+  const stop: OrchestrationV2Command = {
+    type: "thread.stop",
+    commandId: CommandId.make("command:thread-management:stop"),
+    threadId: ThreadId.make("thread:thread-management:respond"),
+  };
+  expect(ThreadManagementService.withRuntimeRequestDecider(stop, decidedBy)).toBe(stop);
 });
 
 const layerReceiptsTest = CommandReceiptStore.layer.pipe(

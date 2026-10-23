@@ -11,6 +11,7 @@ import {
   resolveSubagentMetadata,
   subagentDetailPreview,
 } from "@t3tools/client-runtime/state/subagent-display";
+import type { ChildReportView } from "@t3tools/client-runtime/work-log/child-report";
 import { REASONING_EFFORT_OPTION_IDS } from "@t3tools/client-runtime/state/thread-execution";
 import { getModelSelectionStringOptionValue, resolveSelectableModel } from "@t3tools/shared/model";
 import { getTraitsSpeedDisplay, TraitsSpeedIcon } from "./TraitsSpeed";
@@ -22,6 +23,8 @@ import {
   CircleXIcon,
   FolderIcon,
   GitBranchIcon,
+  GitCommitHorizontalIcon,
+  MessageSquareTextIcon,
   TerminalIcon,
 } from "lucide-react";
 import { ThreadHoverCard } from "../ThreadHoverCard";
@@ -50,6 +53,7 @@ export function SubagentTooltipContent(props: {
   status: OrchestrationV2TurnItemStatus;
   result?: string | null | undefined;
   progress?: string | null | undefined;
+  report?: ChildReportView | null | undefined;
 }) {
   const { modelLabel, workspace: metadata } = resolveSubagentMetadata(props);
   const preview = subagentDetailPreview(props);
@@ -184,6 +188,25 @@ export function SubagentTooltipContent(props: {
           <TerminalIcon aria-hidden className="size-3 shrink-0" />
           <MiddleTruncate value={preview} className="flex" showTitle={false} />
         </div>
+      ) : null}
+      {props.report ? (
+        <>
+          <div className="flex min-w-0 items-start gap-2">
+            <MessageSquareTextIcon aria-hidden className="mt-0.5 size-3 shrink-0" />
+            <span className="sr-only">Reported by the subagent</span>
+            <span className="flex min-w-0 flex-col">
+              <span className={cn("line-clamp-2", props.report.attention && "text-warning")}>
+                {props.report.headline}
+              </span>
+              <span className="line-clamp-3 text-foreground/75">{props.report.summary}</span>
+            </span>
+          </div>
+          <div className="flex min-w-0 items-start gap-2">
+            <GitCommitHorizontalIcon aria-hidden className="mt-0.5 size-3 shrink-0" />
+            <span className="sr-only">Read from git</span>
+            <span className="line-clamp-2 min-w-0">{props.report.observed}</span>
+          </div>
+        </>
       ) : null}
     </ThreadHoverCard>
   );

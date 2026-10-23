@@ -27,6 +27,7 @@ import { ChildProcessSpawner } from "effect/process";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import {
   makeMergeQueueGit,
@@ -76,6 +77,7 @@ export const layerWith = (options: { readonly drainOnApprove: boolean }) =>
       const crypto = yield* Crypto.Crypto;
       const projections = yield* ProjectionStore.ProjectionStoreV2;
       const projects = yield* ProjectService.ProjectService;
+      const settings = yield* ServerSettings.ServerSettingsService;
       const threads = yield* ThreadManagementService.ThreadManagementService;
       const changes = yield* PubSub.unbounded<ThreadId>();
       const landing = yield* Semaphore.make(1);
@@ -227,7 +229,13 @@ export const layerWith = (options: { readonly drainOnApprove: boolean }) =>
             ),
           );
 
-      const land = makeMergeQueueLanding({ git: mergeQueueGit, spawner, projects, update });
+      const land = makeMergeQueueLanding({
+        git: mergeQueueGit,
+        spawner,
+        projects,
+        settings,
+        update,
+      });
 
       const failItem = Effect.fn("MergeQueue.failItem")(function* (
         row: MergeQueueRow,

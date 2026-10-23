@@ -20,6 +20,7 @@ import { readEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { MergeQueueItemDiff } from "./MergeQueueItemDiff";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 import {
@@ -152,80 +153,84 @@ export function ThreadMergeQueuePanel(props: {
 
       <ul className="m-0 list-none p-0">
         {items.map((item) => (
-          <li
-            key={item.id}
-            data-merge-queue-status={item.status}
-            className={cn(
-              "group flex items-center rounded-lg py-1.5",
-              THREAD_DETAILS_PANEL_ROW_CONTENT_CLASS,
-            )}
-          >
-            <span className="relative inline-flex size-4 shrink-0 items-center justify-center">
-              <PullRequestGlyph.merged className={THREAD_DETAILS_PANEL_ICON_CLASS} />
-              <span
-                className={cn(
-                  "absolute -right-1 -top-1 size-1.5 rounded-full",
-                  STATUS_DOT_CLASS[item.status],
-                )}
-                aria-hidden
-              />
-            </span>
-            <Tooltip>
-              <TooltipTrigger render={<div className="min-w-0 flex-1" />}>
-                <span className="block truncate text-sm font-medium text-foreground/80">
-                  {item.childTitle}
-                </span>
-                <p
+          <li key={item.id} data-merge-queue-status={item.status} className="rounded-lg py-1.5">
+            <div className={cn("group flex items-center", THREAD_DETAILS_PANEL_ROW_CONTENT_CLASS)}>
+              <span className="relative inline-flex size-4 shrink-0 items-center justify-center">
+                <PullRequestGlyph.merged className={THREAD_DETAILS_PANEL_ICON_CLASS} />
+                <span
                   className={cn(
-                    "truncate text-2xs",
-                    item.status === "failed" ? "text-destructive" : "text-muted-foreground",
+                    "absolute -right-1 -top-1 size-1.5 rounded-full",
+                    STATUS_DOT_CLASS[item.status],
                   )}
-                >
-                  {item.childBranch} · {statusLabel(item, item.trunkRef)}
-                </p>
-              </TooltipTrigger>
-              <TooltipPopup side="left" className="max-w-80">
-                <p className="font-medium">
-                  {item.childBranch} into {item.trunkRef}
-                </p>
-                {item.failure !== null ? (
-                  <p className="whitespace-pre-wrap break-words text-muted-foreground">
-                    {item.failure.message}
-                  </p>
-                ) : (
-                  <p className="text-muted-foreground">{statusLabel(item, item.trunkRef)}</p>
-                )}
-              </TooltipPopup>
-            </Tooltip>
-            {item.status === "awaiting_user" ? (
-              <ThreadDetailsControl
-                part="meta"
-                tone="primary"
-                aria-label={`Approve merging ${item.childTitle} at ${item.headShaAtEnqueue.slice(0, 7)}`}
-                disabled={!canOperate || busyItemId !== null}
-                onClick={() => void decide(item, "approve")}
-              >
-                Approve
-              </ThreadDetailsControl>
-            ) : null}
-            {REMOVABLE_STATUSES.has(item.status) ? (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <ThreadDetailsControl
-                      size="icon-xs"
-                      variant="ghost"
-                      part="icon"
-                      aria-label={`Remove ${item.childTitle} from the merge queue`}
-                      disabled={!canOperate || busyItemId !== null}
-                      onClick={() => void decide(item, "cancel")}
-                    >
-                      <XIcon className="size-3.5" />
-                    </ThreadDetailsControl>
-                  }
+                  aria-hidden
                 />
-                <TooltipPopup>Remove from queue</TooltipPopup>
+              </span>
+              <Tooltip>
+                <TooltipTrigger render={<div className="min-w-0 flex-1" />}>
+                  <span className="block truncate text-sm font-medium text-foreground/80">
+                    {item.childTitle}
+                  </span>
+                  <p
+                    className={cn(
+                      "truncate text-2xs",
+                      item.status === "failed" ? "text-destructive" : "text-muted-foreground",
+                    )}
+                  >
+                    {item.childBranch} · {statusLabel(item, item.trunkRef)}
+                  </p>
+                </TooltipTrigger>
+                <TooltipPopup side="left" className="max-w-80">
+                  <p className="font-medium">
+                    {item.childBranch} into {item.trunkRef}
+                  </p>
+                  {item.failure !== null ? (
+                    <p className="whitespace-pre-wrap break-words text-muted-foreground">
+                      {item.failure.message}
+                    </p>
+                  ) : (
+                    <p className="text-muted-foreground">{statusLabel(item, item.trunkRef)}</p>
+                  )}
+                </TooltipPopup>
               </Tooltip>
+              {item.status === "awaiting_user" ? (
+                <ThreadDetailsControl
+                  part="meta"
+                  tone="primary"
+                  aria-label={`Approve merging ${item.childTitle} at ${item.headShaAtEnqueue.slice(0, 7)}`}
+                  disabled={!canOperate || busyItemId !== null}
+                  onClick={() => void decide(item, "approve")}
+                >
+                  Approve
+                </ThreadDetailsControl>
+              ) : null}
+              {REMOVABLE_STATUSES.has(item.status) ? (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <ThreadDetailsControl
+                        size="icon-xs"
+                        variant="ghost"
+                        part="icon"
+                        aria-label={`Remove ${item.childTitle} from the merge queue`}
+                        disabled={!canOperate || busyItemId !== null}
+                        onClick={() => void decide(item, "cancel")}
+                      >
+                        <XIcon className="size-3.5" />
+                      </ThreadDetailsControl>
+                    }
+                  />
+                  <TooltipPopup>Remove from queue</TooltipPopup>
+                </Tooltip>
+              ) : null}
+            </div>
+            {item.status === "awaiting_user" ? (
+              <div className="ps-9 pe-2.5">
+                <MergeQueueItemDiff
+                  environmentId={props.environmentId}
+                  itemId={item.id}
+                  headSha={item.headShaAtEnqueue}
+                />
+              </div>
             ) : null}
           </li>
         ))}

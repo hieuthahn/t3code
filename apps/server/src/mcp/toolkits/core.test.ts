@@ -23,6 +23,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { McpAttachmentInput } from "./attachment/input.ts";
 import { McpSchema, McpServer, Tool } from "effect/ai";
@@ -741,7 +742,11 @@ it.effect("refuses act-as-caller tools to a client caller", () =>
         Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
         Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
         Layer.provide(Layer.mock(PeerLinks.PeerLinks)({})),
-        Layer.provide(Layer.mock(ProjectService.ProjectService)({})),
+        Layer.provide(
+          Layer.mock(ProjectService.ProjectService)({
+            getById: () => Effect.succeed(Option.none()),
+          }),
+        ),
         Layer.provide(Layer.mock(SecretRequests.SecretRequests)({})),
         Layer.provide(Layer.mock(RemoteDelegation.RemoteDelegation)({})),
       ),
@@ -795,7 +800,11 @@ it.effect("a caller cannot rewrite a scheduled task that runs above its own mode
               } as never),
           }),
         ),
-        Layer.provide(Layer.mock(ProjectService.ProjectService)({})),
+        Layer.provide(
+          Layer.mock(ProjectService.ProjectService)({
+            getById: () => Effect.succeed(Option.none()),
+          }),
+        ),
         Layer.provide(Layer.mock(SecretRequests.SecretRequests)({})),
         Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
         Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
@@ -883,7 +892,11 @@ it.effect.each(["t3_thread_interrupt", "t3_workflow_stop"])(
           Layer.provide(Layer.mock(ProviderRegistry.ProviderRegistry)({})),
           Layer.provide(Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({})),
           Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
-          Layer.provide(Layer.mock(ProjectService.ProjectService)({})),
+          Layer.provide(
+            Layer.mock(ProjectService.ProjectService)({
+              getById: () => Effect.succeed(Option.none()),
+            }),
+          ),
           Layer.provide(Layer.mock(SecretRequests.SecretRequests)({})),
           Layer.provide(Layer.mock(RemoteDelegation.RemoteDelegation)({})),
           Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
@@ -982,7 +995,11 @@ it.effect("discovers workflow stop targets and requires orchestration capability
         Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
         Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
         Layer.provide(Layer.mock(PeerLinks.PeerLinks)({})),
-        Layer.provide(Layer.mock(ProjectService.ProjectService)({})),
+        Layer.provide(
+          Layer.mock(ProjectService.ProjectService)({
+            getById: () => Effect.succeed(Option.none()),
+          }),
+        ),
         Layer.provide(Layer.mock(SecretRequests.SecretRequests)({})),
         Layer.provide(Layer.mock(RemoteDelegation.RemoteDelegation)({})),
       ),

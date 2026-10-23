@@ -1034,6 +1034,11 @@ export interface DesktopBridge {
   getClientPlatform?: () => string;
   setNotificationBadge?: (badge: { count: number; image: string | null }) => Promise<void>;
   onNotificationBadgeClear?: (listener: () => void) => () => void;
+  logRendererEvent?: (event: {
+    level: "warning" | "error";
+    source: string;
+    message: string;
+  }) => Promise<void>;
   onTrackpadScrollEnd?: (listener: () => void) => () => void;
   /**
    * Renderer `window.focus()` cannot raise an Electron window, and on Wayland

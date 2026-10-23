@@ -91,6 +91,15 @@ const unitTestProject = {
   },
 } satisfies TestProjectInlineConfiguration;
 
+// Reads the production build in dist, so it runs only through `vp run test:bundle`.
+const bundleBudgetProject = {
+  test: {
+    name: "bundle",
+    include: ["test/**/*.budget.ts"],
+    environment: "node",
+  },
+} satisfies TestProjectInlineConfiguration;
+
 // Anything that renders React or touches the DOM is named *.browser.test.{ts,tsx} and runs
 // in headless Chromium through the same plugins as the app, so it exercises compiled code.
 // Vitest's fixed browser API port (63315) collides when two checkouts run
@@ -316,7 +325,11 @@ export default defineConfig(() => {
       sourcemap: buildSourcemap,
     },
     test: {
-      projects: [defineProject(unitTestProject), defineProject(browserTestProject)],
+      projects: [
+        defineProject(unitTestProject),
+        defineProject(browserTestProject),
+        defineProject(bundleBudgetProject),
+      ],
     },
   };
 });

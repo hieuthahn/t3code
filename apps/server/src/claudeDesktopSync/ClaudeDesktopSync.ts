@@ -29,9 +29,8 @@ import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as AgentSessionImporter from "../project/AgentSessionImporter.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import {
-  isForkOf,
+  findForkParents,
   readDesktopSessions,
-  transcriptUuids,
   type DesktopStoreRoots,
 } from "./ClaudeDesktopStore.ts";
 import {
@@ -116,32 +115,18 @@ const make = (options: ClaudeDesktopSyncOptions) =>
       return { desktop, threads, links } satisfies Gathered;
     });
 
-    const forkParents = (gathered: Gathered) =>
-      Effect.gen(function* () {
-        const known = new Set(gathered.threads.flatMap((thread) => thread.claudeSessionIds));
-        const parents = new Map<string, string | null>();
-        for (const session of gathered.desktop) {
-          if (
-            session.deleted ||
-            session.isArchived ||
-            sessionKeys(session).some((key) => known.has(key))
-          )
-            continue;
-          const child = yield* transcriptUuids(roots.projects, session.cliSessionId);
-          let parent: string | null = null;
-          if (child !== null) {
-            for (const candidate of known) {
-              const other = yield* transcriptUuids(roots.projects, candidate);
-              if (other !== null && isForkOf(child, other)) {
-                parent = candidate;
-                break;
-              }
-            }
-          }
-          parents.set(session.cliSessionId, parent);
-        }
-        return parents;
-      });
+    const forkParents = (gathered: Gathered) => {
+      const known = new Set(gathered.threads.flatMap((thread) => thread.claudeSessionIds));
+      const children = gathered.desktop
+        .filter(
+          (session) =>
+            !session.deleted &&
+            !session.isArchived &&
+            !sessionKeys(session).some((key) => known.has(key)),
+        )
+        .map((session) => session.cliSessionId);
+      return findForkParents(roots.projects, children, known);
+    };
 
     const plan = Effect.gen(function* () {
       const gathered = yield* gather;

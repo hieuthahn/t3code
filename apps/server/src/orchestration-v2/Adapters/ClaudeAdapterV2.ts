@@ -1288,6 +1288,7 @@ export function makeClaudeQueryOptions(input: {
   readonly allowDangerouslySkipPermissions?: boolean;
   readonly appendSystemPromptFileText?: string;
   readonly tokenSaverInstructions?: string;
+  readonly teamInstructions?: string;
   readonly promptSuggestions?: boolean;
 }): ClaudeAgentSdkQueryOptions {
   const compiledSelection = compileClaudeModelSelection(input.modelSelection);
@@ -1391,6 +1392,7 @@ export function makeClaudeQueryOptions(input: {
         buildRuntimeInstructions({ harness: "Claude Code" }) +
           (input.mcpServers === undefined ? "" : T3_CODE_ORCHESTRATION_INSTRUCTIONS),
         ...(input.tokenSaverInstructions === undefined ? [] : [input.tokenSaverInstructions]),
+        ...(input.teamInstructions === undefined ? [] : [input.teamInstructions]),
         ...launchAppendSystemPrompt,
       ].join("\n\n"),
     },
@@ -2203,7 +2205,7 @@ function claudeRuntimeQueryPolicyKey(policy: ClaudeRuntimeQueryPolicy): string {
 // Live-query reuse must key on the effective allowlist (including the
 // MCP-derived pre-approvals), not just the runtime policy: policies that
 // share a policy key can still differ in MCP pre-approvals.
-/** The system prompt is fixed when a query opens, so a Token Saver change reopens it with resume. */
+/** The system prompt is fixed when a query opens, so a Token Saver or team change reopens it with resume. */
 export function claudeEffectiveQueryPolicyKey(
   queryPolicy: ClaudeRuntimeQueryPolicy,
   mcpOverrides: {
@@ -2211,6 +2213,7 @@ export function claudeEffectiveQueryPolicyKey(
     readonly mcpServers?: ClaudeQueryOptions["mcpServers"];
   },
   tokenSaverProfileKey?: string,
+  teamRulesKey?: string,
 ): string {
   return JSON.stringify({
     runtimePolicy: claudeRuntimeQueryPolicyKey({
@@ -2221,6 +2224,7 @@ export function claudeEffectiveQueryPolicyKey(
     }),
     mcpServers: mcpOverrides.mcpServers,
     ...(tokenSaverProfileKey === undefined ? {} : { tokenSaver: tokenSaverProfileKey }),
+    ...(teamRulesKey === undefined ? {} : { team: teamRulesKey }),
   });
 }
 
@@ -9207,6 +9211,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             queryPolicy,
             mcpOverrides,
             turnInput.tokenSaver?.profileKey,
+            turnInput.team?.rulesKey,
           );
           const compiledSelection = compileClaudeModelSelection(turnInput.modelSelection);
           const resumeSessionAt = yield* getNativeConversationHeadId(turnInput.providerThread);
@@ -9342,6 +9347,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ...(turnInput.tokenSaver === undefined
               ? {}
               : { tokenSaverInstructions: turnInput.tokenSaver.instructions }),
+            ...(turnInput.team === undefined
+              ? {}
+              : { teamInstructions: turnInput.team.instructions }),
             promptSuggestions:
               turnInput.appThread.lineage.relationshipToParent !== "subagent" &&
               (Option.isSome(serverSettings)

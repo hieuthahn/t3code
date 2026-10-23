@@ -91,31 +91,20 @@ describe("NewSessionLanding", () => {
     );
   });
 
-  it("opens a draft per saved folder in worktrees and leaves the first folder on screen", async () => {
+  it("opens the saved folder in a worktree and nothing else", async () => {
     using _state = setup([
-      {
-        id: "saved-1",
-        name: "Fullstack",
-        environmentId: local,
-        folders: [api, web],
-        worktreePerFolder: true,
-      },
+      { id: "saved-1", name: "Backend", environmentId: local, folder: api, worktree: true },
     ]);
     await using _screen = await render(<NewSessionLanding />);
 
-    await userEvent.click(page.getByRole("button", { name: /^FullstackThis Mac/ }));
+    await userEvent.click(page.getByRole("button", { name: /^BackendThis Mac/ }));
 
-    await vi.waitFor(() => expect(mocks.handleNewThread).toHaveBeenCalledTimes(2));
-    expect(mocks.handleNewThread.mock.calls).toEqual([
-      [
-        { environmentId: local, projectId: web },
-        { replace: true, envMode: "worktree" },
-      ],
-      [
+    await vi.waitFor(() =>
+      expect(mocks.handleNewThread).toHaveBeenCalledExactlyOnceWith(
         { environmentId: local, projectId: api },
         { replace: true, envMode: "worktree" },
-      ],
-    ]);
+      ),
+    );
   });
 
   it("saves a new environment and deletes it again", async () => {
@@ -124,14 +113,15 @@ describe("NewSessionLanding", () => {
 
     await userEvent.click(page.getByRole("button", { name: "New" }));
     await userEvent.fill(page.getByLabelText("Name"), "Backend");
+    await userEvent.click(page.getByRole("dialog").getByText("web", { exact: true }));
     await userEvent.click(page.getByRole("dialog").getByText("api", { exact: true }));
-    await userEvent.click(page.getByText("Worktree per folder"));
+    await userEvent.click(page.getByText("Worktree", { exact: true }));
     // Without the app stylesheet the dialog's backdrop covers its footer, so submit from the field.
     await userEvent.type(page.getByLabelText("Name"), "{Enter}");
 
     await expect.element(page.getByRole("button", { name: /^BackendThis Mac/ })).toBeVisible();
     expect(getClientSettings().savedEnvironments).toMatchObject([
-      { name: "Backend", environmentId: local, folders: [api], worktreePerFolder: true },
+      { name: "Backend", environmentId: local, folder: api, worktree: true },
     ]);
 
     await userEvent.click(page.getByRole("button", { name: "Backend options" }));

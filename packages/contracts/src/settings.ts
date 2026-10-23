@@ -322,14 +322,44 @@ export type ModelPreferences = {
   readonly providerModelPreferences: typeof ProviderModelPreferences.Type;
 };
 
-/** A named setup on one machine; with no folders it starts a thread without a project. */
-export const SavedEnvironment = Schema.Struct({
+/** A named setup on one machine; with no folder it starts a thread without a project. */
+const SavedEnvironmentSetup = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(80)),
+  environmentId: EnvironmentId,
+  folder: Schema.NullOr(ProjectId),
+  worktree: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+});
+
+// Setups saved before threads were limited to one folder keep their first folder.
+const LegacyMultiFolderSavedEnvironment = Schema.Struct({
   id: TrimmedNonEmptyString,
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(80)),
   environmentId: EnvironmentId,
   folders: Schema.Array(ProjectId),
   worktreePerFolder: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-});
+}).pipe(
+  Schema.decodeTo(
+    Schema.toType(SavedEnvironmentSetup),
+    SchemaTransformation.transform({
+      decode: ({ folders, worktreePerFolder, ...rest }) => ({
+        ...rest,
+        folder: folders[0] ?? null,
+        worktree: worktreePerFolder,
+      }),
+      encode: ({ folder, worktree, ...rest }) => ({
+        ...rest,
+        folders: folder === null ? [] : [folder],
+        worktreePerFolder: worktree,
+      }),
+    }),
+  ),
+);
+
+export const SavedEnvironment = Schema.Union([
+  SavedEnvironmentSetup,
+  LegacyMultiFolderSavedEnvironment,
+]);
 export type SavedEnvironment = typeof SavedEnvironment.Type;
 
 export const ClientSettingsSchema = Schema.Struct({

@@ -6,63 +6,47 @@ import { resolveSavedEnvironmentLaunch } from "./NewSessionLanding.logic";
 const local = EnvironmentId.make("local");
 const remote = EnvironmentId.make("remote");
 const web = ProjectId.make("project-web");
-const api = ProjectId.make("project-api");
 const projects = [
   { environmentId: local, id: web },
-  { environmentId: local, id: api },
-  { environmentId: remote, id: web },
+  { environmentId: remote, id: ProjectId.make("project-api") },
 ];
 
 const saved = (overrides: Partial<SavedEnvironment>): SavedEnvironment => ({
   id: "env-1",
   name: "Frontend",
   environmentId: local,
-  folders: [],
-  worktreePerFolder: false,
+  folder: null,
+  worktree: false,
   ...overrides,
 });
 
 describe("resolveSavedEnvironmentLaunch", () => {
-  it("starts without a project on the saved machine when it holds no folders", () => {
+  it("starts without a project on the saved machine when it holds no folder", () => {
     expect(resolveSavedEnvironmentLaunch(saved({ environmentId: remote }), projects)).toEqual({
       kind: "scratch",
       environmentId: remote,
     });
   });
 
-  it("opens one draft per folder in order, each in a worktree when the toggle is on", () => {
-    expect(
-      resolveSavedEnvironmentLaunch(
-        saved({ folders: [api, web], worktreePerFolder: true }),
-        projects,
-      ),
-    ).toEqual({
-      kind: "folders",
-      projectRefs: [
-        { environmentId: local, projectId: api },
-        { environmentId: local, projectId: web },
-      ],
-      envMode: "worktree",
-      missingFolderCount: 0,
-    });
+  it("opens the saved folder in a worktree when the toggle is on", () => {
+    expect(resolveSavedEnvironmentLaunch(saved({ folder: web, worktree: true }), projects)).toEqual(
+      {
+        kind: "project",
+        projectRef: { environmentId: local, projectId: web },
+        envMode: "worktree",
+      },
+    );
   });
 
   it("leaves the project's own workspace default when the toggle is off", () => {
-    const launch = resolveSavedEnvironmentLaunch(saved({ folders: [web] }), projects);
+    const launch = resolveSavedEnvironmentLaunch(saved({ folder: web }), projects);
 
-    expect(launch.kind === "folders" ? launch.envMode : null).toBeUndefined();
+    expect(launch.kind === "project" ? launch.envMode : null).toBeUndefined();
   });
 
-  it("skips folders that are gone from the saved machine and counts them", () => {
-    const gone = ProjectId.make("project-gone");
-
-    expect(resolveSavedEnvironmentLaunch(saved({ folders: [gone, web] }), projects)).toMatchObject({
-      kind: "folders",
-      projectRefs: [{ environmentId: local, projectId: web }],
-      missingFolderCount: 1,
-    });
-    expect(resolveSavedEnvironmentLaunch(saved({ folders: [gone] }), projects)).toEqual({
-      kind: "unavailable",
-    });
+  it("reports a folder that is gone from the saved machine", () => {
+    expect(
+      resolveSavedEnvironmentLaunch(saved({ environmentId: remote, folder: web }), projects),
+    ).toEqual({ kind: "unavailable" });
   });
 });

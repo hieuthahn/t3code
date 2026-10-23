@@ -50,7 +50,17 @@ export const makeMergeQueueGit = (driver: GitVcsDriver.GitVcsDriver["Service"]) 
             ),
       ),
     );
-  return { git, gitOutput };
+  /** Run git keeping at most `maxOutputBytes` of stdout; the result says whether it was cut. */
+  const gitCapped = (cwd: string, args: ReadonlyArray<string>, maxOutputBytes: number) =>
+    driver.execute({
+      operation: "MergeQueue.git",
+      cwd,
+      args,
+      allowNonZeroExit: true,
+      timeoutMs: 120_000,
+      maxOutputBytes,
+    });
+  return { git, gitOutput, gitCapped };
 };
 
 export type MergeQueueGit = ReturnType<typeof makeMergeQueueGit>;

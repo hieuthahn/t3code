@@ -110,6 +110,7 @@ function makeSourceProjection(sourceRun: OrchestrationV2Run): OrchestrationV2Thr
 const planFork = (
   sourceRun: OrchestrationV2Run,
   sourceProjection = makeSourceProjection(sourceRun),
+  options: { readonly sideQuestion?: true } = {},
 ) =>
   Effect.gen(function* () {
     const service = yield* ThreadForkService.ThreadForkServiceV2;
@@ -127,6 +128,7 @@ const planFork = (
       createdBy: "user",
       creationSource: "mobile",
       createdAt: forkCreatedAt,
+      ...options,
     });
   }).pipe(Effect.provide(ThreadForkService.layer));
 
@@ -156,6 +158,23 @@ it.effect("keeps a fork awake when its source thread is snoozed", () =>
       threadId: sourceThreadId,
       runId: sourceRunId,
     });
+  }),
+);
+
+it.effect("marks a side question in its lineage and asks before it edits or runs anything", () =>
+  Effect.gen(function* () {
+    const sourceRun = makeSourceRun("completed");
+    const result = yield* planFork(sourceRun, makeSourceProjection(sourceRun), {
+      sideQuestion: true,
+    });
+
+    assert.deepEqual(result.targetThread.lineage, {
+      parentThreadId: sourceThreadId,
+      relationshipToParent: "fork",
+      rootThreadId: sourceThreadId,
+      sideQuestion: true,
+    });
+    assert.equal(result.targetThread.runtimeMode, "approval-required");
   }),
 );
 

@@ -3185,7 +3185,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       return;
     }
     if (isMobile) setOpenMobile(false);
-    openCommandPalette({ open: "new-thread-in" });
+    void router.navigate({ to: "/" });
   };
 
   const newThreadShortcutLabel =

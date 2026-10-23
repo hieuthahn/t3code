@@ -219,6 +219,7 @@ export interface ForkThreadFromRunInput extends CommandMetadata {
   readonly targetThreadId: ThreadId;
   readonly runId: RunId;
   readonly title?: string;
+  readonly sideQuestion?: true;
 }
 
 export interface MergeThreadBackInput extends CommandMetadata {
@@ -726,9 +727,7 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
       runtimeMode: input.runtimeMode,
       interactionMode: input.interactionMode,
       workspaceStrategy,
-      ...(bootstrap?.fanoutGroupId === undefined
-        ? {}
-        : { fanoutGroupId: bootstrap.fanoutGroupId }),
+      ...(bootstrap?.fanoutGroupId === undefined ? {} : { fanoutGroupId: bootstrap.fanoutGroupId }),
       initialMessage: {
         messageId: input.message.messageId,
         text: input.message.text,
@@ -1041,6 +1040,7 @@ export const forkThreadFromRun = Effect.fn("EnvironmentCommands.forkThreadFromRu
     targetThreadId: input.targetThreadId,
     sourcePoint: { type: "run", runId: input.runId },
     ...(input.title === undefined ? {} : { title: input.title }),
+    ...(input.sideQuestion === undefined ? {} : { sideQuestion: input.sideQuestion }),
   });
 });
 

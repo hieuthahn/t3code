@@ -18,6 +18,7 @@ const tick = (overrides: Partial<TeamTick> = {}): TeamTick => ({
   workers: [],
   runningAssignments: 0,
   startableAssignments: 0,
+  wokeForLatestRun: false,
   openAssignments: 0,
   stalls: 0,
   lastStallRunId: null,
@@ -58,6 +59,10 @@ describe("decideTeamTick", () => {
     expect(decideTeamTick(tick({ startableAssignments: 2 }))).toEqual([
       { type: "wake_architect", reason: "start_queued" },
     ]);
+  });
+
+  it("waits for the woken architect instead of counting a stall", () => {
+    expect(decideTeamTick(tick({ startableAssignments: 2, wokeForLatestRun: true }))).toEqual([]);
   });
 
   it("stops a turn silent for 20 minutes unless it waits on the user", () => {

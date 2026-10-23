@@ -138,6 +138,29 @@ describe("makeClaudeEffortJudge", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
+  it.live("answers a cold question by starting a process for it when asked to wait", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-effort-judge-test-" });
+      const accountDir = path.join(dir, "account-thanh");
+      yield* fs.makeDirectory(accountDir);
+      const binary = writeFakeCli({ directory: dir, name: "claude", source: FAKE_JUDGE });
+      const recapper = yield* makeClaudeEffortJudge(
+        decodeClaudeSettings({ binaryPath: binary, homePath: accountDir }),
+        undefined,
+        { systemPrompt: "Recap the turn.", warmAtStart: false, waitWhenCold: true },
+      );
+
+      const reply = yield* recapper.ask("what changed?");
+
+      expect(JSON.parse(Option.getOrThrow(reply))).toMatchObject({
+        question: "what changed?",
+        systemPrompt: "Recap the turn.",
+      });
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
   it.live("reports no answer when the judge cannot start", () =>
     Effect.gen(function* () {
       const judge = yield* makeClaudeEffortJudge(

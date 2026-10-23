@@ -563,7 +563,8 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     if (item.kind === "prompt-suggestion") {
       yield* SubscriptionRef.update(state, (current) => ({
         ...current,
-        promptSuggestion: item.suggestion,
+        ...(item.suggestion === undefined ? {} : { promptSuggestion: item.suggestion }),
+        ...(item.recap === undefined ? {} : { turnRecap: item.recap }),
       }));
       return;
     }
@@ -864,6 +865,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           ...(canResume ? { afterSequence: sequence } : {}),
           ...(supportsCompletionMarker ? { requestCompletionMarker: true as const } : {}),
           acceptPromptSuggestions: true as const,
+          acceptTurnRecaps: true as const,
           ...(acceptBoundedSnapshot
             ? { acceptBoundedSnapshot: true as const, acceptCompactTurnItems: true as const }
             : {}),

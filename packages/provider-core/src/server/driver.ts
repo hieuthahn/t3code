@@ -63,6 +63,8 @@ export interface ProviderInstance {
   readonly judgeEffort?: (question: string) => Effect.Effect<Option.Option<string>>;
   /** Asks this account's quick model for the user's likely next prompt; none when it could not answer. */
   readonly suggestNextPrompt?: (question: string) => Effect.Effect<Option.Option<string>>;
+  /** Asks this account's quick model to recap a finished turn; none when it could not answer. */
+  readonly recapTurn?: (question: string) => Effect.Effect<Option.Option<string>>;
   readonly auth?: ProviderAuthController;
   readonly acpSessionManagement?: {
     readonly listSessions: (input: {

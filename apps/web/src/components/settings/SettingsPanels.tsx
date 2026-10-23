@@ -507,6 +507,7 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.promptSuggestions !== DEFAULT_UNIFIED_SETTINGS.promptSuggestions
       ? ["Prompt suggestions"]
       : []),
+    ...(settings.turnRecaps !== DEFAULT_UNIFIED_SETTINGS.turnRecaps ? ["Turn recaps"] : []),
     ...(settings.autoEffortJudge !== DEFAULT_UNIFIED_SETTINGS.autoEffortJudge
       ? ["Auto effort judge"]
       : []),
@@ -681,6 +682,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       switchPinnedAccounts: DEFAULT_UNIFIED_SETTINGS.switchPinnedAccounts,
       autoEffortDefault: DEFAULT_UNIFIED_SETTINGS.autoEffortDefault,
       promptSuggestions: DEFAULT_UNIFIED_SETTINGS.promptSuggestions,
+      turnRecaps: DEFAULT_UNIFIED_SETTINGS.turnRecaps,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
@@ -1176,6 +1178,20 @@ export function GeneralSettingsPanel() {
               checked={settings.promptSuggestions}
               onCheckedChange={(checked) => updateSettings({ promptSuggestions: Boolean(checked) })}
               aria-label="Prompt suggestions"
+            />
+          }
+        />
+        <SettingsRow
+          serverScoped
+          {...searchableSetting("turn-recaps")}
+          description="After a turn that edited files, ran commands or proposed a plan, show a short recap under the last message, with reply buttons when a decision is open. Haiku on a Claude account writes it."
+          settingKeys={["turnRecaps"]}
+          control={
+            <ScopedSwitch
+              settingKeys={["turnRecaps"]}
+              checked={settings.turnRecaps}
+              onCheckedChange={(checked) => updateSettings({ turnRecaps: Boolean(checked) })}
+              aria-label="Turn recaps"
             />
           }
         />

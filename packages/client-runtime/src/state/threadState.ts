@@ -1,4 +1,4 @@
-import type { OrchestrationV2ThreadProjection } from "@t3tools/contracts";
+import type { OrchestrationV2ThreadProjection, OrchestrationV2TurnRecap } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 
 import { EMPTY_THREAD_HISTORY_META, type ThreadHistoryMeta } from "./threadHistoryMerge.ts";
@@ -16,6 +16,8 @@ export interface EnvironmentThreadState {
   readonly history: ThreadHistoryMeta;
   /** The predicted next prompt the server sent after the last run; never persisted. */
   readonly promptSuggestion?: string | null;
+  /** The recap the server sent after the last multi-step run; never persisted. */
+  readonly turnRecap?: OrchestrationV2TurnRecap | null;
 }
 
 export const EMPTY_ENVIRONMENT_THREAD_STATE: EnvironmentThreadState = {

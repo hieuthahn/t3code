@@ -214,6 +214,13 @@ export function createEnvironmentThreadDetailAtoms<E>(
     ),
   );
 
+  const turnRecapAtomFamily = Atom.family((key: string) =>
+    Atom.make((get) => get(threadStateValueAtomFamily(key)).turnRecap ?? null).pipe(
+      Atom.setIdleTTL(0),
+      Atom.withLabel(`environment-thread-turn-recap:${key}`),
+    ),
+  );
+
   return {
     worktreePathAtom: (ref: ScopedThreadRef) => worktreePathAtomFamily(threadKey(ref)),
     pendingRequestsAtom: (ref: ScopedThreadRef) => pendingRequestsAtomFamily(threadKey(ref)),
@@ -229,5 +236,6 @@ export function createEnvironmentThreadDetailAtoms<E>(
     errorAtom: (ref: ScopedThreadRef) => errorAtomFamily(threadKey(ref)),
     historyAtom: (ref: ScopedThreadRef) => historyAtomFamily(threadKey(ref)),
     promptSuggestionAtom: (ref: ScopedThreadRef) => promptSuggestionAtomFamily(threadKey(ref)),
+    turnRecapAtom: (ref: ScopedThreadRef) => turnRecapAtomFamily(threadKey(ref)),
   };
 }

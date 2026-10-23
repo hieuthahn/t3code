@@ -1282,6 +1282,31 @@ describe("EnvironmentThreads", () => {
     }),
   );
 
+  it.effect("keeps the prompt suggestion when a recap arrives, and the recap when it clears", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ cached: BASE_PROJECTION, completionMarker: true });
+      const recap = { summary: "Parser fixed. Tests not run.", replies: [] };
+      yield* Queue.offerAll(harness.inputs, [
+        { kind: "prompt-suggestion", suggestion: "run the tests" },
+        { kind: "prompt-suggestion", recap },
+        synchronized(),
+      ]);
+      const withBoth = yield* awaitThreadState(
+        harness.observed,
+        (value) => value.status === "live" && value.turnRecap !== undefined,
+      );
+      expect(withBoth.promptSuggestion).toBe("run the tests");
+      expect(withBoth.turnRecap).toEqual(recap);
+
+      yield* Queue.offer(harness.inputs, { kind: "prompt-suggestion", suggestion: null });
+      const cleared = yield* awaitThreadState(
+        harness.observed,
+        (value) => value.promptSuggestion === null,
+      );
+      expect(cleared.turnRecap).toEqual(recap);
+    }),
+  );
+
   it.effect("skips an unknown event type and resumes after it", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({ cached: BASE_PROJECTION, completionMarker: true });

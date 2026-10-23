@@ -14,6 +14,7 @@ import { ChildProcessSpawner } from "effect/process";
 import { makeClaudeTextGeneration } from "../../textGeneration/ClaudeTextGeneration.ts";
 import { makeClaudeEffortJudge } from "../../autoEffort/ClaudeEffortJudge.ts";
 import { SUGGESTION_SYSTEM } from "../../orchestration-v2/promptSuggestion.ts";
+import { RECAP_SYSTEM } from "../../orchestration-v2/turnRecap.ts";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import * as ServerConfig from "../../config.ts";
@@ -217,6 +218,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
     const promptSuggester = yield* makeClaudeEffortJudge(effectiveConfig, processEnv, {
       systemPrompt: SUGGESTION_SYSTEM,
       warmAtStart: false,
+    });
+    const turnRecapper = yield* makeClaudeEffortJudge(effectiveConfig, processEnv, {
+      systemPrompt: RECAP_SYSTEM,
+      warmAtStart: false,
+      waitWhenCold: true,
     });
 
     // Per-instance capabilities cache: keyed on binary + resolved HOME so
@@ -444,6 +450,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       textGeneration,
       judgeEffort: effortJudge.ask,
       suggestNextPrompt: promptSuggester.ask,
+      recapTurn: turnRecapper.ask,
       consumeResetCredit,
     } satisfies ProviderInstance;
   }),

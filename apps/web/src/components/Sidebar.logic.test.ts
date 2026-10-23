@@ -10,6 +10,7 @@ import {
   deleteSelectedThreadEntries,
   fanoutGroupMarker,
   timeBucketMarker,
+  projectBucketMarker,
   getFallbackThreadIdAfterDelete,
   hasUnseenCompletion,
   resolveSidebarRowThreadId,
@@ -1152,6 +1153,29 @@ describe("Working shelf (beta)", () => {
         section: "active",
         pinnedOrder: [],
         activeOrder: ["a1", "a2", "p1"],
+      });
+      expect(resolveSidebarDropTarget(bucketed, "a1", "s1")?.section).toBe("settled");
+    });
+
+    it("keeps project bucket headers out of the section and the inbox order", () => {
+      const bucketed: readonly SidebarListItem[] = [
+        marker("pinned-divider"),
+        marker(projectBucketMarker("active", "env-1:project-a")),
+        row("a1", "active"),
+        marker(projectBucketMarker("active", "scratch")),
+        row("a2", "active"),
+        marker("settled-header"),
+        marker(projectBucketMarker("settled", "env-1:project-a")),
+        row("s1", "settled"),
+      ];
+
+      expect(projectBucketMarker("active", "env-1:project-a")).not.toBe(
+        projectBucketMarker("settled", "env-1:project-a"),
+      );
+      expect(resolveSidebarDropTarget(bucketed, "s1", "a2")).toEqual({
+        section: "active",
+        pinnedOrder: [],
+        activeOrder: ["a1", "s1", "a2"],
       });
       expect(resolveSidebarDropTarget(bucketed, "a1", "s1")?.section).toBe("settled");
     });

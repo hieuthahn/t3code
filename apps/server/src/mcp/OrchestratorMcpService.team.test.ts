@@ -241,7 +241,7 @@ it.effect("sends a team's delegation to its first worker when no target is named
   Effect.gen(function* () {
     const dispatched: Array<OrchestrationV2ServerCommand> = [];
     yield* call((service) =>
-      service.delegateTask(scope, { task: "Retry sends", title: "Retry sends" }),
+      service.delegateTeamTask(scope, { task: "Retry sends", title: "Retry sends" }),
     ).pipe(Effect.provide(makeLayer({ dispatched, team })));
     assert.deepEqual(delegations(dispatched), [
       { instanceId: workerInstanceId, model: "gpt-5.4-mini", options: [] },
@@ -253,7 +253,7 @@ it.effect("refuses a team delegation to a model outside the team", () =>
   Effect.gen(function* () {
     const dispatched: Array<OrchestrationV2ServerCommand> = [];
     const refused = yield* call((service) =>
-      service.delegateTask(scope, {
+      service.delegateTeamTask(scope, {
         task: "Retry sends",
         target: { providerInstanceId: workerInstanceId, model: "gpt-5.4" },
       }),
@@ -282,7 +282,7 @@ it.effect("proposes a team's children on its workers only", () =>
   Effect.gen(function* () {
     const dispatched: Array<OrchestrationV2ServerCommand> = [];
     yield* call((service) =>
-      service.proposeTasks(scope, {
+      service.askChildPlan(scope, {
         reason: "The server and the composer change apart.",
         tasks: [
           { key: "api", title: "Retry sends", task: "Do the api part" },
@@ -318,5 +318,50 @@ it.effect("leaves a thread outside a team free to pick any model", () =>
       }),
     ).pipe(Effect.provide(makeLayer({ dispatched })));
     assert.deepEqual(delegations(dispatched), [{ instanceId: workerInstanceId, model: "gpt-5.4" }]);
+  }),
+);
+
+it.effect("points a team's architect from delegate_task and propose_tasks to team_assign", () =>
+  Effect.gen(function* () {
+    const dispatched: Array<OrchestrationV2ServerCommand> = [];
+    const layer = makeLayer({ approve: ["api"], dispatched, team });
+    const delegated = yield* call((service) =>
+      service.delegateTask(scope, { task: "Retry sends", title: "Retry sends" }),
+    ).pipe(Effect.flip, Effect.provide(layer));
+    const proposed = yield* call((service) =>
+      service.proposeTasks(scope, {
+        reason: "The server changes alone.",
+        tasks: [{ key: "api", title: "Retry sends", task: "Do the api part" }],
+      }),
+    ).pipe(Effect.flip, Effect.provide(layer));
+    for (const refused of [delegated, proposed]) {
+      assert.equal(refused.code, "invalid_request");
+      assert.include(refused.message, "team_assign");
+    }
+    assert.deepEqual(dispatched, []);
+  }),
+);
+
+it.effect("runs a team's worker with the architect's runtime mode at most", () =>
+  Effect.gen(function* () {
+    const dispatched: Array<OrchestrationV2ServerCommand> = [];
+    const layer = makeLayer({ dispatched, team, parentRuntimeMode: "auto-accept-edits" });
+    yield* call((service) =>
+      service.delegateTeamTask(scope, { task: "Retry sends", title: "Retry sends" }),
+    ).pipe(Effect.provide(layer));
+    const refused = yield* call((service) =>
+      service.delegateTeamTask(scope, {
+        task: "Retry sends",
+        title: "Retry sends",
+        runtimeMode: "full-access",
+      }),
+    ).pipe(Effect.flip, Effect.provide(layer));
+    assert.deepEqual(
+      dispatched.flatMap((command) =>
+        command.type === "delegated_task.request" ? [command.runtimeMode] : [],
+      ),
+      ["auto-accept-edits"],
+    );
+    assert.equal(refused.code, "runtime_mode_escalation_denied");
   }),
 );

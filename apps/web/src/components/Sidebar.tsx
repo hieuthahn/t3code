@@ -59,6 +59,8 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter } from "@tanstack/react-router";
+import * as Cause from "effect/Cause";
+import { AsyncResult } from "effect/reactivity";
 
 import {
   isAtomCommandInterrupted,
@@ -140,7 +142,6 @@ import {
   applySidebarThreadDrop,
   filterSidebarV2VisibleThreads,
   buildBulkTitleRegenerationContextMenuItem,
-  buildBulkUnpinContextMenuItem,
   deleteSelectedThreadEntries,
   filterSidebarProjectScopeItems,
   firstValidTimestampMs,
@@ -208,6 +209,14 @@ import {
   type SidebarSweepAction,
 } from "./sidebar/SidebarThreadRow";
 import { SidebarDraftBlock } from "./sidebar/SidebarDraftBlock";
+import { SidebarBulkActionBar } from "./sidebar/SidebarBulkActionBar";
+import {
+  type BulkThreadActionId,
+  describeBulkFailure,
+  pickBulkToggle,
+  planBulkThreadActions,
+  runBulkThreadAction,
+} from "./sidebar/bulkThreadActions.logic";
 import {
   SidebarDragBoundary,
   SidebarSectionHeader,
@@ -845,6 +854,7 @@ export default function Sidebar() {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
+  const confirmThreadUnpin = useClientSettings((s) => s.confirmThreadUnpin);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const {
@@ -1371,40 +1381,45 @@ export default function Sidebar() {
         : () => void router.navigate({ to: "/" });
   };
 
+  const settleAndAdvance = async (
+    threadRef: ScopedThreadRef,
+    opts: { coSettlingKeys?: ReadonlySet<string> } = {},
+  ) => {
+    const threadKey = scopedThreadKey(threadRef);
+    if (settlingThreadKeysRef.current.has(threadKey)) return null;
+    settlingThreadKeysRef.current.add(threadKey);
+    const navigateAfterSettle = planForwardNavigation(threadKey, opts.coSettlingKeys);
+    const result = await settleThread(threadRef);
+    settlingThreadKeysRef.current.delete(threadKey);
+    if (
+      result._tag === "Success" &&
+      shouldNavigateAfterThreadPark({
+        threadKey,
+        currentThreadKey: routeThreadKeyRef.current,
+        action: "settle",
+        now: new Date().toISOString(),
+        thread: readThreadShell(threadRef),
+      })
+    ) {
+      navigateAfterSettle?.();
+    }
+    return result;
+  };
   const attemptSettle = (
     threadRef: ScopedThreadRef,
     opts: { coSettlingKeys?: ReadonlySet<string> } = {},
   ) => {
     void (async () => {
-      const threadKey = scopedThreadKey(threadRef);
-      if (settlingThreadKeysRef.current.has(threadKey)) return;
-      settlingThreadKeysRef.current.add(threadKey);
-      const navigateAfterSettle = planForwardNavigation(threadKey, opts.coSettlingKeys);
-      const result = await settleThread(threadRef);
-      settlingThreadKeysRef.current.delete(threadKey);
-      if (result._tag === "Failure") {
-        if (!isAtomCommandInterrupted(result)) {
-          const error = squashAtomCommandFailure(result);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Failed to settle thread",
-              description: error instanceof Error ? error.message : "An error occurred.",
-            }),
-          );
-        }
-        return;
-      }
-      if (
-        shouldNavigateAfterThreadPark({
-          threadKey,
-          currentThreadKey: routeThreadKeyRef.current,
-          action: "settle",
-          now: new Date().toISOString(),
-          thread: readThreadShell(threadRef),
-        })
-      ) {
-        navigateAfterSettle?.();
+      const result = await settleAndAdvance(threadRef, opts);
+      if (result?._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Failed to settle thread",
+            description: error instanceof Error ? error.message : "An error occurred.",
+          }),
+        );
       }
     })();
   };
@@ -2022,167 +2037,217 @@ export default function Sidebar() {
     })();
   };
 
-  const handleMultiSelectContextMenu = useStableCallback(
-    async (position: { x: number; y: number }) => {
-      const api = readLocalApi();
-      if (!api) return;
-      const selectedThreadKeys = [...useThreadSelectionStore.getState().selectedThreadKeys];
-      const threadKeys = selectedThreadKeys.filter((threadKey) =>
-        threadByKeyRef.current.has(threadKey),
-      );
-      if (threadKeys.length === 0) return;
-      const count = threadKeys.length;
-      const selectionNow = new Date();
-      const selectedThreads = threadKeys.flatMap((threadKey) => {
-        const thread = threadByKeyRef.current.get(threadKey);
-        return thread ? [thread] : [];
-      });
-      const settlingThreads = selectedThreads.filter(
-        (thread) => thread.settledOverride !== "settled",
-      );
-      const canSnoozeSelection = selectedThreads.every(
-        (thread) =>
-          serverConfigs.get(thread.environmentId)?.environment.capabilities.threadSnooze === true &&
-          canSnooze(thread, { now: selectionNow.toISOString() }),
-      );
-      const titleRegenerationThreads = selectedThreads.filter(
-        (thread) =>
-          serverConfigs.get(thread.environmentId)?.environment.capabilities
-            .threadTitleRegeneration === true,
-      );
-      const regeneratableTitleThreads = titleRegenerationThreads.filter(
-        (thread) => thread.titleRegeneration == null,
-      );
-      const titleRegenerationMenuItem = buildBulkTitleRegenerationContextMenuItem({
-        supportedCount: titleRegenerationThreads.length,
-        actionableCount: regeneratableTitleThreads.length,
-      });
-      const pinnedSelectedThreads = selectedThreads.filter(
-        (thread) =>
-          serverConfigs.get(thread.environmentId)?.environment.capabilities.threadPinning ===
-            true && thread.pinnedAt != null,
-      );
-      const unpinMenuItem = buildBulkUnpinContextMenuItem({
-        pinnedCount: pinnedSelectedThreads.length,
-      });
-      const snoozePresets = resolveSnoozePresets(new Date(), timestampFormat);
-      const clicked = await settlePromise(() =>
-        api.contextMenu.show(
-          [
-            ...(unpinMenuItem
-              ? [{ ...unpinMenuItem, disabled: !canOperateThreads(pinnedSelectedThreads) }]
-              : []),
-            {
-              id: "settle",
-              label: `Settle (${count})`,
-              disabled: settlingThreads.length === 0 || !canOperateThreads(settlingThreads),
-            },
-            ...(canSnoozeSelection
-              ? [
-                  {
-                    id: "snooze",
-                    label: `Snooze (${count})`,
-                    disabled: !canOperateThreads(selectedThreads),
-                    children: [
-                      ...snoozePresets.map((preset) => ({
-                        id: `snooze:${preset.id}`,
-                        label: `${preset.label} (${preset.whenLabel})`,
-                        disabled: !canOperateThreads(selectedThreads),
-                      })),
-                      {
-                        id: "snooze:custom",
-                        label: "Custom…",
-                        separatorBefore: true,
-                        disabled: !canOperateThreads(selectedThreads),
-                      },
-                    ],
-                  },
-                ]
-              : []),
-            ...(titleRegenerationMenuItem
-              ? [
-                  {
-                    ...titleRegenerationMenuItem,
-                    disabled:
-                      titleRegenerationMenuItem.disabled ||
-                      !canOperateThreads(regeneratableTitleThreads),
-                  },
-                ]
-              : []),
-            { id: "mark-unread", label: `Mark unread (${count})` },
-            {
-              id: "delete",
-              label: `Delete (${count})`,
-              destructive: true,
-              disabled: !canOperateThreads(selectedThreads),
-            },
-          ],
-          position,
-        ),
-      );
-      if (clicked._tag === "Failure" || clicked.value === null) return;
-      const actionTargets =
-        clicked.value === "unpin"
-          ? pinnedSelectedThreads
-          : clicked.value === "regenerate-title"
-            ? regeneratableTitleThreads
-            : clicked.value === "settle"
-              ? settlingThreads.flatMap((thread) => {
-                  const current = threadByKeyRef.current.get(
-                    scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-                  );
-                  return current && current.settledOverride !== "settled" ? [current] : [];
-                })
-              : selectedThreads;
-      if (clicked.value === "settle" && actionTargets.length === 0) return;
-      if (clicked.value !== "mark-unread" && !checkThreadOperations(actionTargets)) return;
-      if (clicked.value?.startsWith("snooze:")) {
-        const preset =
-          clicked.value === "snooze:custom"
-            ? await requestCustomSnooze()
-            : snoozePresets.find((candidate) => `snooze:${candidate.id}` === clicked.value);
-        if (preset) {
-          const coSnoozingKeys = new Set(threadKeys);
-          clearSelection();
-          const outcomes = await Promise.all(
-            selectedThreads.map(async (thread) => {
-              const threadRef = scopeThreadRef(thread.environmentId, thread.id);
-              const outcome = await performSnooze(threadRef, preset, { coSnoozingKeys });
-              return { outcome, threadRef };
-            }),
-          );
-          const snoozedThreadRefs = outcomes.flatMap(({ outcome, threadRef }) =>
-            outcome.status === "success" ? [threadRef] : [],
-          );
-          const failures = outcomes.flatMap(({ outcome }) =>
-            outcome.status === "failure" ? [outcome.error] : [],
-          );
+  const planSelection = (
+    selectedThreadKeys: readonly string[],
+    threadsByKey: typeof threadByKey,
+    settledKeys: ReadonlySet<string>,
+    now: string,
+  ) => {
+    const threadKeys = selectedThreadKeys.filter((threadKey) => threadsByKey.has(threadKey));
+    const selectedThreads = threadKeys.flatMap((threadKey) => {
+      const thread = threadsByKey.get(threadKey);
+      return thread ? [thread] : [];
+    });
+    const plans = planBulkThreadActions(
+      threadKeys.flatMap((threadKey) => {
+        const thread = threadsByKey.get(threadKey);
+        if (!thread) return [];
+        const capabilities = serverConfigs.get(thread.environmentId)?.environment.capabilities;
+        return [
+          {
+            threadKey,
+            settled: settledKeys.has(threadKey),
+            pinned: thread.pinnedAt != null,
+            canPin: capabilities?.threadPinning === true,
+            canSnooze: capabilities?.threadSnooze === true && canSnooze(thread, { now }),
+          },
+        ];
+      }),
+    );
+    return { selectedThreadKeys, threadKeys, selectedThreads, plans };
+  };
+  const readBulkSelection = () =>
+    planSelection(
+      [...useThreadSelectionStore.getState().selectedThreadKeys],
+      threadByKeyRef.current,
+      settledThreadKeysRef.current,
+      new Date().toISOString(),
+    );
+  const selectedThreadKeySet = useThreadSelectionStore((state) => state.selectedThreadKeys);
+  const bulkBarPlans =
+    selectedThreadKeySet.size === 0
+      ? null
+      : planSelection([...selectedThreadKeySet], threadByKey, settledThreadKeys, snoozeNow);
+  const bulkTargetThreads = (targetKeys: readonly string[]) =>
+    targetKeys.flatMap((threadKey) => {
+      const thread = threadByKeyRef.current.get(threadKey);
+      return thread ? [thread] : [];
+    });
 
-          if (failures.length > 0) {
-            const firstError = failures[0];
-            toastManager.add(
-              stackedThreadToast({
-                type: "error",
-                title:
-                  snoozedThreadRefs.length > 0
-                    ? `Failed to snooze ${failures.length} thread${failures.length === 1 ? "" : "s"}`
-                    : "Failed to snooze threads",
-                description:
-                  firstError instanceof Error ? firstError.message : "An error occurred.",
-              }),
-            );
-          }
+  const buildBulkMenuItems = (
+    selection: ReturnType<typeof readBulkSelection>,
+    opts: { snoozeOnly?: boolean } = {},
+  ) => {
+    const { selectedThreads, plans } = selection;
+    const count = selectedThreads.length;
+    const countOf = (id: BulkThreadActionId) => plans.get(id)?.targetKeys.length ?? 0;
+    const operable = (id: BulkThreadActionId) =>
+      countOf(id) > 0 && canOperateThreads(bulkTargetThreads(plans.get(id)?.targetKeys ?? []));
+    const snoozePresets = resolveSnoozePresets(new Date(), timestampFormat);
+    const snoozeChildren = [
+      ...snoozePresets.map((preset) => ({
+        id: `snooze:${preset.id}`,
+        label: `${preset.label} (${preset.whenLabel})`,
+        disabled: !operable("snooze"),
+      })),
+      {
+        id: "snooze:custom",
+        label: "Custom…",
+        separatorBefore: true,
+        disabled: !operable("snooze"),
+      },
+    ];
+    if (opts.snoozeOnly) return snoozeChildren;
+    const titleRegenerationThreads = selectedThreads.filter(
+      (thread) =>
+        serverConfigs.get(thread.environmentId)?.environment.capabilities
+          .threadTitleRegeneration === true,
+    );
+    const regeneratableTitleThreads = titleRegenerationThreads.filter(
+      (thread) => thread.titleRegeneration == null,
+    );
+    const titleRegenerationMenuItem = buildBulkTitleRegenerationContextMenuItem({
+      supportedCount: titleRegenerationThreads.length,
+      actionableCount: regeneratableTitleThreads.length,
+    });
+    const countedItem = (id: BulkThreadActionId, label: string) =>
+      countOf(id) > 0 ? [{ id, label: `${label} (${countOf(id)})`, disabled: !operable(id) }] : [];
+    return [
+      ...countedItem("pin", "Pin"),
+      ...countedItem("unpin", "Unpin"),
+      ...countedItem("settle", "Settle"),
+      ...countedItem("unsettle", "Un-settle"),
+      ...(countOf("snooze") > 0
+        ? [
+            {
+              id: "snooze",
+              label: `Snooze (${count})`,
+              disabled: !operable("snooze"),
+              children: snoozeChildren,
+            },
+          ]
+        : []),
+      ...(titleRegenerationMenuItem
+        ? [
+            {
+              ...titleRegenerationMenuItem,
+              disabled:
+                titleRegenerationMenuItem.disabled || !canOperateThreads(regeneratableTitleThreads),
+            },
+          ]
+        : []),
+      { id: "mark-unread", label: `Mark unread (${count})` },
+      { id: "archive", label: `Archive (${count})`, disabled: !operable("archive") },
+      {
+        id: "delete",
+        label: `Delete (${count})`,
+        destructive: true,
+        disabled: !canOperateThreads(selectedThreads),
+      },
+    ];
+  };
+
+  const runBulkCommands = async (
+    action: BulkThreadActionId,
+    targetKeys: readonly string[],
+    execute: (
+      threadRef: ScopedThreadRef,
+      coThreadKeys: ReadonlySet<string>,
+    ) => Promise<AtomCommandResult<unknown, unknown> | null>,
+  ) => {
+    const threads = bulkTargetThreads(targetKeys);
+    if (threads.length === 0 || !checkThreadOperations(threads)) return;
+    const coThreadKeys = new Set(targetKeys);
+    clearSelection();
+    const outcome = await runBulkThreadAction({
+      targets: threads.map((thread) => scopeThreadRef(thread.environmentId, thread.id)),
+      execute: async (threadRef) =>
+        (await execute(threadRef, coThreadKeys)) ?? AsyncResult.success(undefined),
+      isInterrupted: isAtomCommandInterrupted,
+      describeFailure: (result) =>
+        result._tag === "Failure" ? squashAtomCommandFailure(result) : null,
+    });
+    const failureTitle = describeBulkFailure(action, outcome);
+    if (failureTitle === null) return;
+    const firstError = outcome.failed[0]?.error;
+    toastManager.add(
+      stackedThreadToast({
+        type: "error",
+        title: failureTitle,
+        description: firstError instanceof Error ? firstError.message : "An error occurred.",
+      }),
+    );
+  };
+
+  const performBulkAction = useStableCallback(async (actionId: string) => {
+    const api = readLocalApi();
+    if (!api) return;
+    const selection = readBulkSelection();
+    const { selectedThreadKeys, threadKeys, selectedThreads, plans } = selection;
+    if (threadKeys.length === 0) return;
+    const count = threadKeys.length;
+    const targetKeysOf = (id: BulkThreadActionId) => plans.get(id)?.targetKeys ?? [];
+    switch (actionId) {
+      case "settle":
+        await runBulkCommands("settle", targetKeysOf("settle"), (threadRef, coSettlingKeys) =>
+          settleAndAdvance(threadRef, { coSettlingKeys }),
+        );
+        return;
+      case "unsettle":
+        await runBulkCommands("unsettle", targetKeysOf("unsettle"), (threadRef) =>
+          unsettleThread(threadRef),
+        );
+        return;
+      case "pin":
+        await runBulkCommands("pin", targetKeysOf("pin"), (threadRef) => pinThread(threadRef));
+        return;
+      case "unpin": {
+        const unpinCount = targetKeysOf("unpin").length;
+        if (confirmThreadUnpin && unpinCount > 0) {
+          const confirmed = await settlePromise(() =>
+            api.dialogs.confirm(`Unpin ${unpinCount} thread${unpinCount === 1 ? "" : "s"}?`),
+          );
+          if (confirmed._tag === "Failure" || !confirmed.value) return;
         }
+        await runBulkCommands("unpin", targetKeysOf("unpin"), (threadRef) =>
+          unpinThread(threadRef),
+        );
         return;
       }
-      if (clicked.value === "unpin") {
-        for (const thread of pinnedSelectedThreads) {
-          attemptUnpin(scopeThreadRef(thread.environmentId, thread.id));
+      case "archive":
+        if (confirmThreadArchive) {
+          const confirmed = await settlePromise(() =>
+            api.dialogs.confirm(`Archive ${count} thread${count === 1 ? "" : "s"}?`),
+          );
+          if (confirmed._tag === "Failure" || !confirmed.value) return;
+        }
+        await runBulkCommands("archive", targetKeysOf("archive"), (threadRef) =>
+          archiveThread(threadRef),
+        );
+        return;
+      case "mark-unread":
+        for (const thread of selectedThreads) {
+          markThreadUnread(scopeThreadRef(thread.environmentId, thread.id));
         }
         clearSelection();
         return;
-      }
-      if (clicked.value === "regenerate-title") {
+      case "regenerate-title": {
+        const regeneratableTitleThreads = selectedThreads.filter(
+          (thread) =>
+            serverConfigs.get(thread.environmentId)?.environment.capabilities
+              .threadTitleRegeneration === true && thread.titleRegeneration == null,
+        );
+        if (!checkThreadOperations(regeneratableTitleThreads)) return;
         for (const thread of regeneratableTitleThreads) {
           const result = await updateThreadMetadata({
             environmentId: thread.environmentId,
@@ -2204,72 +2269,85 @@ export default function Sidebar() {
         clearSelection();
         return;
       }
-      if (clicked.value === "settle") {
-        settleThreads(
-          actionTargets.map((thread) =>
-            scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-          ),
+      case "delete":
+        break;
+      default: {
+        if (!actionId.startsWith("snooze:")) return;
+        const snoozePresets = resolveSnoozePresets(new Date(), timestampFormat);
+        const preset =
+          actionId === "snooze:custom"
+            ? await requestCustomSnooze()
+            : snoozePresets.find((candidate) => `snooze:${candidate.id}` === actionId);
+        if (!preset) return;
+        await runBulkCommands(
+          "snooze",
+          targetKeysOf("snooze"),
+          async (threadRef, coSnoozingKeys) => {
+            const outcome = await performSnooze(threadRef, preset, { coSnoozingKeys });
+            return outcome.status === "failure"
+              ? AsyncResult.failure(Cause.fail(outcome.error))
+              : null;
+          },
         );
-        clearSelection();
         return;
       }
-      if (clicked.value === "mark-unread") {
-        for (const threadKey of threadKeys) {
-          const thread = threadByKeyRef.current.get(threadKey);
-          if (thread) markThreadUnread(scopeThreadRef(thread.environmentId, thread.id));
-        }
-        clearSelection();
-        return;
-      }
-      if (clicked.value !== "delete") return;
-      if (confirmThreadDelete) {
-        const confirmed = await settlePromise(() =>
-          api.dialogs.confirm(
-            [
-              `Delete ${count} thread${count === 1 ? "" : "s"}?`,
-              "This permanently clears conversation history for these threads.",
-            ].join("\n"),
-            { variant: "destructive" },
-          ),
-        );
-        if (confirmed._tag === "Failure" || !confirmed.value) return;
-      }
-      if (
-        !checkThreadOperations(
-          threadKeys.flatMap((threadKey) => {
-            const thread = threadByKeyRef.current.get(threadKey);
-            return thread ? [thread] : [];
-          }),
-        )
-      )
-        return;
-      const { deletedThreadKeys, firstFailure } = await deleteSelectedThreadEntries({
-        entries: threadKeys.map((threadKey) => ({ threadKey })),
-        delete: async ({ threadKey }, deletedThreadKeys) => {
-          const thread = threadByKeyRef.current.get(threadKey);
-          if (!thread) return null;
-          return deleteThread(scopeThreadRef(thread.environmentId, thread.id), {
-            deletedThreadKeys,
-          });
-        },
-      });
-      if (firstFailure !== null) {
-        const firstError = squashAtomCommandFailure(firstFailure);
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Failed to delete threads",
-            description: firstError instanceof Error ? firstError.message : "An error occurred.",
-          }),
-        );
-      }
-      removeFromSelection(
-        getThreadKeysToDeselectAfterDelete(selectedThreadKeys, deletedThreadKeys, (threadKey) => {
-          const threadRef = parseScopedThreadKey(threadKey);
-          return threadRef !== null && readThreadShell(threadRef) !== null;
+    }
+    if (!checkThreadOperations(selectedThreads)) return;
+    if (confirmThreadDelete) {
+      const confirmed = await settlePromise(() =>
+        api.dialogs.confirm(
+          [
+            `Delete ${count} thread${count === 1 ? "" : "s"}?`,
+            "This permanently clears conversation history for these threads.",
+          ].join("\n"),
+          { variant: "destructive" },
+        ),
+      );
+      if (confirmed._tag === "Failure" || !confirmed.value) return;
+    }
+    const { deletedThreadKeys, firstFailure } = await deleteSelectedThreadEntries({
+      entries: threadKeys.map((threadKey) => ({ threadKey })),
+      delete: async ({ threadKey }, deletedThreadKeys) => {
+        const thread = threadByKeyRef.current.get(threadKey);
+        if (!thread) return null;
+        return deleteThread(scopeThreadRef(thread.environmentId, thread.id), {
+          deletedThreadKeys,
+        });
+      },
+    });
+    if (firstFailure !== null) {
+      const firstError = squashAtomCommandFailure(firstFailure);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Failed to delete threads",
+          description: firstError instanceof Error ? firstError.message : "An error occurred.",
         }),
       );
+    }
+    removeFromSelection(
+      getThreadKeysToDeselectAfterDelete(selectedThreadKeys, deletedThreadKeys, (threadKey) => {
+        const threadRef = parseScopedThreadKey(threadKey);
+        return threadRef !== null && readThreadShell(threadRef) !== null;
+      }),
+    );
+  });
+
+  const showBulkMenu = useStableCallback(
+    async (position: { x: number; y: number }, opts: { snoozeOnly?: boolean } = {}) => {
+      const api = readLocalApi();
+      if (!api) return;
+      const selection = readBulkSelection();
+      if (selection.threadKeys.length === 0) return;
+      const clicked = await settlePromise(() =>
+        api.contextMenu.show(buildBulkMenuItems(selection, opts), position),
+      );
+      if (clicked._tag === "Failure" || clicked.value === null) return;
+      await performBulkAction(clicked.value);
     },
+  );
+  const handleMultiSelectContextMenu = useStableCallback((position: { x: number; y: number }) =>
+    showBulkMenu(position),
   );
 
   const handleDraftContextMenu = useStableCallback(
@@ -3249,6 +3327,17 @@ export default function Sidebar() {
           ) : null}
         </SidebarGroup>
       </SidebarContent>
+      {bulkBarPlans ? (
+        <SidebarBulkActionBar
+          count={bulkBarPlans.threadKeys.length}
+          settleToggle={pickBulkToggle(bulkBarPlans.plans, "settle", "unsettle")}
+          pinToggle={pickBulkToggle(bulkBarPlans.plans, "pin", "unpin")}
+          canSnooze={(bulkBarPlans.plans.get("snooze")?.targetKeys.length ?? 0) > 0}
+          onAction={(action) => void performBulkAction(action)}
+          onShowMenu={(position, opts) => void showBulkMenu(position, opts)}
+          onClear={clearSelection}
+        />
+      ) : null}
       <SidebarChromeFooter />
     </>
   );

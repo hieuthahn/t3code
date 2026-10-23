@@ -62,6 +62,7 @@ import { compactDynamicToolOutput } from "@t3tools/shared/toolOutput";
 import { htmlRenderReferencesEqual, type HtmlRenderReference } from "@t3tools/shared/htmlRender";
 import { mcpAppReferencesEqual, type McpAppReference } from "@t3tools/shared/mcpApp";
 import { dynamicToolTitle } from "@t3tools/shared/toolActivity";
+import { requestResolutionLabel } from "@t3tools/client-runtime/work-log/request-resolution";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 import {
   collectToolFilePaths,
@@ -134,7 +135,17 @@ export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string
   }
   const toolPresentation = resolveWorkEntryToolPresentation(entry);
   if (toolPresentation) return toolPresentation.displayName;
-  if (entry.command?.trim()) return commandDisplayText(entry.command);
+  const resolution =
+    entry.structuredPayload?.type === "approval_request"
+      ? requestResolutionLabel(entry.structuredPayload)
+      : null;
+  const subject = entry.command?.trim()
+    ? commandDisplayText(entry.command)
+    : resolution === null
+      ? undefined
+      : entry.detail?.trim();
+  if (resolution !== null) return subject ? `${resolution} · ${subject}` : resolution;
+  if (subject) return subject;
   const action = toolGroupAction(entry);
   if (action === "code-search" || action === "search") {
     const searchLabel =

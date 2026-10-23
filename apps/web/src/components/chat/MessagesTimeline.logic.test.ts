@@ -247,6 +247,37 @@ describe("deriveMessagesTimelineRows", () => {
     expect(first.kind === "work" && first.entry.toolLifecycleStatus).toBe("inProgress");
   });
 
+  it("leads an answered approval with who answered it, then its prompt", () => {
+    const fixture = makeStreamingTimelineFixture();
+    const source = fixture.visibleTurnItems.find((row) => row.item.type === "dynamic_tool")!;
+    const approval = {
+      ...source.item,
+      type: "approval_request" as const,
+      status: "completed" as const,
+      title: null,
+      requestId: RuntimeRequestId.make("request:answered-heading"),
+      requestKind: "command" as const,
+      prompt: "git push origin main",
+    };
+    const label = (item: object) => {
+      const entries = deriveTimelineEntriesFromVisibleTurnItems({
+        visibleTurnItems: [{ ...source, item } as typeof source],
+        optimisticMessages: [],
+      });
+      const entry = entries.find((row) => row.kind === "work");
+      return entry?.kind === "work" ? workEntryDisplayLabel(entry.entry, undefined) : null;
+    };
+
+    expect(
+      label({
+        ...approval,
+        decision: "accept",
+        decidedBy: { actor: "user", authSessionId: "auth-session:heading" },
+      }),
+    ).toBe("Approved by you · git push origin main");
+    expect(label({ ...approval, status: "waiting" })).toBe("git push origin main");
+  });
+
   it("recovers the failed Sky call stored as a generic js integration", () => {
     const fixture = makeStreamingTimelineFixture();
     const source = fixture.visibleTurnItems.find((row) => row.item.type === "dynamic_tool")!;

@@ -3209,7 +3209,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                     snooze: command.limitRecovery.snooze ?? previousRecovery?.snooze ?? false,
                     requestId: command.commandId,
                   };
-          return {
+          const updated = {
             ...thread,
             ...(command.title === undefined ? {} : { title: command.title }),
             ...(command.limitRecovery === undefined ? {} : { limitRecovery }),
@@ -3265,6 +3265,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 : {}),
             updatedAt: now,
           };
+          if (command.tokenSaver === undefined) return updated;
+          const { tokenSaver: _replaced, ...withoutTokenSaver } = updated;
+          return command.tokenSaver === null
+            ? withoutTokenSaver
+            : { ...withoutTokenSaver, tokenSaver: command.tokenSaver };
         }
         case "thread.pull-request.link":
         case "thread.pull-request.unlink":

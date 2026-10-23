@@ -2468,6 +2468,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 
     const now = yield* DateTime.now;
     const emitEvent = emit(events, command);
+    const team =
+      command.createdBy === "user" &&
+      command.linkOrigin === undefined &&
+      command.importedNativeThread === undefined
+        ? yield* serverSettings.getSettings.pipe(
+            Effect.map((settings) =>
+              settings.team.newThreads ? (settings.team.defaultSetup ?? undefined) : undefined,
+            ),
+            Effect.orElseSucceed(() => undefined),
+          )
+        : undefined;
     const thread: OrchestrationV2AppThread = {
       createdBy: command.createdBy,
       creationSource: command.creationSource,
@@ -2488,6 +2499,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ? {}
         : { delegatedFrom: command.delegatedFrom }),
       ...(command.fanoutGroupId === undefined ? {} : { fanoutGroupId: command.fanoutGroupId }),
+      ...(team === undefined ? {} : { team }),
       lineage: {
         parentThreadId: null,
         relationshipToParent: null,
@@ -3270,11 +3282,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 : {}),
             updatedAt: now,
           };
-          if (command.tokenSaver === undefined) return updated;
-          const { tokenSaver: _replaced, ...withoutTokenSaver } = updated;
-          return command.tokenSaver === null
-            ? withoutTokenSaver
-            : { ...withoutTokenSaver, tokenSaver: command.tokenSaver };
+          const { tokenSaver, team, ...rest } = updated;
+          const nextTokenSaver =
+            command.tokenSaver === undefined ? tokenSaver : (command.tokenSaver ?? undefined);
+          const nextTeam = command.team === undefined ? team : (command.team ?? undefined);
+          return {
+            ...rest,
+            ...(nextTokenSaver === undefined ? {} : { tokenSaver: nextTokenSaver }),
+            ...(nextTeam === undefined ? {} : { team: nextTeam }),
+          };
         }
         case "thread.pull-request.link":
         case "thread.pull-request.unlink":

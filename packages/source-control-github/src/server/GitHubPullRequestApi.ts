@@ -81,7 +81,7 @@ import {
   toPullRequestWatchFingerprint,
   toReviewDismissalsPage,
   toReviewerCandidates,
-  withRepositoryTeams,
+  withOrganizationTeams,
   toReviewThreadCommentsPage,
   toReviewThreadPage,
   toStackMembership,
@@ -2314,7 +2314,7 @@ export const make = Effect.gen(function* () {
               allowReserve: true,
             })
             .pipe(
-              Effect.map((response) => withRepositoryTeams(list, owner, response.body)),
+              Effect.map((response) => withOrganizationTeams(list, owner, response.body)),
               Effect.catch(() => Effect.succeed(list)),
             ),
         ),

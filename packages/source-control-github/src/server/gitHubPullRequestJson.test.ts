@@ -22,7 +22,7 @@ import {
   toCanWrite,
   toReviewThreadPage,
   toViewerPermissions,
-  withRepositoryTeams,
+  withOrganizationTeams,
 } from "./gitHubPullRequestJson.ts";
 import { PullRequestWatchFingerprint } from "./pullRequestBatches.graphql.ts";
 import {
@@ -1672,7 +1672,7 @@ describe("pull request watch fingerprints", () => {
   });
 });
 
-describe("withRepositoryTeams", () => {
+describe("withOrganizationTeams", () => {
   const user = (login: string, isRequested = false) => ({
     id: login,
     kind: "user" as const,
@@ -1698,7 +1698,7 @@ describe("withRepositoryTeams", () => {
   it("offers the repository teams after the requested reviewers and before the people", () => {
     const list = { candidates: [requestedTeam, user("alice")], truncated: false };
 
-    expect(withRepositoryTeams(list, "openreachtech", teamsJson)).toEqual({
+    expect(withOrganizationTeams(list, "openreachtech", teamsJson)).toEqual({
       candidates: [
         requestedTeam,
         {
@@ -1718,7 +1718,7 @@ describe("withRepositoryTeams", () => {
   it("keeps the list as it is when the teams answer cannot be read", () => {
     const list = { candidates: [user("alice")], truncated: true };
 
-    expect(withRepositoryTeams(list, "openreachtech", "not json")).toBe(list);
-    expect(withRepositoryTeams(list, "openreachtech", "{}")).toBe(list);
+    expect(withOrganizationTeams(list, "openreachtech", "not json")).toBe(list);
+    expect(withOrganizationTeams(list, "openreachtech", "{}")).toBe(list);
   });
 });

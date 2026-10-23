@@ -48,6 +48,27 @@ const toCandidate = (
   return { instanceId: provider.instanceId, usedPercent, resetsAtMs };
 };
 
+/** Tell whether an account is signed out or has a live usage window already full. */
+export const isSpentAccount = (
+  providers: ReadonlyArray<ServerProvider>,
+  instanceId: ProviderInstanceId,
+  nowMs: number,
+): boolean => {
+  const provider = providers.find((entry) => entry.instanceId === instanceId);
+  if (provider === undefined) return false;
+  if (provider.auth.status !== "authenticated") return true;
+  const limits = provider.usageLimits;
+  return (
+    limits !== undefined &&
+    limits.unavailable === undefined &&
+    limits.windows.some(
+      (window) =>
+        window.usedPercent >= FULL_PERCENT &&
+        (window.resetsAt === undefined || Date.parse(window.resetsAt) > nowMs),
+    )
+  );
+};
+
 /**
  * Rank the signed-in, ready instances a limited thread can continue on without a handoff.
  * Most headroom in the fullest window wins, and each recent assignment counts against a peer.
@@ -124,7 +145,8 @@ export type AccountChoiceReason =
   | "current-signed-out"
   | "new-thread"
   | "no-peer-with-headroom"
-  | "near-limit";
+  | "near-limit"
+  | "requested-spent";
 
 export interface AccountChoice {
   readonly instanceId: ProviderInstanceId;

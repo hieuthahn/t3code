@@ -370,6 +370,13 @@ import {
   ScheduledTaskUpsertInput,
   ScheduledTaskMutationResult,
 } from "./scheduledTask.ts";
+import {
+  MergeQueueApproveInput,
+  MergeQueueCancelInput,
+  MergeQueueError,
+  MergeQueueSubscribeInput,
+  MergeQueueView,
+} from "./mergeQueue.ts";
 import { SecretRequestAnswerInput, SecretRequestError } from "./secretRequest.ts";
 import {
   ProjectCloneActionInput,
@@ -538,6 +545,9 @@ export const WS_METHODS = {
   scheduledTasksRunNow: "scheduledTasks.runNow",
   scheduledTasksRotateWebhookToken: "scheduledTasks.rotateWebhookToken",
   secretsAnswerRequest: "secrets.answerRequest",
+  mergeQueueSubscribe: "mergeQueue.subscribe",
+  mergeQueueApprove: "mergeQueue.approve",
+  mergeQueueCancel: "mergeQueue.cancel",
   scheduledTasksListWebhookDeliveries: "scheduledTasks.listWebhookDeliveries",
   scheduledTasksGetWebhookDelivery: "scheduledTasks.getWebhookDelivery",
 
@@ -1886,6 +1896,23 @@ const WsSecretsAnswerRequestRpc = Rpc.make(WS_METHODS.secretsAnswerRequest, {
   error: Schema.Union([SecretRequestError, EnvironmentAuthorizationError]),
 });
 
+const WsMergeQueueSubscribeRpc = Rpc.make(WS_METHODS.mergeQueueSubscribe, {
+  payload: MergeQueueSubscribeInput,
+  success: MergeQueueView,
+  error: Schema.Union([MergeQueueError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
+export const WsMergeQueueApproveRpc = Rpc.make(WS_METHODS.mergeQueueApprove, {
+  payload: MergeQueueApproveInput,
+  error: Schema.Union([MergeQueueError, EnvironmentAuthorizationError]),
+});
+
+const WsMergeQueueCancelRpc = Rpc.make(WS_METHODS.mergeQueueCancel, {
+  payload: MergeQueueCancelInput,
+  error: Schema.Union([MergeQueueError, EnvironmentAuthorizationError]),
+});
+
 const WsScheduledTasksListWebhookDeliveriesRpc = Rpc.make(
   WS_METHODS.scheduledTasksListWebhookDeliveries,
   {
@@ -1994,6 +2021,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsScheduledTasksRunNowRpc,
   WsScheduledTasksRotateWebhookTokenRpc,
   WsSecretsAnswerRequestRpc,
+  WsMergeQueueSubscribeRpc,
+  WsMergeQueueApproveRpc,
+  WsMergeQueueCancelRpc,
   WsScheduledTasksListWebhookDeliveriesRpc,
   WsScheduledTasksGetWebhookDeliveryRpc,
   WsServerReportClientActivityRpc,

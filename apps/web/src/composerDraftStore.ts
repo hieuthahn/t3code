@@ -4290,8 +4290,11 @@ export function subscribeComposerDraftModelReconciliation(input: {
       const ref = parseScopedThreadKey(key);
       const pick = draft.modelSelectionByProvider[draft.activeProvider];
       if (!ref || !pick || !threadKeys.has(key)) continue;
+      // A seeded pick only shaped the first turn; the server may since have moved accounts.
+      const pickSettles = (selection: ModelSelection) =>
+        draft.modelSelectionExplicit !== true || draftModelPickMatchesThread(pick, selection);
       const thread = get(input.threadShellAtom(ref));
-      if (!thread || !draftModelPickMatchesThread(pick, thread.modelSelection)) continue;
+      if (!thread || !pickSettles(thread.modelSelection)) continue;
       // Status and selection must come from the same emission; derived atoms can update apart.
       const shell = Option.getOrNull(
         AsyncResult.value(get(input.shellStateAtom(ref.environmentId))),
@@ -4300,10 +4303,7 @@ export function subscribeComposerDraftModelReconciliation(input: {
       const authoritativeThread = Option.getOrNull(shell.snapshot)?.threads.find(
         (candidate) => candidate.id === ref.threadId,
       );
-      if (
-        authoritativeThread &&
-        draftModelPickMatchesThread(pick, authoritativeThread.modelSelection)
-      ) {
+      if (authoritativeThread && pickSettles(authoritativeThread.modelSelection)) {
         matches.push([key, draft]);
       }
     }

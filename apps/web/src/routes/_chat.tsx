@@ -1,5 +1,5 @@
 import { AuthPreviewOperateScope } from "@t3tools/contracts";
-import { Outlet, createFileRoute, redirect } from "@tanstack/react-router";
+import { Outlet, createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect } from "react";
 
@@ -7,7 +7,6 @@ import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { ThreadRouteView } from "../components/ThreadRouteView";
 import { ThreadLinkPrompt } from "../components/promptLinks/ThreadLinkPrompt";
 import { useClientSettings, useLegacySidebarEnabled } from "../hooks/useSettings";
-import { openCommandPalette } from "../commandPaletteBus";
 import { useProjects } from "../state/entities";
 import { isPreviewAvailableFor } from "../browser/previewRuntime";
 import { usePrimaryEnvironmentId } from "../state/environments";
@@ -40,6 +39,7 @@ function ChatRouteGlobalShortcuts() {
     AuthPreviewOperateScope,
   );
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const navigate = useNavigate();
   const legacySidebarEnabled = useLegacySidebarEnabled();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const projects = useProjects();
@@ -115,7 +115,7 @@ function ChatRouteGlobalShortcuts() {
         event.preventDefault();
         event.stopPropagation();
         if (!legacySidebarEnabled && projectGroupCount > 1) {
-          openCommandPalette({ open: "new-thread-in" });
+          void navigate({ to: "/" });
           return;
         }
         void startNewThreadFromContext({
@@ -181,6 +181,7 @@ function ChatRouteGlobalShortcuts() {
     handleNewThread,
     keybindings,
     defaultProjectRef,
+    navigate,
     previewOpen,
     primaryEnvironmentId,
     projectGroupCount,

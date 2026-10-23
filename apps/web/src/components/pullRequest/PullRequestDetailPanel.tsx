@@ -53,6 +53,7 @@ import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { isCommandPaletteOpen } from "~/commandPaletteBus";
 import { resolveShortcutCommand, type ShortcutMatchContext } from "~/keybindings";
 import { primaryServerKeybindingsAtom } from "~/state/server";
+import { PullRequestSlackReviewButton } from "./PullRequestSlackReviewButton";
 import { usePullRequestDefaultMergeMethodResolver } from "./usePullRequestActions";
 import { offHeadPullRequestCheckoutToast } from "./pullRequestCheckoutToast";
 import { usePreparePullRequestThreadAction } from "~/lib/sourceControlActions";
@@ -1325,6 +1326,11 @@ export function PullRequestDetailPanel({
                   threadRef={null}
                 />
               ) : null}
+              <PullRequestSlackReviewButton
+                repository={reference.repository}
+                title={detail.title}
+                url={detail.url}
+              />
               <PullRequestPrimaryAction
                 pullRequestKey={pullRequestKey}
                 primaryAction={primaryAction}

@@ -72,6 +72,7 @@ import {
   RelayEnvironmentMintResponse,
   RelayLinkProofRequest,
 } from "./relay.ts";
+import { TokenSaverStats } from "./tokenSaver.ts";
 
 const OptionalBearerHeaders = Schema.Struct({
   authorization: Schema.optionalKey(Schema.String),
@@ -125,6 +126,7 @@ export const EnvironmentInternalErrorReason = Schema.Literals([
   "orchestration_thread_snapshot_failed",
   "orchestration_thread_bounded_snapshot_failed",
   "orchestration_thread_history_failed",
+  "orchestration_token_saver_stats_failed",
   "internal_error",
 ]);
 export type EnvironmentInternalErrorReason = typeof EnvironmentInternalErrorReason.Type;
@@ -715,6 +717,14 @@ class EnvironmentOrchestrationHttpApi extends HttpApiGroup.make("orchestration")
       query: EnvironmentOrchestrationThreadHistoryQuery,
       success: OrchestrationV2ThreadHistoryPage,
       error: EnvironmentOrchestrationThreadHistoryErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.get("threadTokenSaver", "/api/orchestration/threads/:threadId/token-saver", {
+      headers: OrchestrationProtocolHeaders,
+      params: EnvironmentOrchestrationThreadSnapshotParams,
+      success: TokenSaverStats,
+      error: [EnvironmentScopeRequiredError, EnvironmentInternalError],
     }).middleware(EnvironmentAuthenticatedAuth),
   ) {}
 

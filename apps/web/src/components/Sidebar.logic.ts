@@ -9,7 +9,12 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { defaultAnimateLayoutChanges, type AnimateLayoutChanges } from "@dnd-kit/sortable";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
-import type { ContextMenuItem, EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type {
+  ContextMenuItem,
+  EnvironmentId,
+  OrchestrationV2ThreadShellUsage,
+  ThreadId,
+} from "@t3tools/contracts";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import type { AsyncResult } from "effect/reactivity";
 import { planPinnedReorder } from "@t3tools/client-runtime/state/thread-sort";
@@ -1026,6 +1031,38 @@ export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): Si
     return thread.runtime.lastErrorClass === "usage_limit" ? "limited" : "failed";
   }
   return "ready";
+}
+
+const CHILD_SESSION_BUCKETS = [
+  ["working", ["working", "waiting"]],
+  ["needs you", ["approval", "input"]],
+  ["failed", ["failed", "limited"]],
+  ["done", ["ready"]],
+] as const satisfies ReadonlyArray<readonly [string, ReadonlyArray<SidebarThreadStatus>]>;
+
+/** Name a parent's child sessions with how many are in each state, for their header. */
+export function describeChildSessions(children: ReadonlyArray<SidebarThreadStatusInput>): string {
+  const statuses = children.map(resolveSidebarThreadStatus);
+  const counts = CHILD_SESSION_BUCKETS.flatMap(([label, members]) => {
+    const count = statuses.filter((status) => members.some((member) => member === status)).length;
+    return count === 0 ? [] : [`${count} ${label}`];
+  });
+  const noun = children.length === 1 ? "child session" : "child sessions";
+  return [`${children.length} ${noun}`, ...counts].join(" · ");
+}
+
+/** Show what a child session cost in USD, or its tokens when its provider reports no cost. */
+export function formatChildSessionUsage(
+  usage: OrchestrationV2ThreadShellUsage | undefined,
+): string | null {
+  if (usage === undefined) return null;
+  if (usage.costUsd !== null) {
+    return usage.costUsd < 0.01 ? "<$0.01" : `$${usage.costUsd.toFixed(2)}`;
+  }
+  const tokens = usage.totalTokens;
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M tokens`;
+  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}k tokens`;
+  return `${tokens} tokens`;
 }
 
 export type SidebarV2TopStatusKind =

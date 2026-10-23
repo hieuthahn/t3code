@@ -54,6 +54,14 @@ it("lists each worker as the exact target to pass, with the run limits", () => {
   assert.include(instructions, "at most 12 assignments and use at most 8 review rounds");
 });
 
+it("sends the architect's work through team_assign by worker number", () => {
+  const instructions = buildTeamInstructions(team);
+  assert.include(instructions, "team_assign");
+  assert.include(instructions, "team_finish");
+  assert.include(instructions, "by its number in the list below");
+  assert.include(instructions, "delegate_task and propose_tasks are off");
+});
+
 it("changes the rules key whenever the rules change", () => {
   const before = teamRulesKey(buildTeamInstructions(team));
   assert.equal(before, teamRulesKey(buildTeamInstructions(team)));

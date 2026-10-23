@@ -5418,13 +5418,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       projection.thread.worktreePath === null
         ? latestRun
         : undefined;
-    const queueBehindRun = activeRun ?? worktreeMissingRun;
     const pendingMergeBackTransfers = pendingMergeBackTransfersForThread(projection);
     const startsOrQueuesRun =
       dispatchMode.type === "defer_start" ||
       dispatchMode.type === "start_immediately" ||
       dispatchMode.type === "queue_after_active";
-    const shouldQueue = queueBehindRun !== undefined && startsOrQueuesRun;
     // Client messages resume held queues; server continuations and scheduled tasks do not.
     // Provider failure or usage limits re-hold the queue. Failed worktree setup keeps it held
     // until a worktree exists, so queued messages cannot start in the project checkout.
@@ -5435,7 +5433,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           (run.status === "failed" || run.status === "interrupted") &&
           run.workspacePreparation?.type === "worktree",
       );
+    const redispatchesMessage = projection.messages.some(
+      (message) => message.id === command.messageId,
+    );
     const sentByUserFromClient =
+      !redispatchesMessage &&
       command.createdBy === "user" &&
       (command.creationSource === "web" || command.creationSource === "mobile") &&
       command.scheduledTaskId === undefined;
@@ -5443,6 +5445,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       sentByUserFromClient && startsOrQueuesRun && !worktreeSetupUnresolved
         ? projection.runs.filter((run) => run.status === "queued" && run.queueHeld === true)
         : [];
+    // A steer the provider never received goes back to a queue that Stop held,
+    // instead of starting a turn the user stopped.
+    const heldQueueRun =
+      activeRun === undefined &&
+      worktreeMissingRun === undefined &&
+      redispatchesMessage &&
+      dispatchMode.type === "queue_after_active" &&
+      projection.runs.some((run) => run.status === "queued" && run.queueHeld === true)
+        ? (latestRun ?? undefined)
+        : undefined;
+    const queueBehindRun = activeRun ?? worktreeMissingRun ?? heldQueueRun;
+    const shouldQueue = queueBehindRun !== undefined && startsOrQueuesRun;
     const releasedAt = yield* DateTime.now;
     for (const held of heldRunsToRelease) {
       yield* emit(

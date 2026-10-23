@@ -1,4 +1,7 @@
+import type { ApprovalResponder } from "@t3tools/client-runtime/state/thread-requests";
 import { RuntimeRequestId } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
+import { AsyncResult } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
@@ -16,18 +19,23 @@ const approval = (id: string, detail: string, extra: Partial<PendingApproval> = 
     ...extra,
   }) satisfies PendingApproval;
 
+const warning = "Runs outside the workspace";
 const approvals = [
   approval("first", "pnpm test"),
-  approval("second", "git status"),
+  approval("second", "cat /etc/hosts", {
+    options: [
+      { decision: "decline", label: "Decline" },
+      { decision: "accept", label: "Approve", warning },
+    ],
+  }),
   approval("gone", "rm -rf build", { responseCapability: "not_resumable" }),
 ];
 
-it("approves every live request one at a time through the per-request answer", async () => {
-  const answered: Array<[RuntimeRequestId, string]> = [];
-  const onRespondToApproval = vi.fn(async (requestId: RuntimeRequestId, decision: string) => {
-    answered.push([requestId, decision]);
-  });
-  await using _screen = await render(
+const succeeded = AsyncResult.success(undefined);
+const failed = AsyncResult.failure(Cause.fail("rejected"));
+
+async function renderGroup(onRespondToApproval: ApprovalResponder) {
+  return render(
     <ComposerPendingApprovalGroup
       approvals={approvals}
       respondingRequestIds={[]}
@@ -35,77 +43,80 @@ it("approves every live request one at a time through the per-request answer", a
       onRespondToApproval={onRespondToApproval}
     />,
   );
+}
 
-  await expect.element(page.getByText("3 approvals")).toBeVisible();
+it("lists every request and its warning before approving them in order", async () => {
+  const onRespondToApproval = vi.fn(async () => succeeded);
+  await using _screen = await renderGroup(onRespondToApproval);
+
   await page.getByRole("button", { name: "Approve all" }).click();
 
+  const confirmation = page.getByRole("group", { name: "Approve 2 requests?" });
+  await expect.element(confirmation.getByText("pnpm test")).toBeVisible();
+  await expect.element(confirmation.getByText("cat /etc/hosts")).toBeVisible();
+  await expect.element(confirmation.getByText(warning)).toBeVisible();
+  expect(onRespondToApproval).not.toHaveBeenCalled();
+
+  await confirmation.getByRole("button", { name: "Approve 2" }).click();
+
   await vi.waitFor(() =>
-    expect(answered).toEqual([
+    expect(onRespondToApproval.mock.calls).toEqual([
       ["first", "accept"],
       ["second", "accept"],
     ]),
   );
 });
 
-it("denies every live request", async () => {
-  const onRespondToApproval = vi.fn(async () => undefined);
-  await using _screen = await render(
-    <ComposerPendingApprovalGroup
-      approvals={approvals}
-      respondingRequestIds={[]}
-      disabled={false}
-      onRespondToApproval={onRespondToApproval}
-    />,
+it("approves nothing when the confirmation is cancelled", async () => {
+  const onRespondToApproval = vi.fn(async () => succeeded);
+  await using _screen = await renderGroup(onRespondToApproval);
+
+  await page.getByRole("button", { name: "Approve all" }).click();
+  await page.getByRole("button", { name: "Cancel" }).click();
+
+  await expect
+    .element(page.getByRole("group", { name: "Approve 2 requests?" }))
+    .not.toBeInTheDocument();
+  expect(onRespondToApproval).not.toHaveBeenCalled();
+});
+
+it("stops at the first approval that fails and says how many went unanswered", async () => {
+  const onRespondToApproval = vi.fn(async () => failed);
+  await using _screen = await renderGroup(onRespondToApproval);
+
+  await page.getByRole("button", { name: "Approve all" }).click();
+  await page.getByRole("button", { name: "Approve 2" }).click();
+
+  await expect
+    .element(page.getByRole("alert"))
+    .toHaveTextContent("Stopped after a request failed. 2 requests were not answered.");
+  expect(onRespondToApproval.mock.calls).toEqual([["first", "accept"]]);
+});
+
+it("denies every live request and stops at the first failure", async () => {
+  const onRespondToApproval = vi.fn(async (requestId: RuntimeRequestId) =>
+    requestId === "first" ? succeeded : failed,
   );
+  await using _screen = await renderGroup(onRespondToApproval);
 
   await page.getByRole("button", { name: "Deny all" }).click();
 
-  await vi.waitFor(() =>
-    expect(onRespondToApproval.mock.calls).toEqual([
-      ["first", "decline"],
-      ["second", "decline"],
-    ]),
-  );
+  await expect
+    .element(page.getByRole("alert"))
+    .toHaveTextContent("Stopped after a request failed. 1 request was not answered.");
+  expect(onRespondToApproval.mock.calls).toEqual([
+    ["first", "decline"],
+    ["second", "decline"],
+  ]);
 });
 
 it("answers one request from the expanded list", async () => {
-  const onRespondToApproval = vi.fn(async () => undefined);
-  await using _screen = await render(
-    <ComposerPendingApprovalGroup
-      approvals={approvals}
-      respondingRequestIds={[]}
-      disabled={false}
-      onRespondToApproval={onRespondToApproval}
-    />,
-  );
+  const onRespondToApproval = vi.fn(async () => succeeded);
+  await using _screen = await renderGroup(onRespondToApproval);
 
   await page.getByRole("button", { name: "3 approvals" }).click();
-  await expect.element(page.getByText("git status")).toBeVisible();
-  await page.getByRole("button", { name: "Approve", exact: true }).nth(1).click();
+  await expect.element(page.getByText("pnpm test")).toBeVisible();
+  await page.getByRole("button", { name: "Approve", exact: true }).first().click();
 
-  expect(onRespondToApproval.mock.calls).toEqual([["second", "accept"]]);
-});
-
-it("marks Approve all with the warnings it would accept", async () => {
-  const warning = "Runs outside the workspace";
-  await using _screen = await render(
-    <ComposerPendingApprovalGroup
-      approvals={[
-        approval("plain", "ls"),
-        approval("warned", "cat /etc/hosts", {
-          options: [
-            { decision: "decline", label: "Decline" },
-            { decision: "accept", label: "Approve", warning },
-          ],
-        }),
-      ]}
-      respondingRequestIds={[]}
-      disabled={false}
-      onRespondToApproval={async () => undefined}
-    />,
-  );
-
-  await expect
-    .element(page.getByRole("button", { name: "Approve all" }))
-    .toHaveAttribute("aria-description", warning);
+  expect(onRespondToApproval.mock.calls).toEqual([["first", "accept"]]);
 });

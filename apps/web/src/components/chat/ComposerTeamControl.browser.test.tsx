@@ -5,6 +5,7 @@ import {
   ProviderInstanceId,
   ThreadId,
   type TeamProfile,
+  type TeamRunView,
   type TeamSetup,
 } from "@t3tools/contracts";
 import { expect, it, vi } from "vite-plus/test";
@@ -22,6 +23,7 @@ const state = vi.hoisted(() => ({
   canWriteSettings: true,
   metadata: [] as unknown[],
   settings: [] as unknown[],
+  run: null as TeamRunView | null,
 }));
 
 vi.mock("~/hooks/useSettings", () => ({
@@ -39,7 +41,8 @@ vi.mock("~/hooks/useSettings", () => ({
 }));
 vi.mock("~/state/entities", () => ({ useThreadShell: () => ({ team: state.team }) }));
 vi.mock("~/state/threads", () => ({ threadEnvironment: { updateMetadata: {} } }));
-vi.mock("~/state/session", () => ({
+vi.mock("~/state/session", async (importOriginal) => ({
+  ...(await importOriginal()),
   useEnvironmentScope: (_environmentId: unknown, scope: string) =>
     scope === "orchestration:operate" ? state.canOperate : state.canWriteSettings,
 }));
@@ -48,6 +51,10 @@ vi.mock("~/state/use-orchestration-command", () => ({
     state.metadata.push(value);
     return { _tag: "Success", value: null };
   },
+}));
+vi.mock("~/state/query", async (importOriginal) => ({
+  ...(await importOriginal()),
+  useEnvironmentQuery: (atom: unknown) => ({ data: atom === null ? null : state.run, error: null }),
 }));
 // The model pickers need the provider catalog; a stub keeps this test on the popover's own logic.
 vi.mock("./TeamMemberPicker", () => ({
@@ -82,6 +89,7 @@ function setup(overrides: Partial<typeof state> = {}) {
     canWriteSettings: true,
     metadata: [],
     settings: [],
+    run: null,
     ...overrides,
   });
 }
@@ -184,4 +192,47 @@ it("refuses changes without permission to operate the thread", async () => {
   await userEvent.click(page.getByRole("button", { name: "Team" }));
   await expect.element(page.getByRole("button", { name: "Start team" })).toBeDisabled();
   await expect.element(page.getByRole("button", { name: "Team profile actions" })).toBeDisabled();
+});
+
+it("lets a team start assignments without the approval card", async () => {
+  setup({ team: { architect, workers: [worker], limits: DEFAULT_TEAM_LIMITS } });
+  await using _screen = await renderControl();
+  await userEvent.click(page.getByRole("button", { name: "Team" }));
+  await userEvent.click(page.getByText("Start assignments without approval"));
+  await userEvent.click(page.getByRole("button", { name: "Apply" }));
+  const applied = state.metadata[0] as { input: { team: TeamSetup } };
+  expect(applied.input.team.autonomous).toBe(true);
+});
+
+it("refuses limits below what the running team already used", async () => {
+  const team = { architect, workers: [worker], limits: DEFAULT_TEAM_LIMITS };
+  setup({
+    team,
+    profiles: [
+      {
+        id: "small",
+        name: "Small crew",
+        setup: { ...team, limits: { ...DEFAULT_TEAM_LIMITS, maxAssignments: 3 } },
+      },
+    ],
+    run: {
+      threadId: threadRef.threadId,
+      status: "running",
+      limits: DEFAULT_TEAM_LIMITS,
+      usage: { rounds: 2, assignments: 5 },
+      stalls: 0,
+      report: null,
+      summary: null,
+      assignments: [],
+      updatedAt: "2026-10-24T00:00:00.000Z",
+    },
+  });
+  await using _screen = await renderControl();
+  await userEvent.click(page.getByRole("button", { name: "Team" }));
+  await userEvent.click(page.getByRole("combobox", { name: "Team profile" }));
+  await userEvent.click(page.getByRole("option", { name: "Small crew" }));
+  await expect
+    .element(page.getByRole("alert"))
+    .toHaveTextContent("maxAssignments cannot go below the 5 assignments already made.");
+  await expect.element(page.getByRole("button", { name: "Apply" })).toBeDisabled();
 });

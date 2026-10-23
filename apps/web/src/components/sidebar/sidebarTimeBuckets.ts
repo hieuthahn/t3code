@@ -97,3 +97,21 @@ export function visibleBucketItems<T>(
 ): readonly T[] {
   return collapsed ? items.filter(isRoute) : items;
 }
+
+/** Tell whether every listed bucket is folded; false when there is none. */
+export function everyBucketCollapsed(
+  markers: readonly string[],
+  collapsed: readonly string[],
+): boolean {
+  return markers.length > 0 && markers.every((marker) => collapsed.includes(marker));
+}
+
+/** Fold or open every listed bucket, keeping the folds of buckets not listed. */
+export function withBucketsCollapsed(
+  collapsed: readonly string[],
+  markers: readonly string[],
+  collapse: boolean,
+): string[] {
+  if (!collapse) return collapsed.filter((marker) => !markers.includes(marker));
+  return [...collapsed, ...markers.filter((marker) => !collapsed.includes(marker))];
+}

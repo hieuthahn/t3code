@@ -25,6 +25,7 @@ import {
 } from "../lib/threadSort";
 import type { SidebarThreadSummary, Thread } from "../types";
 import type { SidebarTimeBucket } from "./sidebar/sidebarTimeBuckets";
+import type { SidebarStatusBucket } from "./sidebar/sidebarStatusBuckets";
 import { normalizeSearchText } from "../lib/utils";
 import { isLatestRunSettled } from "../session-logic";
 
@@ -145,12 +146,14 @@ export type SidebarListMarker =
   | `${typeof SETTLED_GROUP_MARKER_PREFIX}${string}`
   | `${typeof FANOUT_GROUP_MARKER_PREFIX}${string}`
   | `${typeof TIME_BUCKET_MARKER_PREFIX}${string}`
-  | `${typeof PROJECT_BUCKET_MARKER_PREFIX}${string}`;
+  | `${typeof PROJECT_BUCKET_MARKER_PREFIX}${string}`
+  | `${typeof STATUS_BUCKET_MARKER_PREFIX}${string}`;
 
 const SETTLED_GROUP_MARKER_PREFIX = "settled-group:";
 const FANOUT_GROUP_MARKER_PREFIX = "fanout-group:";
 const TIME_BUCKET_MARKER_PREFIX = "time-bucket:";
 const PROJECT_BUCKET_MARKER_PREFIX = "project-bucket:";
+const STATUS_BUCKET_MARKER_PREFIX = "status-bucket:";
 
 export function sidebarMarkerId(marker: SidebarListMarker): string {
   return `${SIDEBAR_MARKER_PREFIX}${marker}`;
@@ -179,6 +182,13 @@ export function timeBucketMarker(
 
 export function projectBucketMarker(section: SidebarSection, groupId: string): SidebarListMarker {
   return `${PROJECT_BUCKET_MARKER_PREFIX}${section}:${groupId}`;
+}
+
+export function statusBucketMarker(
+  section: SidebarSection,
+  bucket: SidebarStatusBucket,
+): SidebarListMarker {
+  return `${STATUS_BUCKET_MARKER_PREFIX}${section}:${bucket}`;
 }
 
 export type SidebarListItem =

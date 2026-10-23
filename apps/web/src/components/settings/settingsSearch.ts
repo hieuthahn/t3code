@@ -390,7 +390,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "compact-sidebar-grouping",
     title: "Group compact sidebar by",
     to: "/settings/general",
-    searchTerms: ["sidebar compact group project date time today folder"],
+    searchTerms: [
+      "sidebar compact group project date time today folder status working needs input",
+    ],
   },
   {
     id: "auto-settle-inactive-threads",

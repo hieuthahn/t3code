@@ -79,7 +79,7 @@ export const SidebarProjectGroupingMode = Schema.Literals([
 ]);
 export type SidebarProjectGroupingMode = typeof SidebarProjectGroupingMode.Type;
 const DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE: SidebarProjectGroupingMode = "repository";
-export const SidebarCompactGroupBy = Schema.Literals(["time", "project"]);
+export const SidebarCompactGroupBy = Schema.Literals(["time", "project", "status"]);
 export type SidebarCompactGroupBy = typeof SidebarCompactGroupBy.Type;
 export const MIN_SIDEBAR_THREAD_PREVIEW_COUNT = 1;
 export const MAX_SIDEBAR_THREAD_PREVIEW_COUNT = 15;

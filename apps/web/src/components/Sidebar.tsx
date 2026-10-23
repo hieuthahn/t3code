@@ -174,6 +174,7 @@ import {
   fanoutGroupMarker,
   timeBucketMarker,
   projectBucketMarker,
+  statusBucketMarker,
   settledGroupIdOfMarker,
   settledGroupMarker,
   sidebarMarkerId,
@@ -243,6 +244,7 @@ import {
   fanoutRowThreads,
   resolveFanoutGroupIds,
 } from "./sidebar/fanoutGroups";
+import { bucketByStatus, sidebarStatusBucketOf } from "./sidebar/sidebarStatusBuckets";
 import {
   bucketByTime,
   countByTimeBucket,
@@ -533,6 +535,7 @@ function useSidebarThreads(input: {
         marker,
         label: bucket.label,
         projectGroupId: null,
+        statusBucket: null,
         pinned: false,
         threadCount: threadCountByBucket.get(bucket.bucket) ?? bucket.items.length,
         ...bucketRowsOf(marker, bucket.items),
@@ -564,12 +567,29 @@ function useSidebarThreads(input: {
         marker,
         label: group.label,
         projectGroupId: group.id,
+        statusBucket: null,
         pinned: pinnedProjectIds.includes(group.id),
         threadCount: threadCountByGroupId.get(group.id) ?? group.threads.length,
         ...bucketRowsOf(marker, group.threads),
       };
     });
   };
+  const statusBucketRowsOf = (list: readonly EnvironmentThreadShell[], section: SidebarSection) =>
+    bucketByStatus(list, sidebarStatusBucketOf, (thread) =>
+      fanoutGroupIdByKey.get(threadShellKey(thread)),
+    ).map((bucket) => {
+      const marker = statusBucketMarker(section, bucket.bucket);
+      return {
+        marker,
+        label: bucket.label,
+        projectGroupId: null,
+        statusBucket: bucket.bucket,
+        pinned: false,
+        threadCount: bucket.items.length,
+        ...bucketRowsOf(marker, bucket.items),
+      };
+    });
+  // Settled threads have all finished, so status grouping leaves the shelf grouped by date.
   const compactBucketRowsOf = compactGroupBy === "project" ? projectBucketRowsOf : timeBucketRowsOf;
   const settledProjectGroups =
     settledGroupsEnabled && !compactModeEnabled
@@ -631,9 +651,11 @@ function useSidebarThreads(input: {
     ? workingThreads
     : routeThreadOnly(workingThreads, routeRowThreadKey);
   const pinnedRows = fanoutRowsOf(pinnedThreads);
-  const activeBuckets = compactModeEnabled
-    ? compactBucketRowsOf(activeThreads, "active", sidebarThreadTimeMs)
-    : null;
+  const activeBuckets = !compactModeEnabled
+    ? null
+    : compactGroupBy === "status"
+      ? statusBucketRowsOf(activeThreads, "active")
+      : compactBucketRowsOf(activeThreads, "active", sidebarThreadTimeMs);
   const activeRows =
     activeBuckets !== null
       ? activeBuckets.flatMap((bucket) => bucket.rows)
@@ -3577,6 +3599,7 @@ export default function Sidebar() {
                                   threadCount={compactBucket.threadCount}
                                   expanded={compactBucket.expanded}
                                   onToggle={() => toggleBucket(compactBucket.marker)}
+                                  status={compactBucket.statusBucket ?? undefined}
                                   project={
                                     compactBucket.projectGroupId === null
                                       ? undefined

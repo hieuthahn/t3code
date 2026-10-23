@@ -25,6 +25,13 @@ import {
   type SidebarListMarker,
 } from "../Sidebar.logic";
 import { SIDEBAR_SORTABLE_DRAG_DISABLED } from "./SidebarThreadRow";
+import type { SidebarStatusBucket } from "./sidebarStatusBuckets";
+
+const STATUS_BUCKET_DOT_CLASSES: Record<SidebarStatusBucket, string> = {
+  "needs-input": "bg-amber-500 dark:bg-amber-300/90",
+  working: "bg-sky-500 dark:bg-sky-300/80",
+  completed: "bg-emerald-500 dark:bg-emerald-300/90",
+};
 
 function SortableSidebarMarker(props: {
   marker: SidebarListMarker;
@@ -189,6 +196,7 @@ export function SidebarBucketHeader(props: {
   expanded: boolean;
   onToggle: () => void;
   project?: ProjectFaviconProject | null | undefined;
+  status?: SidebarStatusBucket | undefined;
   pinned?: boolean | undefined;
   onPinnedChange?: ((pinned: boolean) => void) | undefined;
   onContextMenu?: ((position: { x: number; y: number }) => void) | undefined;
@@ -202,6 +210,7 @@ export function SidebarBucketHeader(props: {
     | undefined;
 }) {
   const isProject = props.project !== undefined;
+  const isNamedGroup = isProject || props.status !== undefined;
   const canPin = isProject && props.onPinnedChange !== undefined;
   const reorder = isProject ? props.reorder : undefined;
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
@@ -214,8 +223,8 @@ export function SidebarBucketHeader(props: {
     <SortableSidebarMarker
       marker={props.marker}
       data-testid="sidebar-bucket-header"
-      data-kind={isProject ? "project" : "date"}
-      className={cn("mx-0.5 h-7", isProject && "not-first:h-9")}
+      data-kind={isProject ? "project" : props.status !== undefined ? "status" : "date"}
+      className={cn("mx-0.5 h-7", isNamedGroup && "not-first:h-9")}
     >
       <div
         data-project-group={reorder?.groupId}
@@ -237,7 +246,7 @@ export function SidebarBucketHeader(props: {
           onKeyDown={handleKeyDown}
           className={cn(
             "flex h-full w-full cursor-pointer items-end gap-1.5 rounded-md px-2 pb-1 text-left text-xs outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-            isProject
+            isNamedGroup
               ? "font-semibold text-sidebar-foreground"
               : "font-medium text-sidebar-muted-foreground hover:text-sidebar-foreground",
           )}
@@ -255,6 +264,12 @@ export function SidebarBucketHeader(props: {
               ) : (
                 <FolderIcon className="size-3.5 text-sidebar-muted-foreground" />
               )}
+            </span>
+          ) : props.status !== undefined ? (
+            <span aria-hidden className="mb-px flex size-3.5 shrink-0 items-center justify-center">
+              <span
+                className={cn("size-1.5 rounded-full", STATUS_BUCKET_DOT_CLASSES[props.status])}
+              />
             </span>
           ) : null}
           {isProject ? (
@@ -277,7 +292,7 @@ export function SidebarBucketHeader(props: {
           <span
             className={cn(
               "flex items-end gap-1.5",
-              isProject && "ms-auto",
+              isNamedGroup && "ms-auto",
               canPin &&
                 "transition-opacity group-hover/bucket:opacity-0 group-has-[:focus-visible]/bucket:opacity-0",
             )}

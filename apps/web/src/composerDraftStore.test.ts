@@ -1359,6 +1359,23 @@ describe("composerDraftStore modelSelection", () => {
     expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
   });
 
+  it("keeps an account pin picked for the model the live thread already runs", () => {
+    const h = modelReconciliationHarness(TEST_ENVIRONMENT_ID, threadId);
+    const pinned = { ...h.model(), accountChoice: "pinned" as const };
+    useComposerDraftStore.getState().setModelSelection(threadRef, pinned, {
+      explicit: true,
+      replaceOptions: true,
+    });
+    h.flush();
+    expect(
+      draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionByProvider[pinned.instanceId]
+        ?.accountChoice,
+    ).toBe("pinned");
+
+    h.update({ modelSelection: pinned });
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
+  });
+
   it("releases a seeded pick once the live thread runs on another account", () => {
     const h = modelReconciliationHarness(TEST_ENVIRONMENT_ID, threadId, "cached");
     const store = useComposerDraftStore.getState();

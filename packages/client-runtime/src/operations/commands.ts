@@ -25,6 +25,7 @@ import {
   type RuntimeRequestId,
   type ThreadId,
   type ThreadEnvMode,
+  type TurnItemId,
   type UploadChatAttachment,
 } from "@t3tools/contracts";
 import { modelSelectionCommandType } from "@t3tools/shared/model";
@@ -198,6 +199,12 @@ export interface RespondToThreadUserInputInput extends ThreadCommandInput {
 
 export interface DismissThreadUserInputInput extends ThreadCommandInput {
   readonly requestId: RuntimeRequestId;
+}
+
+export interface DecideThreadChildPlanInput extends ThreadCommandInput {
+  readonly turnItemId: TurnItemId;
+  readonly revision: number;
+  readonly approvedKeys: ReadonlyArray<string>;
 }
 
 export interface RevertThreadCheckpointInput extends ThreadCommandInput {
@@ -907,6 +914,19 @@ export const dismissThreadUserInput = Effect.fn("EnvironmentCommands.dismissThre
       commandId: yield* allocateCommandId(input),
       threadId: input.threadId,
       requestId: input.requestId,
+    });
+  },
+);
+
+export const decideThreadChildPlan = Effect.fn("EnvironmentCommands.decideThreadChildPlan")(
+  function* (input: DecideThreadChildPlanInput) {
+    return yield* dispatch({
+      type: "child_plan.decide",
+      commandId: yield* allocateCommandId(input),
+      threadId: input.threadId,
+      turnItemId: input.turnItemId,
+      revision: input.revision,
+      approvedKeys: input.approvedKeys,
     });
   },
 );

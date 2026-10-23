@@ -804,6 +804,64 @@ export const OrchestratorMcpRequestSecretResult = Schema.Union([
 ]);
 export type OrchestratorMcpRequestSecretResult = typeof OrchestratorMcpRequestSecretResult.Type;
 
+export const OrchestratorMcpProposedTask = Schema.Struct({
+  key: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(64),
+    Schema.isPattern(/^[a-z0-9][a-z0-9_-]*$/),
+  ).annotate({
+    description: "Short name for this child within the proposal, e.g. 'api' or 'ui'.",
+  }),
+  title: OrchestratorMcpTitle.annotate({ description: "What this child does, shown on the card." }),
+  task: OrchestratorMcpDelegateTaskInput.fields.task,
+  role: OrchestratorMcpDelegateTaskInput.fields.role,
+  isolation: OrchestratorMcpDelegateTaskInput.fields.isolation,
+  target: OrchestratorMcpDelegateTaskInput.fields.target,
+  runtimeMode: OrchestratorMcpDelegateTaskInput.fields.runtimeMode,
+  interactionMode: OrchestratorMcpDelegateTaskInput.fields.interactionMode,
+});
+export type OrchestratorMcpProposedTask = typeof OrchestratorMcpProposedTask.Type;
+
+export const OrchestratorMcpProposeTasksInput = Schema.Struct({
+  tasks: Schema.Array(OrchestratorMcpProposedTask).check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(6),
+  ),
+  reason: TrimmedNonEmptyString.annotate({
+    description: "One or two sentences on why the work splits this way, shown on the card.",
+  }),
+  timeoutMs: Schema.optional(
+    Schema.Int.check(Schema.isBetween({ minimum: 1_000, maximum: 60 * 60 * 1_000 })),
+  ).annotate({
+    description: "How long to wait for the user. Default 10 minutes; the card closes after it.",
+  }),
+  clientRequestId: Schema.optional(OrchestratorMcpClientRequestId).annotate({
+    description:
+      "Reuse when retrying a call that lost its result, so the user sees one card and each approved child starts once.",
+  }),
+});
+export type OrchestratorMcpProposeTasksInput = typeof OrchestratorMcpProposeTasksInput.Type;
+
+export const OrchestratorMcpProposeTasksResult = Schema.Struct({
+  status: Schema.Literals([
+    "approved",
+    "partially_approved",
+    "declined",
+    "cancelled",
+    "timed_out",
+  ]).annotate({
+    description:
+      "cancelled: the request ended with the run. timed_out: nobody answered; the card is closed.",
+  }),
+  started: Schema.Array(
+    Schema.Struct({ key: Schema.String, taskId: NodeId, childThreadId: Schema.NullOr(ThreadId) }),
+  ).annotate({ description: "Approved children that started; follow them with task_status." }),
+  declinedKeys: Schema.Array(Schema.String),
+  failed: Schema.Array(Schema.Struct({ key: Schema.String, message: Schema.String })).annotate({
+    description: "Approved children that could not start, with why.",
+  }),
+});
+export type OrchestratorMcpProposeTasksResult = typeof OrchestratorMcpProposeTasksResult.Type;
+
 export const OrchestratorMcpEnvironmentLinkInput = Schema.Struct({
   environmentId: Schema.optional(EnvironmentId).annotate({
     description:

@@ -14,6 +14,8 @@ import {
   OrchestratorMcpDeleteScheduledTaskInput,
   OrchestratorMcpDeleteScheduledTaskResult,
   OrchestratorMcpEnvironmentTarget,
+  OrchestratorMcpProposeTasksInput,
+  OrchestratorMcpProposeTasksResult,
   OrchestratorMcpRequestSecretInput,
   OrchestratorMcpRequestSecretResult,
   OrchestratorMcpChildReportInput,
@@ -202,6 +204,18 @@ const RequestSecretTool = Tool.make("request_secret", {
   .annotate(Tool.Title, "Request a secret from the user")
   .annotate(Tool.Destructive, false);
 
+const ProposeTasksTool = Tool.make("propose_tasks", {
+  description:
+    "Propose up to six child sessions on a card in this thread and wait while the user picks which start. Nothing starts before the user decides; only the user can decide, and you get the decision as this tool's result. Each approved child starts as delegate_task would start it, asynchronously, so follow it with task_status. Use it instead of delegate_task when the user should choose which parts of a split run in parallel. Give each child a short key and a self-contained task.",
+  parameters: OrchestratorMcpProposeTasksInput,
+  success: OrchestratorMcpProposeTasksResult,
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies,
+})
+  .annotate(Tool.Title, "Propose child sessions to the user")
+  .annotate(Tool.Destructive, false);
+
 const TaskReportTool = Tool.make("task_report", {
   description:
     "Only for a thread started by delegate_task. Report on your own task to the parent thread that delegated it: call it with status working at milestones, blocked or needs_decision when you cannot go on alone, and done or failed just before you end. Each call replaces your previous report. Name every check in tests with its real outcome, and put decisions you need in questions. The server adds what git shows in your checkout (branch, commits ahead and behind the parent's branch, changed files), so the parent sees your claim next to the facts. A question with audience parent goes to the delegating agent; audience user goes to the person.",
@@ -362,6 +376,7 @@ export const OrchestratorToolkit = Toolkit.make(
   UpdateScheduledTaskTool,
   DeleteScheduledTaskTool,
   RequestSecretTool,
+  ProposeTasksTool,
   TaskReportTool,
   CreateThreadsTool,
   ThreadListTool,

@@ -418,7 +418,7 @@ it.effect("cancels a stale waiting run when no checkpoint capture can finish it"
   }).pipe(Effect.provide(layer));
 });
 
-it.effect("recovery closes a secret card's form but leaves a link card open", () => {
+it.effect("recovery closes secret and proposal cards but leaves a link card open", () => {
   const threadId = ThreadId.make("thread_secret_recovery");
   const runId = RunId.make("run_secret_recovery");
   let committedInput: Parameters<EventSink.EventSinkV2["Service"]["commitCommand"]>[0] | null =
@@ -457,6 +457,19 @@ it.effect("recovery closes a secret card's form but leaves a link card open", ()
         url: "https://box.example.ts.net",
         reason: "Run the suite there.",
       },
+      {
+        id: "turn-item:child-plan:recovery",
+        threadId,
+        runId,
+        nodeId: null,
+        type: "child_plan_request",
+        status: "waiting",
+        planId: "child-plan:recovery",
+        revision: 1,
+        planStatus: "pending",
+        children: [],
+        planDecision: null,
+      },
     ],
   } as unknown as OrchestrationV2ThreadProjection;
   const layer = ProviderRuntimeRecovery.layer.pipe(
@@ -493,6 +506,10 @@ it.effect("recovery closes a secret card's form but leaves a link card open", ()
     const secret = cards.find((card) => card.type === "secret_request");
     assert.equal(secret?.status, "cancelled");
     assert.equal(secret?.type === "secret_request" ? secret.secretStatus : null, "cancelled");
+    // The agent waiting on the proposal is gone, so nobody could start its children.
+    const plan = cards.find((card) => card.type === "child_plan_request");
+    assert.equal(plan?.status, "cancelled");
+    assert.equal(plan?.type === "child_plan_request" ? plan.planStatus : null, "cancelled");
     // Nothing in memory waits on a link card; the user can still answer it.
     assert.equal(
       cards.some((card) => card.type === "link_request"),

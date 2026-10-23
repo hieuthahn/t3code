@@ -1237,7 +1237,7 @@ export const ServerSettings = Schema.Struct({
   snoozeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   autoResumeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   limitedThreadSwitch: LimitedThreadSwitchMode.pipe(
-    Schema.withDecodingDefault(Effect.succeed("ask" as const)),
+    Schema.withDecodingDefault(Effect.succeed("auto" as const)),
   ),
   /** Show one model row per account group in the model picker and pick the account itself. */
   modelPickerMergeAccounts: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),

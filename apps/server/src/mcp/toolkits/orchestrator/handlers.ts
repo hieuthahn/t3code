@@ -99,6 +99,13 @@ const handlers = {
       return yield* service.requestSecret(scope, input);
     }),
   ),
+  propose_tasks: McpToolAccess.actsAsCaller((input) =>
+    Effect.gen(function* () {
+      const scope = yield* McpInvocationContext.McpInvocationContext;
+      const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+      return yield* service.proposeTasks(scope, input);
+    }),
+  ),
   task_report: McpToolAccess.actsAsCaller((input) =>
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.McpInvocationContext;

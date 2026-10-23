@@ -15,6 +15,8 @@ export interface TeamTick {
   readonly workers: ReadonlyArray<WatchedThread>;
   readonly runningAssignments: number;
   readonly startableAssignments: number;
+  /** A wake already went out after the architect's latest run. */
+  readonly wokeForLatestRun: boolean;
   readonly openAssignments: number;
   readonly stalls: number;
   /** The architect run the last stall was counted for, so one run never counts twice. */
@@ -41,7 +43,9 @@ export function decideTeamTick(tick: TeamTick): ReadonlyArray<TeamAction> {
   const { architect } = tick;
   if (architect.hasActiveRun || architect.waitingOnUser) return interrupts;
   if (tick.startableAssignments > 0) {
-    return [...interrupts, { type: "wake_architect", reason: "start_queued" }];
+    return tick.wokeForLatestRun
+      ? interrupts
+      : [...interrupts, { type: "wake_architect", reason: "start_queued" }];
   }
   if (tick.runningAssignments > 0) return interrupts;
   if (architect.latestRunId === tick.lastStallRunId) return interrupts;

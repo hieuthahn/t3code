@@ -9,8 +9,6 @@ import {
 import { discardComposerDraft } from "../lib/discardComposerDraft";
 import { requestCustomSnooze } from "./CustomSnoozeDialog";
 import { useAtomValue } from "@effect/atom-react";
-import * as Option from "effect/Option";
-import { Atom } from "effect/reactivity";
 import * as Schema from "effect/Schema";
 import {
   DndContext,
@@ -121,7 +119,6 @@ import {
   useServerConfigs,
   useQuietThreadShells,
 } from "../state/entities";
-import { environmentPresentations } from "../state/presentation";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { environmentProjects } from "../state/projects";
 import { threadEnvironment } from "../state/threads";
@@ -184,7 +181,6 @@ import { SidebarDragLifecycle, SidebarPointerSensor } from "./Sidebar.pointer";
 import { createSidebarListMotion } from "./Sidebar.motion";
 import { resolveSnoozePresets, snoozeWakeLabel, type SnoozePreset } from "./Sidebar.snooze";
 import { ProjectFavicon } from "./ProjectFavicon";
-import { deriveProviderEntriesByEnvironment } from "../providerInstances";
 import { useStableCallback } from "../hooks/useStableCallback";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button } from "./ui/button";
@@ -239,57 +235,7 @@ import {
   fanoutRowThreads,
   resolveFanoutGroupIds,
 } from "./sidebar/fanoutGroups";
-
-function sameSidebarProviderEntries(
-  left: ReadonlyMap<string, SidebarProviderEntry>,
-  right: ReadonlyMap<string, SidebarProviderEntry>,
-): boolean {
-  if (left.size !== right.size) return false;
-  for (const [instanceId, entry] of right) {
-    const other = left.get(instanceId);
-    if (
-      other === undefined ||
-      other.driverKind !== entry.driverKind ||
-      other.enabled !== entry.enabled ||
-      other.displayName !== entry.displayName ||
-      other.accentColor !== entry.accentColor ||
-      other.acpRegistryAgentId !== entry.acpRegistryAgentId ||
-      other.acpRegistryIconUrl !== entry.acpRegistryIconUrl ||
-      other.models !== entry.models
-    ) {
-      return false;
-    }
-  }
-  return true;
-}
-
-// Threads on non-primary environments (T3 Connect, hosted) resolve their
-// provider entry from their own environment's config: default instance ids
-// are driver slugs, so a flat map would collide across environments.
-const sidebarProviderEntriesAtom = Atom.make((get) => {
-  const providersByEnvironment = get(environmentPresentations.providersByEnvironmentAtom);
-  const derived = deriveProviderEntriesByEnvironment(
-    [...get(environmentPresentations.serverConfigsAtom)].map(
-      ([environmentId, config]) =>
-        [environmentId, providersByEnvironment.get(environmentId) ?? [], config.settings] as const,
-    ),
-  );
-  const previous = Option.getOrNull(
-    get.self<ReadonlyMap<string, ReadonlyMap<string, SidebarProviderEntry>>>(),
-  );
-  const next = new Map<string, ReadonlyMap<string, SidebarProviderEntry>>();
-  let changed = previous === null || previous.size !== derived.size;
-  for (const [environmentId, entries] of derived) {
-    const prior = previous?.get(environmentId);
-    if (prior !== undefined && sameSidebarProviderEntries(prior, entries)) {
-      next.set(environmentId, prior);
-    } else {
-      next.set(environmentId, entries);
-      changed = true;
-    }
-  }
-  return !changed && previous !== null ? previous : next;
-}).pipe(Atom.withLabel("sidebar-provider-entries"));
+import { sidebarProviderEntriesAtom } from "./sidebar/sidebarProviderEntries";
 
 const EMPTY_PROVIDER_ENTRIES: ReadonlyMap<string, SidebarProviderEntry> = new Map();
 // Collapsed shelves share one empty list so a route change alone does not
@@ -3363,6 +3309,12 @@ export default function Sidebar() {
                                   memberCount={fanoutGroup.memberKeys.length}
                                   expanded={!fanoutGroup.collapsed}
                                   onToggle={() => toggleFanoutGroup(fanoutGroup.id)}
+                                  onCompare={() =>
+                                    void router.navigate({
+                                      to: "/compare",
+                                      search: { threads: fanoutGroup.memberKeys.join(",") },
+                                    })
+                                  }
                                   onSelectMembers={() =>
                                     useThreadSelectionStore
                                       .getState()

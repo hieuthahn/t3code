@@ -1,7 +1,7 @@
 import { CollapsibleSectionHeader } from "../ui/collapsible-section-header";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ChevronRightIcon } from "lucide-react";
+import { ChevronRightIcon, Columns3Icon } from "lucide-react";
 import { type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { cn } from "~/lib/utils";
 import {
@@ -172,6 +172,7 @@ export function SidebarFanoutGroupHeader(props: {
   expanded: boolean;
   onToggle: () => void;
   onSelectMembers: () => void;
+  onCompare: () => void;
 }) {
   const handleClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
     if (event.metaKey || event.ctrlKey || event.shiftKey) props.onSelectMembers();
@@ -181,27 +182,37 @@ export function SidebarFanoutGroupHeader(props: {
     <SortableSidebarMarker
       marker={props.marker}
       data-testid="sidebar-fanout-group-header"
-      className="mx-0.5"
+      className="group/fanout-header mx-0.5"
     >
-      <button
-        type="button"
-        aria-expanded={props.expanded}
-        onClick={handleClick}
-        className="flex h-8 w-full cursor-pointer items-center gap-1.5 rounded-md px-2 text-left text-sm text-sidebar-foreground outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-      >
-        <ChevronRightIcon
-          aria-hidden
-          className={cn(
-            "size-3.5 shrink-0 text-sidebar-muted-foreground transition-transform motion-reduce:transition-none",
-            props.expanded && "rotate-90",
-          )}
-        />
-        <span className="min-w-0 flex-1 truncate font-medium">{props.label}</span>
-        <span className="shrink-0 text-xs tabular-nums text-sidebar-muted-foreground">
-          <span aria-hidden>×{props.memberCount}</span>
-          <span className="sr-only">{props.memberCount} models</span>
-        </span>
-      </button>
+      <div className="flex h-8 items-center rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-row-hover has-[button:focus-visible]:bg-sidebar-row-hover">
+        <button
+          type="button"
+          aria-expanded={props.expanded}
+          onClick={handleClick}
+          className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md pl-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        >
+          <ChevronRightIcon
+            aria-hidden
+            className={cn(
+              "size-3.5 shrink-0 text-sidebar-muted-foreground transition-transform motion-reduce:transition-none",
+              props.expanded && "rotate-90",
+            )}
+          />
+          <span className="min-w-0 flex-1 truncate font-medium">{props.label}</span>
+          <span className="shrink-0 pr-1 text-xs tabular-nums text-sidebar-muted-foreground">
+            <span aria-hidden>×{props.memberCount}</span>
+            <span className="sr-only">{props.memberCount} models</span>
+          </span>
+        </button>
+        <button
+          type="button"
+          aria-label={`Compare ${props.memberCount} models for ${props.label}`}
+          onClick={props.onCompare}
+          className="mr-1 inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-sm text-sidebar-muted-foreground opacity-0 outline-none transition-opacity group-hover/fanout-header:opacity-100 hover:text-sidebar-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none"
+        >
+          <Columns3Icon aria-hidden className="size-3.5" />
+        </button>
+      </div>
     </SortableSidebarMarker>
   );
 }

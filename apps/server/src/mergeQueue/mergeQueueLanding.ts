@@ -9,9 +9,11 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import { resolveProjectScripts } from "@t3tools/shared/projectScripts";
 import { ChildProcess, type ChildProcessSpawner } from "effect/process";
 
 import type * as ProjectService from "../project/ProjectService.ts";
+import type * as ServerSettings from "../serverSettings.ts";
 import type * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { encodeGateRuns, tail, type MergeQueueRow } from "./mergeQueueRows.ts";
 
@@ -56,13 +58,14 @@ export const makeMergeQueueLanding = (deps: {
   readonly git: MergeQueueGit;
   readonly spawner: ChildProcessSpawner.ChildProcessSpawner["Service"];
   readonly projects: ProjectService.ProjectService["Service"];
+  readonly settings: ServerSettings.ServerSettingsService["Service"];
   readonly update: (
     row: MergeQueueRow,
     fields: Record<string, string | null>,
   ) => Effect.Effect<void, MergeQueueError>;
 }) => {
   const { git, gitOutput } = deps.git;
-  const { spawner, projects, update } = deps;
+  const { spawner, projects, settings, update } = deps;
 
   const runGate = Effect.fn("MergeQueue.runGate")(function* (script: ProjectScript, cwd: string) {
     const startedAt = yield* Clock.currentTimeMillis;
@@ -169,9 +172,13 @@ export const makeMergeQueueLanding = (deps: {
 
     yield* update(queued, { status: "gating" });
     const project = yield* lift("gate", projects.getById(queued.project_id));
+    const savedSettings = yield* lift("gate", settings.getSettings);
     const gates = Option.match(project, {
       onNone: () => [],
-      onSome: (value) => value.scripts.filter((script) => script.runAsMergeGate === true),
+      onSome: (value) =>
+        resolveProjectScripts(savedSettings, value).filter(
+          (script) => script.runAsMergeGate === true,
+        ),
     });
     const runs: Array<MergeQueueGateRun> = [];
     for (const script of gates) {

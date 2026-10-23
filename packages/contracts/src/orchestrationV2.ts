@@ -857,6 +857,8 @@ export const OrchestrationV2Subagent = Schema.Struct({
   ]),
   progress: Schema.optional(Schema.String),
   workflow: Schema.optional(OrchestrationV2SubagentWorkflow),
+  /** The commit the child's checkout stood at when its task started. */
+  startCommitSha: Schema.optional(Schema.String),
   /** The latest structured report an app-owned child sent about its work. */
   report: Schema.optional(OrchestrationV2ChildReport),
   result: Schema.NullOr(Schema.String),
@@ -3175,6 +3177,7 @@ export const OrchestrationV2Command = Schema.Union([
     runtimeMode: RuntimeMode,
     interactionMode: ProviderInteractionMode,
     workspaceStrategy: Schema.optional(OrchestrationV2ThreadLaunchWorkspaceStrategy),
+    startCommitSha: Schema.optional(TrimmedNonEmptyString),
     // Omitted behaves as "settled_only" (no wake while the parent has a live
     // run); producers that want fire-and-forget wakes must set "always".
     completionWake: Schema.optional(Schema.Literals(["always", "settled_only"])),

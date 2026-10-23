@@ -2009,6 +2009,7 @@ const make = Effect.gen(function* () {
       const observed = yield* readChildReportGitFacts(gitDriver.execute, {
         cwd: child.thread.worktreePath ?? project.workspaceRoot,
         baseRef: parentProjection.thread.branch,
+        ...(task.startCommitSha === undefined ? {} : { startCommitSha: task.startCommitSha }),
       });
       const key = yield* requestKey(undefined);
       yield* threadManagement
@@ -2325,6 +2326,22 @@ const make = Effect.gen(function* () {
         }
         workspaceStrategy = { type: "worktree", baseRef: base.commitSha, startFromOrigin: false };
       }
+      // A shared child works on the parent's branch, so its report counts from this commit.
+      const startCommitSha =
+        workspaceStrategy?.type === "worktree"
+          ? workspaceStrategy.baseRef
+          : isRetryOfAcceptedDelegation
+            ? undefined
+            : yield* requireProject(parent.thread.projectId).pipe(
+                Effect.flatMap((project) =>
+                  gitDriver.resolveCommit({
+                    cwd: parent.thread.worktreePath ?? project.workspaceRoot,
+                    revision: "HEAD",
+                  }),
+                ),
+                Effect.map((head) => head.commitSha),
+                Effect.orElseSucceed(() => undefined),
+              );
       // ThreadManagementService.dispatch is the chokepoint for this command
       // type's own enablement check, using the same command id and its
       // receipt-replay exemption, so no separate assert runs here.
@@ -2339,6 +2356,7 @@ const make = Effect.gen(function* () {
           parentNodeId: parentRun.rootNodeId,
           task: taskPrompt(input),
           ...(input.title === undefined ? {} : { title: input.title }),
+          ...(startCommitSha === undefined ? {} : { startCommitSha }),
           modelSelection: target.modelSelection,
           runtimeMode,
           interactionMode,

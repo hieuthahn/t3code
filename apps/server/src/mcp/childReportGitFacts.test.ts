@@ -52,6 +52,60 @@ it.effect("reads branch, distance from the base and changed files from the check
   }),
 );
 
+const sharedCheckout = {
+  "rev-parse --is-inside-work-tree": "true\n",
+  "rev-parse --abbrev-ref HEAD": "feat/base\n",
+  "rev-parse HEAD": "1111111111111111111111111111111111111111\n",
+  "merge-base HEAD feat/base": "1111111111111111111111111111111111111111\n",
+  "merge-base HEAD 3333333333333333333333333333333333333333":
+    "3333333333333333333333333333333333333333\n",
+  "rev-list --left-right --count 3333333333333333333333333333333333333333...HEAD": "0\t2\n",
+  "status --porcelain": "",
+  "diff --no-renames --name-status 3333333333333333333333333333333333333333":
+    "M\tapps/web/src/a.ts\n",
+  "diff --no-renames --numstat 3333333333333333333333333333333333333333":
+    "7\t1\tapps/web/src/a.ts\n",
+};
+
+it.effect("compares a child on the parent's own branch with the commit its task started at", () =>
+  Effect.gen(function* () {
+    for (const baseRef of ["feat/base", null]) {
+      const facts = yield* readChildReportGitFacts(fakeGit(sharedCheckout), {
+        cwd: "/repo",
+        baseRef,
+        startCommitSha: "3333333333333333333333333333333333333333",
+      });
+      assert.deepStrictEqual(
+        {
+          baseRef: facts?.baseRef,
+          baseSha: facts?.baseSha,
+          aheadBy: facts?.aheadBy,
+          files: facts?.filesChanged.map((file) => file.path),
+        },
+        {
+          baseRef: "333333333333",
+          baseSha: "3333333333333333333333333333333333333333",
+          aheadBy: 2,
+          files: ["apps/web/src/a.ts"],
+        },
+        String(baseRef),
+      );
+    }
+  }),
+);
+
+it.effect("keeps the parent's branch as the base for a child on a branch of its own", () =>
+  Effect.gen(function* () {
+    const facts = yield* readChildReportGitFacts(fakeGit(repository), {
+      cwd: "/repo",
+      baseRef: "feat/base",
+      startCommitSha: "3333333333333333333333333333333333333333",
+    });
+    assert.strictEqual(facts?.baseRef, "feat/base");
+    assert.strictEqual(facts?.aheadBy, 3);
+  }),
+);
+
 it.effect("caps the file list and says it was cut", () =>
   Effect.gen(function* () {
     const facts = yield* readChildReportGitFacts(fakeGit(repository), {

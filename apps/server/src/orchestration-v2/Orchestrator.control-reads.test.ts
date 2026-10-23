@@ -1311,6 +1311,7 @@ it.effect("records each report from a delegated child with a rising revision", (
       parentRunId: parentRun.id,
       parentNodeId: parentRun.rootNodeId!,
       task: "Build the banner",
+      startCommitSha: "3333333333333333333333333333333333333333",
       completionWake: "settled_only",
       modelSelection,
       runtimeMode: "full-access",
@@ -1319,6 +1320,7 @@ it.effect("records each report from a delegated child with a rising revision", (
       creationSource: "mcp",
     });
     const task = (yield* projections.getThreadProjection(parentThreadId)).subagents[0]!;
+    assert.equal(task.startCommitSha, "3333333333333333333333333333333333333333");
     const observed = {
       branch: "update/banner",
       headSha: "1111111111111111111111111111111111111111",

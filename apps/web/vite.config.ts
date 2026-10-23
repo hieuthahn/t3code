@@ -91,7 +91,7 @@ const unitTestProject = {
   },
 } satisfies TestProjectInlineConfiguration;
 
-// Reads the production build in dist, so it runs only through `vp run test:bundle`.
+// Reads the production build in dist, so check:changed and CI run it after building.
 const bundleBudgetProject = {
   test: {
     name: "bundle",

@@ -25,6 +25,7 @@ import {
   shouldRenderThreadScopedToast,
 } from "./toast.logic";
 import { attentionToastOptions } from "./toastHistory.logic";
+import { useRecordToasts } from "./toastHistory";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip";
 import { useThreadRouteTarget } from "~/hooks/useThreadRouteTarget";
 
@@ -539,6 +540,7 @@ function Toasts({ position }: { position: ToastPosition }) {
   const { toasts } = Toast.useToastManager<ThreadToastData>();
   const activeThreadRef = useActiveThreadRefFromRoute();
   const [hovered, setHovered] = useState(false);
+  useRecordToasts(toasts);
   const isTop = position.startsWith("top");
   const visibleToasts = toasts.filter((toast) =>
     shouldRenderThreadScopedToast(toast.data, activeThreadRef),
@@ -700,6 +702,7 @@ function AnchoredToastProvider({ children, ...props }: Toast.Provider.Props) {
 
 function AnchoredToasts() {
   const { toasts } = Toast.useToastManager<ThreadToastData>();
+  useRecordToasts(toasts);
   const activeThreadRef = useActiveThreadRefFromRoute();
 
   return (

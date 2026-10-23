@@ -32,6 +32,7 @@ import type {
   OrchestrationV2ThreadShellSnapshot,
   OrchestrationV2ShellThreadStatus,
   OrchestrationV2ThreadShell,
+  OrchestrationV2ThreadShellUsage,
   OrchestrationV2ThreadProjection,
   OrchestrationV2TurnItem,
   ProjectId,
@@ -1662,6 +1663,12 @@ export function threadShellFromProjection(
       projection.providerThreads,
       projection.thread.activeProviderThreadId,
     ),
+    ...shellUsageField(
+      usageForShell({
+        threadId: projection.thread.id,
+        providerThreads: projection.providerThreads,
+      }),
+    ),
     itemCount: activeLocalTurnItems(projection).length,
     visibleItemCount: projection.visibleTurnItems.length,
     createdAt: projection.thread.createdAt,
@@ -1702,6 +1709,27 @@ function providerInstanceHistoryForShell(input: {
     }
   }
   return history;
+}
+
+const shellUsageField = (usage: OrchestrationV2ThreadShellUsage | null) =>
+  usage === null ? {} : { usage };
+
+function usageForShell(input: {
+  readonly threadId: ThreadId;
+  readonly providerThreads: ReadonlyArray<
+    OrchestrationV2ThreadProjection["providerThreads"][number]
+  >;
+}): OrchestrationV2ThreadShellUsage | null {
+  let usage: { totalTokens: number; costUsd: number | null } | null = null;
+  for (const { appThreadId, ownerNodeId, contextUsage } of input.providerThreads) {
+    if (appThreadId !== input.threadId || ownerNodeId !== null || !contextUsage) continue;
+    usage ??= { totalTokens: 0, costUsd: null };
+    usage.totalTokens += contextUsage.totalProcessedTokens ?? contextUsage.usedTokens;
+    if (contextUsage.cost?.currency === "USD") {
+      usage.costUsd = (usage.costUsd ?? 0) + contextUsage.cost.amount;
+    }
+  }
+  return usage;
 }
 
 function activeProviderGoalForShell(
@@ -1747,6 +1775,7 @@ type ShellThreadState = {
   readonly pendingBackgroundTasks: OrchestrationV2ThreadShell["pendingBackgroundTasks"];
   readonly providerInstanceHistory: OrchestrationV2ThreadShell["providerInstanceHistory"];
   readonly goal: OrchestrationV2ThreadShell["goal"];
+  readonly usage: OrchestrationV2ThreadShellUsage | null;
   readonly itemCount: number;
   readonly runlessItemCount: number;
   readonly updatedAt: OrchestrationV2ThreadProjection["updatedAt"];
@@ -1915,6 +1944,7 @@ function shellFromState(input: {
     pendingBackgroundTasks: input.state.pendingBackgroundTasks,
     providerInstanceHistory: input.state.providerInstanceHistory,
     goal: input.state.goal,
+    ...shellUsageField(input.state.usage),
     itemCount: input.state.itemCount,
     visibleItemCount: input.visibleItemCount,
     createdAt: input.state.thread.createdAt,
@@ -6371,6 +6401,10 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             providerThreadsByThreadId.get(thread.id) ?? [],
             thread.activeProviderThreadId,
           ),
+          usage: usageForShell({
+            threadId: thread.id,
+            providerThreads: providerThreadsByThreadId.get(thread.id) ?? [],
+          }),
           itemCount: row.item_count,
           runlessItemCount: row.runless_item_count,
           updatedAt: thread.updatedAt,

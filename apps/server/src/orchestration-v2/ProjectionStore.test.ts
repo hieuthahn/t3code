@@ -2327,6 +2327,94 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
     }),
   );
 
+  it.effect("sums the tokens and USD cost of the thread's own provider threads on the shell", () =>
+    Effect.gen(function* () {
+      const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+      const now = yield* DateTime.now;
+      const threadId = ThreadId.make("thread:shell-usage");
+      const quietThreadId = ThreadId.make("thread:shell-usage-quiet");
+      const applyThread = (id: ThreadId) =>
+        projectionStore.apply({
+          id: EventId.make(`event:shell-usage:${id}`),
+          type: "thread.created",
+          threadId: id,
+          occurredAt: now,
+          payload: {
+            createdBy: "user",
+            creationSource: "web",
+            id,
+            projectId: ProjectId.make("project:shell-usage"),
+            title: "Shell usage",
+            providerInstanceId,
+            modelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            activeProviderThreadId: null,
+            lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: id },
+            forkedFrom: null,
+            createdAt: now,
+            updatedAt: now,
+            archivedAt: null,
+            settledOverride: null,
+            settledAt: null,
+            lastVisitedAt: null,
+            deletedAt: null,
+          },
+        });
+      const applyProviderThread = (
+        suffix: string,
+        ownerNodeId: NodeId | null,
+        contextUsage: OrchestrationV2ProviderThread["contextUsage"],
+      ) =>
+        projectionStore.apply({
+          id: EventId.make(`event:shell-usage:${suffix}`),
+          type: "provider-thread.updated",
+          threadId,
+          driver,
+          occurredAt: now,
+          payload: {
+            id: ProviderThreadId.make(`provider-thread:shell-usage:${suffix}`),
+            driver,
+            providerInstanceId,
+            providerSessionId: null,
+            appThreadId: threadId,
+            ownerNodeId,
+            nativeThreadRef: null,
+            nativeConversationHeadRef: null,
+            status: "idle",
+            firstRunOrdinal: null,
+            lastRunOrdinal: null,
+            handoffIds: [],
+            forkedFrom: null,
+            contextUsage,
+            createdAt: now,
+            updatedAt: now,
+          },
+        });
+      yield* applyThread(threadId);
+      yield* applyThread(quietThreadId);
+      yield* applyProviderThread("first", null, {
+        usedTokens: 500,
+        totalProcessedTokens: 1_200,
+        cost: { amount: 0.3, currency: "USD" },
+      });
+      yield* applyProviderThread("second", null, { usedTokens: 300 });
+      yield* applyProviderThread("native-subagent", NodeId.make("node:shell-usage"), {
+        usedTokens: 9_000,
+        cost: { amount: 5, currency: "USD" },
+      });
+
+      const snapshot = yield* projectionStore.getShellSnapshot();
+      const expected = { totalTokens: 1_500, costUsd: 0.3 };
+      assert.deepEqual(snapshot.threads.find((thread) => thread.id === threadId)?.usage, expected);
+      assert.isUndefined(snapshot.threads.find((thread) => thread.id === quietThreadId)?.usage);
+      const projection = yield* projectionStore.getThreadProjection(threadId);
+      assert.deepEqual(ProjectionStore.threadShellFromProjection(projection).usage, expected);
+    }),
+  );
+
   // regression: #17141 shell snapshot decoding blocked other database reads
   it.effect("reads the shell snapshot first and decodes it in a separate step", () =>
     Effect.gen(function* () {

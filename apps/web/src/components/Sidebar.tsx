@@ -171,6 +171,7 @@ import {
   type SidebarListMarker,
   type SidebarSection,
   resolveSidebarRowThreadId,
+  describeChildSessions,
   fanoutGroupMarker,
   timeBucketMarker,
   projectBucketMarker,
@@ -245,6 +246,12 @@ import {
   resolveFanoutGroupIds,
 } from "./sidebar/fanoutGroups";
 import { bucketByStatus, sidebarStatusBucketOf } from "./sidebar/sidebarStatusBuckets";
+import {
+  attachLineageRows,
+  isNestedChildThread,
+  lineageGroupId,
+  resolveLineageChildren,
+} from "./sidebar/lineageRows";
 import {
   bucketByTime,
   countByTimeBucket,
@@ -494,21 +501,32 @@ function useSidebarThreads(input: {
   const { pinnedThreads, activeThreads, workingThreads, snoozedThreads, settledThreads } =
     partition;
   const fanoutGroupIdByKey = resolveFanoutGroupIds(threads, threadShellKey);
+  const lineageChildrenByParentKey = resolveLineageChildren(threads, threadShellKey);
   const collapsedFanoutGroupIdSet = compactModeEnabled
     ? new Set(
-        [...fanoutGroupIdByKey.values()].filter(
-          (groupId) => !expandedCompactFanoutGroupIds.includes(groupId),
-        ),
+        [
+          ...fanoutGroupIdByKey.values(),
+          ...[...lineageChildrenByParentKey.keys()].map(lineageGroupId),
+        ].filter((groupId) => !expandedCompactFanoutGroupIds.includes(groupId)),
       )
     : new Set(collapsedFanoutGroupIds);
   const fanoutRowsOf = (list: readonly EnvironmentThreadShell[]) =>
-    arrangeFanoutRows({
-      threads: list,
-      keyOf: threadShellKey,
-      groupIdByKey: fanoutGroupIdByKey,
-      collapsedGroupIds: collapsedFanoutGroupIdSet,
-      routeThreadKey: routeRowThreadKey,
-    });
+    attachLineageRows(
+      arrangeFanoutRows({
+        threads: list,
+        keyOf: threadShellKey,
+        groupIdByKey: fanoutGroupIdByKey,
+        collapsedGroupIds: collapsedFanoutGroupIdSet,
+        routeThreadKey: routeRowThreadKey,
+      }),
+      {
+        childrenByParentKey: lineageChildrenByParentKey,
+        keyOf: threadShellKey,
+        collapsedGroupIds: collapsedFanoutGroupIdSet,
+        routeThreadKey: routeRowThreadKey,
+        describeChildren: describeChildSessions,
+      },
+    );
   const bucketRowsOf = (marker: SidebarListMarker, items: readonly EnvironmentThreadShell[]) => {
     const collapsed = collapsedBucketMarkers.includes(marker);
     return {
@@ -803,9 +821,11 @@ function useSidebarThreads(input: {
     ),
     orderedThreadKeys: orderedThreads.map(threadShellKey),
     threadByKey: new Map(
-      [...orderedThreads, ...collapsedFanoutMembers].map(
-        (thread) => [threadShellKey(thread), thread] as const,
-      ),
+      [
+        ...orderedThreads,
+        ...collapsedFanoutMembers,
+        ...[...lineageChildrenByParentKey.values()].flat(),
+      ].map((thread) => [threadShellKey(thread), thread] as const),
     ),
     settledThreadKeys: new Set(settledThreads.map(threadShellKey)),
     snoozedThreadKeys: new Set(snoozedThreads.map(threadShellKey)),
@@ -3357,6 +3377,7 @@ export default function Sidebar() {
                             }
                             thread={thread}
                             nested={nested}
+                            childSession={nested && isNestedChildThread(thread)}
                             compact={compactModeEnabled}
                             variant={rowVariant}
                             variantAction={
@@ -3655,6 +3676,7 @@ export default function Sidebar() {
                                   marker={item.marker}
                                   label={fanoutGroup.label}
                                   memberCount={fanoutGroup.memberKeys.length}
+                                  lineage={fanoutGroup.lineageParentKey !== undefined}
                                   expanded={!fanoutGroup.collapsed}
                                   compact={compactModeEnabled}
                                   onToggle={() => toggleFanoutGroup(fanoutGroup.id)}

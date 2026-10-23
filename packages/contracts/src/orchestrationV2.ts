@@ -2001,6 +2001,12 @@ export const OrchestrationV2LatestVisibleMessageSummary = Schema.Struct({
 export type OrchestrationV2LatestVisibleMessageSummary =
   typeof OrchestrationV2LatestVisibleMessageSummary.Type;
 
+export const OrchestrationV2ThreadShellUsage = Schema.Struct({
+  totalTokens: NonNegativeInt,
+  costUsd: Schema.NullOr(Schema.Number),
+});
+export type OrchestrationV2ThreadShellUsage = typeof OrchestrationV2ThreadShellUsage.Type;
+
 export const OrchestrationV2ThreadShell = Schema.Struct({
   ...OrchestrationV2CreationFields,
   id: ThreadId,
@@ -2054,6 +2060,8 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
   goal: Schema.optional(Schema.NullOr(OrchestrationV2ProviderGoal)),
+  /** Tokens and USD cost the thread's own provider threads report; absent until one reports. */
+  usage: Schema.optional(OrchestrationV2ThreadShellUsage),
   itemCount: NonNegativeInt,
   visibleItemCount: NonNegativeInt,
   createdAt: Schema.DateTimeUtc,

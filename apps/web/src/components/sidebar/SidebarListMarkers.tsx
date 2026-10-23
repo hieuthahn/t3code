@@ -351,10 +351,13 @@ export function SidebarFanoutGroupHeader(props: {
   memberCount: number;
   expanded: boolean;
   compact?: boolean;
+  /** Heads a parent's child sessions, whose label already carries their count. */
+  lineage?: boolean;
   onToggle: () => void;
   onSelectMembers: () => void;
   onCompare: () => void;
 }) {
+  const members = props.lineage ? "child sessions" : "models";
   const handleClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
     if (event.metaKey || event.ctrlKey || event.shiftKey) props.onSelectMembers();
     else props.onToggle();
@@ -384,15 +387,28 @@ export function SidebarFanoutGroupHeader(props: {
               props.expanded && "rotate-90",
             )}
           />
-          <span className="min-w-0 flex-1 truncate font-medium">{props.label}</span>
-          <span className="shrink-0 pr-1 text-xs tabular-nums text-sidebar-muted-foreground">
-            <span aria-hidden>×{props.memberCount}</span>
-            <span className="sr-only">{props.memberCount} models</span>
+          <span
+            className={cn(
+              "min-w-0 flex-1 truncate",
+              props.lineage ? "text-xs text-sidebar-muted-foreground" : "font-medium",
+            )}
+          >
+            {props.label}
           </span>
+          {props.lineage ? null : (
+            <span className="shrink-0 pr-1 text-xs tabular-nums text-sidebar-muted-foreground">
+              <span aria-hidden>×{props.memberCount}</span>
+              <span className="sr-only">{props.memberCount} models</span>
+            </span>
+          )}
         </button>
         <button
           type="button"
-          aria-label={`Compare ${props.memberCount} models for ${props.label}`}
+          aria-label={
+            props.lineage
+              ? `Compare ${props.memberCount} ${members}`
+              : `Compare ${props.memberCount} ${members} for ${props.label}`
+          }
           onClick={props.onCompare}
           className="mr-1 inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-sm text-sidebar-muted-foreground opacity-0 outline-none transition-opacity group-hover/fanout-header:opacity-100 hover:text-sidebar-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none"
         >

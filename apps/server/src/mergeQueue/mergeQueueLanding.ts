@@ -2,6 +2,7 @@ import type {
   MergeQueueError,
   MergeQueueFailureStage,
   MergeQueueGateRun,
+  ProjectId,
   ProjectScript,
   ThreadId,
 } from "@t3tools/contracts";
@@ -53,6 +54,24 @@ export const makeMergeQueueGit = (driver: GitVcsDriver.GitVcsDriver["Service"]) 
 };
 
 export type MergeQueueGit = ReturnType<typeof makeMergeQueueGit>;
+
+/** The project's scripts marked as merge gates, with the environment's saved settings applied. */
+export const resolveMergeGates = (
+  projects: ProjectService.ProjectService["Service"],
+  settings: ServerSettings.ServerSettingsService["Service"],
+  projectId: ProjectId,
+) =>
+  Effect.gen(function* () {
+    const project = yield* projects.getById(projectId);
+    const savedSettings = yield* settings.getSettings;
+    return Option.match(project, {
+      onNone: (): ReadonlyArray<ProjectScript> => [],
+      onSome: (value) =>
+        resolveProjectScripts(savedSettings, value).filter(
+          (script) => script.runAsMergeGate === true,
+        ),
+    });
+  });
 
 /** Find the worktree, if any, that has `branch` checked out, from `git worktree list --porcelain`. */
 export const worktreeHolding = (porcelain: string, branch: string) =>
@@ -165,6 +184,13 @@ export const makeMergeQueueLanding = (deps: {
         `"${queued.child_title}" is still running, so the queue left its worktree alone. Queue it again once it stops.`,
       );
     }
+    const gates = yield* lift("gate", resolveMergeGates(projects, settings, queued.project_id));
+    if (gates.length === 0) {
+      return yield* stage(
+        "gate",
+        "This project has no merge gate any more, so the queue will not land the child unchecked. Mark a project script as a merge gate, then queue it again.",
+      );
+    }
     const trunkBefore = yield* lift(
       "update",
       gitOutput(queued.owner_checkout, ["rev-parse", `refs/heads/${queued.trunk_ref}`]),
@@ -188,15 +214,6 @@ export const makeMergeQueueLanding = (deps: {
     );
 
     yield* update(queued, { status: "gating" });
-    const project = yield* lift("gate", projects.getById(queued.project_id));
-    const savedSettings = yield* lift("gate", settings.getSettings);
-    const gates = Option.match(project, {
-      onNone: () => [],
-      onSome: (value) =>
-        resolveProjectScripts(savedSettings, value).filter(
-          (script) => script.runAsMergeGate === true,
-        ),
-    });
     const runs: Array<MergeQueueGateRun> = [];
     for (const script of gates) {
       const run = yield* runGate(script, queued.child_worktree);

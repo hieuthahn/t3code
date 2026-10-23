@@ -6,6 +6,7 @@ import * as SchemaGetter from "effect/SchemaGetter";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 
 import {
+  AuthSessionId,
   CheckpointId,
   CheckpointRef,
   CheckpointScopeId,
@@ -1077,6 +1078,16 @@ export function latestProviderTurnForAttempt<
   return latest;
 }
 
+/**
+ * Who answered a runtime request. The server stamps it from the connection the
+ * answer arrived on, so a client cannot claim to be the user.
+ */
+export const OrchestrationV2RuntimeRequestDecider = Schema.Union([
+  Schema.Struct({ actor: Schema.Literal("user"), authSessionId: AuthSessionId }),
+  Schema.Struct({ actor: Schema.Literal("agent"), threadId: Schema.NullOr(ThreadId) }),
+]);
+export type OrchestrationV2RuntimeRequestDecider = typeof OrchestrationV2RuntimeRequestDecider.Type;
+
 export const OrchestrationV2RuntimeRequest = Schema.Struct({
   id: RuntimeRequestId,
   nodeId: NodeId,
@@ -1096,6 +1107,7 @@ export const OrchestrationV2RuntimeRequest = Schema.Struct({
   resolvedAt: Schema.NullOr(Schema.DateTimeUtc),
   decision: Schema.optional(ProviderApprovalDecision),
   answers: Schema.optional(ProviderUserInputAnswers),
+  decidedBy: Schema.optional(OrchestrationV2RuntimeRequestDecider),
 });
 export type OrchestrationV2RuntimeRequest = typeof OrchestrationV2RuntimeRequest.Type;
 
@@ -1494,6 +1506,7 @@ export const OrchestrationV2TurnItem = Schema.Union([
     questions: Schema.Array(OrchestrationV2UserInputQuestion),
     questionAnswer: Schema.optional(UserInputAttachmentAnswerPayload),
     responseMode: Schema.optional(Schema.Literal("message")),
+    decidedBy: Schema.optional(OrchestrationV2RuntimeRequestDecider),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -1538,6 +1551,8 @@ export const OrchestrationV2TurnItem = Schema.Union([
     fullAccessOverride: Schema.optional(ProviderApprovalFullAccessOverride),
     appName: Schema.optional(Schema.String),
     options: Schema.optional(Schema.Array(ProviderApprovalOption)),
+    decision: Schema.optional(ProviderApprovalDecision),
+    decidedBy: Schema.optional(OrchestrationV2RuntimeRequestDecider),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -2264,6 +2279,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     questions: Schema.Array(OrchestrationV2UserInputQuestion),
     questionAnswer: Schema.optional(UserInputAttachmentAnswerPayload),
     responseMode: Schema.optional(Schema.Literal("message")),
+    decidedBy: Schema.optional(OrchestrationV2RuntimeRequestDecider),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
@@ -2308,6 +2324,8 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     fullAccessOverride: Schema.optional(ProviderApprovalFullAccessOverride),
     appName: Schema.optional(Schema.String),
     options: Schema.optional(Schema.Array(ProviderApprovalOption)),
+    decision: Schema.optional(ProviderApprovalDecision),
+    decidedBy: Schema.optional(OrchestrationV2RuntimeRequestDecider),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
@@ -3044,6 +3062,8 @@ export const OrchestrationV2Command = Schema.Union([
     decision: Schema.optional(ProviderApprovalDecision),
     answers: Schema.optional(ProviderUserInputAnswers),
     attachmentsByQuestionId: Schema.optional(UserInputAttachments),
+    /** Set by the server; one sent by a client is replaced. */
+    decidedBy: Schema.optional(OrchestrationV2RuntimeRequestDecider),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.user-input.dismiss"),

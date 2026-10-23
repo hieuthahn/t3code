@@ -130,6 +130,7 @@ export interface UpdateThreadMetadataInput extends ThreadCommandInput {
   readonly linkedPullRequest?: ThreadLinkedPullRequest | null;
   readonly expectedEmpty?: boolean;
   readonly tokenSaver?: import("@t3tools/contracts").TokenSaverConfig | null;
+  readonly team?: import("@t3tools/contracts").TeamSetup | null;
 }
 
 export interface SetThreadRuntimeModeInput extends ThreadCommandInput {
@@ -577,7 +578,8 @@ export const updateThreadMetadata = Effect.fn("EnvironmentCommands.updateThreadM
       input.regenerateTitle !== undefined ||
       input.linkedPullRequest !== undefined ||
       input.limitRecovery !== undefined ||
-      input.tokenSaver !== undefined
+      input.tokenSaver !== undefined ||
+      input.team !== undefined
     ) {
       result = yield* dispatch({
         type: "thread.metadata.update",
@@ -593,6 +595,7 @@ export const updateThreadMetadata = Effect.fn("EnvironmentCommands.updateThreadM
           ? {}
           : { linkedPullRequest: input.linkedPullRequest }),
         ...(input.tokenSaver === undefined ? {} : { tokenSaver: input.tokenSaver }),
+        ...(input.team === undefined ? {} : { team: input.team }),
       });
     }
     if (input.modelSelection !== undefined) {

@@ -209,9 +209,11 @@ import {
   type SidebarSweepAction,
 } from "./sidebar/SidebarThreadRow";
 import { SidebarDraftBlock } from "./sidebar/SidebarDraftBlock";
+import { SidebarBulkActionBar } from "./sidebar/SidebarBulkActionBar";
 import {
   type BulkThreadActionId,
   describeBulkFailure,
+  pickBulkToggle,
   planBulkThreadActions,
   runBulkThreadAction,
 } from "./sidebar/bulkThreadActions.logic";
@@ -2071,6 +2073,11 @@ export default function Sidebar() {
       settledThreadKeysRef.current,
       new Date().toISOString(),
     );
+  const selectedThreadKeySet = useThreadSelectionStore((state) => state.selectedThreadKeys);
+  const bulkBarPlans =
+    selectedThreadKeySet.size === 0
+      ? null
+      : planSelection([...selectedThreadKeySet], threadByKey, settledThreadKeys, snoozeNow);
   const bulkTargetThreads = (targetKeys: readonly string[]) =>
     targetKeys.flatMap((threadKey) => {
       const thread = threadByKeyRef.current.get(threadKey);
@@ -3320,6 +3327,17 @@ export default function Sidebar() {
           ) : null}
         </SidebarGroup>
       </SidebarContent>
+      {bulkBarPlans ? (
+        <SidebarBulkActionBar
+          count={bulkBarPlans.threadKeys.length}
+          settleToggle={pickBulkToggle(bulkBarPlans.plans, "settle", "unsettle")}
+          pinToggle={pickBulkToggle(bulkBarPlans.plans, "pin", "unpin")}
+          canSnooze={(bulkBarPlans.plans.get("snooze")?.targetKeys.length ?? 0) > 0}
+          onAction={(action) => void performBulkAction(action)}
+          onShowMenu={(position, opts) => void showBulkMenu(position, opts)}
+          onClear={clearSelection}
+        />
+      ) : null}
       <SidebarChromeFooter />
     </>
   );

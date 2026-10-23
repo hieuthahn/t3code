@@ -35,6 +35,8 @@ interface Fixture {
   /** Scripts saved in the environment's project settings, which win over the project's own. */
   readonly settingsScripts: Array<ProjectScript>;
   readonly sent: Array<{ readonly threadId: ThreadId; readonly text: string }>;
+  /** Make the next settings read die, standing in for an error no stage expects. */
+  dieOnNextSettingsRead: boolean;
 }
 
 const git = (cwd: string, args: ReadonlyArray<string>) =>
@@ -107,6 +109,7 @@ const makeFixture = Effect.gen(function* () {
     scripts: [gate("passes", "true")],
     settingsScripts: [],
     sent: [],
+    dieOnNextSettingsRead: false,
   };
   return fixture;
 });
@@ -162,18 +165,21 @@ const layerFor = (fixture: Fixture) => {
             } as unknown as Project),
         }),
         Layer.mock(ServerSettings.ServerSettingsService)({
-          getSettings: Effect.sync(
-            () =>
-              ({
-                defaultProjectScripts: [],
-                projectScriptOverrides: {},
-                projectSettingsFolded: false,
-                projectSettingsOverrides:
-                  fixture.settingsScripts.length === 0
-                    ? {}
-                    : { [projectId]: { defaultProjectScripts: fixture.settingsScripts } },
-              }) as unknown as ServerSettingsValue,
-          ),
+          getSettings: Effect.suspend(() => {
+            if (fixture.dieOnNextSettingsRead) {
+              fixture.dieOnNextSettingsRead = false;
+              return Effect.die(new Error("The settings file vanished."));
+            }
+            return Effect.succeed({
+              defaultProjectScripts: [],
+              projectScriptOverrides: {},
+              projectSettingsFolded: false,
+              projectSettingsOverrides:
+                fixture.settingsScripts.length === 0
+                  ? {}
+                  : { [projectId]: { defaultProjectScripts: fixture.settingsScripts } },
+            } as unknown as ServerSettingsValue);
+          }),
         }),
         Layer.mock(ThreadManagementService.ThreadManagementService)({
           sendToThread: (input) =>
@@ -558,6 +564,36 @@ it.live("moves a trunk nobody has out, but not one checked out in another worktr
       assert.equal(refused?.failure?.stage, "merge");
       assert.include(refused?.failure?.message ?? "", elsewhere);
       assert.equal(yield* git(fixture.repository, ["rev-parse", "main"]), trunkAfterFirst);
+    }),
+  ),
+);
+
+it.live("fails an item that hit an unexpected error and lands the next one", () =>
+  withQueue(({ fixture, queue }) =>
+    Effect.gen(function* () {
+      const api = yield* addChild(fixture, "api", "api.txt");
+      const ui = yield* addChild(fixture, "ui", "ui.txt");
+      const first = yield* queue.enqueue({
+        callerThreadId: ownerThreadId,
+        childThreadId: api.childThreadId,
+      });
+      const second = yield* queue.enqueue({
+        callerThreadId: ownerThreadId,
+        childThreadId: ui.childThreadId,
+      });
+      yield* queue.approve({ itemId: first.id, headSha: first.headShaAtEnqueue }, decidedBy);
+      yield* queue.approve({ itemId: second.id, headSha: second.headShaAtEnqueue }, decidedBy);
+      fixture.dieOnNextSettingsRead = true;
+      yield* queue.drain;
+
+      const items = (yield* queue.view(ownerThreadId)).items;
+      assert.deepEqual(
+        items.map((item) => item.status),
+        ["failed", "merged"],
+      );
+      assert.equal(items[0]?.failure?.stage, "error");
+      assert.include(items[0]?.failure?.message ?? "", "The settings file vanished.");
+      assert.deepEqual(fixture.sent, []);
     }),
   ),
 );

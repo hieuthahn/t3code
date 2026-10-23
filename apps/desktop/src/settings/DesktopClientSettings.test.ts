@@ -69,6 +69,7 @@ const clientSettings: ClientSettings = {
   sidebarWorkingShelfEnabled: false,
   sidebarSettledProjectGroupsEnabled: true,
   sidebarCompactModeEnabled: false,
+  sidebarCompactGroupBy: "time",
   loadBalancingEnabled: false,
   loadBalancingWeights: { "environment-1": 75, "environment-2": 0 },
   pullRequestMergeMethodOverrides: {},

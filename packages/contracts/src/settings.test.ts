@@ -199,13 +199,13 @@ describe("ClientSettings notifications", () => {
 });
 
 describe("ClientSettings saved environments", () => {
-  it("starts empty and keeps a saved setup through a patch", () => {
+  it("starts empty and keeps a one-folder setup through a patch", () => {
     const saved = {
       id: "env-1",
       name: "Frontend",
       environmentId: "local",
-      folders: ["project-web", "project-api"],
-      worktreePerFolder: true,
+      folder: "project-web",
+      worktree: true,
     };
 
     expect(decodeClientSettings({}).savedEnvironments).toEqual([]);
@@ -217,15 +217,40 @@ describe("ClientSettings saved environments", () => {
     ).toEqual([saved]);
   });
 
-  it("defaults the worktree toggle off and rejects a blank name", () => {
-    const [saved] = decodeClientSettings({
-      savedEnvironments: [{ id: "env-2", name: "Server", environmentId: "remote", folders: [] }],
+  it("keeps an older multi-folder setup by its first folder", () => {
+    const [saved, empty] = decodeClientSettings({
+      savedEnvironments: [
+        {
+          id: "env-2",
+          name: "Fullstack",
+          environmentId: "local",
+          folders: ["project-api", "project-web"],
+          worktreePerFolder: true,
+        },
+        { id: "env-3", name: "Server", environmentId: "remote", folders: [] },
+      ],
     }).savedEnvironments;
 
-    expect(saved?.worktreePerFolder).toBe(false);
+    expect(saved).toEqual({
+      id: "env-2",
+      name: "Fullstack",
+      environmentId: "local",
+      folder: "project-api",
+      worktree: true,
+    });
+    expect(empty).toEqual({
+      id: "env-3",
+      name: "Server",
+      environmentId: "remote",
+      folder: null,
+      worktree: false,
+    });
+  });
+
+  it("rejects a blank name", () => {
     expect(() =>
       decodeClientSettingsPatch({
-        savedEnvironments: [{ id: "env-3", name: "  ", environmentId: "local", folders: [] }],
+        savedEnvironments: [{ id: "env-4", name: "  ", environmentId: "local", folder: null }],
       }),
     ).toThrow();
   });

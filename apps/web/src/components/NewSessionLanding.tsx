@@ -30,7 +30,6 @@ import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { resolveSavedEnvironmentLaunch } from "./NewSessionLanding.logic";
 import { sortScopedProjectsForSidebar } from "./Sidebar.logic";
 import { Button } from "./ui/button";
-import { Checkbox } from "./ui/checkbox";
 import {
   Dialog,
   DialogFooter,
@@ -43,6 +42,7 @@ import { DiscoveryList, DiscoveryListRow } from "./ui/discovery-list";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "./ui/menu";
+import { Radio, RadioGroup } from "./ui/radio-group";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./ui/select";
 import { SidebarInset } from "./ui/sidebar";
 import { Switch } from "./ui/switch";
@@ -50,6 +50,7 @@ import { stackedThreadToast, toastManager } from "./ui/toast";
 import { WorkspacePageHeader } from "./WorkspacePageHeader";
 
 const RECENT_PROJECT_LIMIT = 8;
+const NO_FOLDER = "none";
 const ROW_ICON_CLASS = "size-4 shrink-0 text-muted-foreground";
 
 export function NewSessionLanding() {
@@ -77,7 +78,7 @@ export function NewSessionLanding() {
   const launch = async (saved: SavedEnvironment) => {
     const resolved = resolveSavedEnvironmentLaunch(saved, projects);
     if (resolved.kind === "unavailable") {
-      reportLaunchProblem(`None of the folders in ${saved.name} are on this machine anymore.`);
+      reportLaunchProblem(`The folder in ${saved.name} is not on this machine anymore.`);
       return;
     }
     if (resolved.kind === "scratch") {
@@ -90,31 +91,24 @@ export function NewSessionLanding() {
       await startScratchThread(resolved.environmentId);
       return;
     }
-    // Opened last-to-first so the first folder's draft is the one left on screen.
-    for (const projectRef of resolved.projectRefs.toReversed()) {
-      await handleNewThread(projectRef, {
-        replace: true,
-        ...(resolved.envMode ? { envMode: resolved.envMode } : {}),
-      });
-    }
-    if (resolved.missingFolderCount > 0) {
-      reportLaunchProblem(
-        `${resolved.missingFolderCount} ${resolved.missingFolderCount === 1 ? "folder" : "folders"} in ${saved.name} could not be found and were skipped.`,
-      );
-    }
+    await handleNewThread(resolved.projectRef, {
+      replace: true,
+      ...(resolved.envMode ? { envMode: resolved.envMode } : {}),
+    });
   };
 
   const describeSaved = (saved: SavedEnvironment) => {
-    const titles = saved.folders.flatMap((folder) => {
-      const project = projects.find(
-        (candidate) => candidate.environmentId === saved.environmentId && candidate.id === folder,
-      );
-      return project ? [project.title] : [];
-    });
+    const project =
+      saved.folder === null
+        ? null
+        : projects.find(
+            (candidate) =>
+              candidate.environmentId === saved.environmentId && candidate.id === saved.folder,
+          );
     return [
       environmentFor(saved.environmentId)?.label ?? "Unavailable machine",
-      titles.length > 0 ? titles.join(", ") : "No project",
-      saved.worktreePerFolder && titles.length > 0 ? "Worktree per folder" : null,
+      saved.folder === null ? "No project" : (project?.title ?? "Missing folder"),
+      saved.worktree && project ? "Worktree" : null,
     ]
       .filter(Boolean)
       .join(" · ");
@@ -260,8 +254,8 @@ function SavedEnvironmentDialog({
   const [environmentId, setEnvironmentId] = useState(
     initial?.environmentId ?? defaultEnvironmentId,
   );
-  const [folders, setFolders] = useState<readonly ProjectId[]>(initial?.folders ?? []);
-  const [worktreePerFolder, setWorktreePerFolder] = useState(initial?.worktreePerFolder ?? false);
+  const [folder, setFolder] = useState<ProjectId | null>(initial?.folder ?? null);
+  const [worktree, setWorktree] = useState(initial?.worktree ?? false);
 
   const machineProjects = sortScopedProjectsForSidebar(
     projects.filter((project) => project.environmentId === environmentId),
@@ -271,10 +265,7 @@ function SavedEnvironmentDialog({
   const trimmedName = name.trim();
   const canSave = trimmedName.length > 0 && environmentId !== null;
 
-  const toggleFolder = (projectId: ProjectId, checked: boolean) =>
-    setFolders((current) =>
-      checked ? [...current, projectId] : current.filter((folder) => folder !== projectId),
-    );
+  const savedFolder = machineProjects.some((project) => project.id === folder) ? folder : null;
 
   return (
     <Dialog
@@ -293,10 +284,8 @@ function SavedEnvironmentDialog({
               id: initial?.id ?? randomUUID(),
               name: trimmedName,
               environmentId,
-              folders: folders.filter((folder) =>
-                machineProjects.some((project) => project.id === folder),
-              ),
-              worktreePerFolder,
+              folder: savedFolder,
+              worktree: savedFolder !== null && worktree,
             });
           }}
         >
@@ -324,7 +313,7 @@ function SavedEnvironmentDialog({
                     onValueChange={(value) => {
                       if (value === null) return;
                       setEnvironmentId(value);
-                      setFolders([]);
+                      setFolder(null);
                     }}
                     items={environments.map((environment) => ({
                       value: environment.environmentId,
@@ -355,33 +344,32 @@ function SavedEnvironmentDialog({
               ) : null}
 
               <div className="flex flex-col gap-1.5">
-                <Label>Folders</Label>
-                {machineProjects.length === 0 ? (
-                  <p className="text-muted-foreground text-xs">No projects on this machine.</p>
-                ) : (
-                  <div className="max-h-56 overflow-y-auto rounded-md border">
-                    {machineProjects.map((project) => (
+                <Label id={`${id}-folder`}>Folder</Label>
+                <div className="max-h-56 overflow-y-auto rounded-md border px-2.5 py-2">
+                  <RadioGroup
+                    aria-labelledby={`${id}-folder`}
+                    value={savedFolder ?? NO_FOLDER}
+                    onValueChange={(value) => setFolder(value === NO_FOLDER ? null : value)}
+                  >
+                    {[{ id: NO_FOLDER, title: "No project" }, ...machineProjects].map((option) => (
                       <label
-                        key={project.id}
-                        className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-sm not-last:border-b"
+                        key={option.id}
+                        className="flex cursor-pointer items-center gap-2 text-sm"
                       >
-                        <Checkbox
-                          checked={folders.includes(project.id)}
-                          onCheckedChange={(checked) => toggleFolder(project.id, checked)}
-                        />
-                        <span className="min-w-0 flex-1 truncate">{project.title}</span>
+                        <Radio value={option.id} />
+                        <span className="min-w-0 flex-1 truncate">{option.title}</span>
                       </label>
                     ))}
-                  </div>
-                )}
+                  </RadioGroup>
+                </div>
               </div>
 
               <label className="flex items-center justify-between gap-3 text-sm">
-                Worktree per folder
+                Worktree
                 <Switch
-                  checked={worktreePerFolder}
-                  disabled={folders.length === 0}
-                  onCheckedChange={setWorktreePerFolder}
+                  checked={savedFolder !== null && worktree}
+                  disabled={savedFolder === null}
+                  onCheckedChange={setWorktree}
                 />
               </label>
             </div>

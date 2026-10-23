@@ -51,6 +51,10 @@
       "types": "./src/promptLinks.ts",
       "default": "./src/promptLinks.ts"
     },
+    "./child-plan": {
+      "types": "./src/childPlan.ts",
+      "default": "./src/childPlan.ts"
+    },
     "./secret-request": {
       "types": "./src/secretRequest.ts",
       "default": "./src/secretRequest.ts"

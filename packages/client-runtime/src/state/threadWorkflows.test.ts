@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { OrchestrationV2ThreadProjection } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 
 import {
   canForkProjectedAssistantItem,
@@ -148,6 +149,7 @@ describe("thread workflows", () => {
           { id: "queued", status: "queued", userMessageId: "message", ordinal: 2, queueHeld: true },
         ],
         messages: [{ id: "message", text: "Send this" }],
+        turnItems: [],
         providerThreads: [],
         providerTurns: [],
         providerSessions: [],
@@ -174,6 +176,56 @@ describe("thread workflows", () => {
       expect(state.canSendNow).toBe(false);
     },
   );
+
+  it.each([
+    ["failed", true, "failed"],
+    ["interrupted", true, "stopped"],
+    ["cancelled", true, "stopped"],
+    ["completed", false, null],
+  ] as const)("names why a queue behind a %s turn waits", (status, queueHeld, reason) => {
+    const state = deriveThreadQueueWorkflowState({
+      thread: { id: "thread", activeProviderThreadId: null },
+      runs: [
+        { id: "previous", status, ordinal: 1, rootNodeId: "root" },
+        { id: "queued", status: "queued", userMessageId: "message", ordinal: 2, queueHeld },
+      ],
+      messages: [{ id: "message", text: "Send this" }],
+      turnItems: [],
+      providerThreads: [],
+      providerTurns: [],
+      providerSessions: [],
+    } as never);
+
+    expect(state.holdReason).toBe(reason);
+  });
+
+  it("names a usage limit as the reason a queue waits without a hold", () => {
+    const state = deriveThreadQueueWorkflowState({
+      thread: { id: "thread", activeProviderThreadId: null },
+      runs: [
+        { id: "limited", status: "failed", ordinal: 1, rootNodeId: "root" },
+        { id: "queued", status: "queued", userMessageId: "message", ordinal: 2 },
+      ],
+      messages: [{ id: "message", text: "Send this" }],
+      turnItems: [
+        {
+          id: "error",
+          type: "error",
+          status: "failed",
+          runId: "limited",
+          nodeId: "root",
+          ordinal: 1,
+          updatedAt: DateTime.makeUnsafe(0),
+          failure: { class: "usage_limit", message: "Usage limit reached" },
+        },
+      ],
+      providerThreads: [],
+      providerTurns: [],
+      providerSessions: [],
+    } as never);
+
+    expect(state.holdReason).toBe("usage_limit");
+  });
 
   it("keeps held messages visible and clears the hold when they leave the queue", () => {
     for (const status of ["queued", "cancelled", "starting"] as const) {

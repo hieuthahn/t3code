@@ -60,6 +60,7 @@ export function useComposerMenuItems({
   threadPullRequests,
   planModeUiEnabled,
   compactSlashCommandAvailable,
+  sideQuestionAvailable,
   selectedProvider,
   selectedProviderSkills,
   selectedProviderSlashCommands,
@@ -75,6 +76,7 @@ export function useComposerMenuItems({
   readonly threadPullRequests: ReadonlyArray<ThreadPullRequestLink> | undefined;
   readonly planModeUiEnabled: boolean;
   readonly compactSlashCommandAvailable: boolean;
+  readonly sideQuestionAvailable: boolean;
   readonly selectedProvider: ProviderDriverKind;
   readonly selectedProviderSkills: ServerProvider["skills"];
   readonly selectedProviderSlashCommands: ServerProvider["slashCommands"];
@@ -220,6 +222,17 @@ export function useComposerMenuItems({
                 command: "default",
                 label: "/default",
                 description: "Switch this thread back to normal build mode",
+              },
+            ] as const)
+          : []),
+        ...(sideQuestionAvailable && composerTrigger.rangeStart === 0
+          ? ([
+              {
+                id: "slash:btw",
+                type: "slash-command",
+                command: "btw",
+                label: "/btw",
+                description: "Ask a side question in its own tab without interrupting this thread",
               },
             ] as const)
           : []),

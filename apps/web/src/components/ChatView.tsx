@@ -271,6 +271,7 @@ import {
   resolveScrollToEndClearance,
 } from "./composerFooterLayout";
 import { ChatHeader } from "./chat/ChatHeader";
+import { SideQuestionTabs } from "./chat/SideQuestionTabs";
 import { useRemoteOpenState } from "~/remoteOpen";
 import { shouldShowOpenInPicker } from "./chat/OpenInPicker.logic";
 import { useOpenFavoriteEditorShortcut } from "./chat/OpenInPickerShortcut";
@@ -3340,6 +3341,12 @@ export default function ChatView(props: ChatViewProps) {
               : {})}
           />
         </header>
+        {isServerThread ? (
+          <SideQuestionTabs
+            environmentId={activeThread.environmentId}
+            activeThreadId={activeThread.id}
+          />
+        ) : null}
 
         <div className="relative flex min-h-0 min-w-0 flex-1">
           <ThreadFindCanvas

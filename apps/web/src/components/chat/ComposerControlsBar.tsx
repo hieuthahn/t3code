@@ -5,6 +5,7 @@ import { type AppModelOption } from "../../modelSelection";
 import { CircleAlertIcon } from "lucide-react";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerControl, ComposerControlSeparator } from "./ComposerControl";
+import { ComposerTeamControl } from "./ComposerTeamControl";
 import { ComposerTokenSaverControl } from "./ComposerTokenSaverControl";
 import {
   ComposerFooterModeControls,
@@ -191,11 +192,22 @@ export function ComposerControlsBar(props: {
             onRuntimeModeChange={handleRuntimeModeChange}
           />
           {routeKind === "server" ? (
-            <ComposerTokenSaverControl
-              threadRef={routeThreadRef}
-              driver={selectedProvider}
-              size={composerControlsCollapsed ? "xs" : "sm"}
-            />
+            <>
+              <ComposerTokenSaverControl
+                threadRef={routeThreadRef}
+                driver={selectedProvider}
+                size={composerControlsCollapsed ? "xs" : "sm"}
+              />
+              <ComposerTeamControl
+                threadRef={routeThreadRef}
+                driver={selectedProvider}
+                threadModel={selectedModelSelection}
+                lockedProvider={lockedProvider}
+                instanceEntries={providerInstanceEntries}
+                modelOptionsByInstance={modelOptionsByInstance}
+                size={composerControlsCollapsed ? "xs" : "sm"}
+              />
+            </>
           ) : null}
         </>
       ),

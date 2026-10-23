@@ -13,6 +13,7 @@ import {
   createQuestionHistoryProjector,
   derivePendingThreadRequests,
   declinePendingApprovals,
+  pendingApprovalBulkTargets,
   seedUserInputDraftAnswers,
   type ApprovalResponder,
   type ThreadPendingApproval,
@@ -20,6 +21,44 @@ import {
 
 const requestId = RuntimeRequestId.make("async-question");
 const nodeId = NodeId.make("async-question-node");
+
+describe("answering every pending approval at once", () => {
+  const live = (id: string, options?: ThreadPendingApproval["options"]): ThreadPendingApproval => ({
+    requestId: RuntimeRequestId.make(id),
+    requestKind: "command",
+    createdAt: "2026-10-19T00:00:00Z",
+    responseCapability: "live",
+    ...(options === undefined ? {} : { options }),
+  });
+
+  it("targets only live approvals that offer the decision and keeps their warnings", () => {
+    const targets = pendingApprovalBulkTargets(
+      [
+        live("default-options"),
+        live("warned", [
+          { decision: "decline", label: "Deny" },
+          { decision: "accept", label: "Run it", warning: "Deletes files outside the workspace" },
+        ]),
+        live("decline-only", [{ decision: "decline", label: "Deny" }]),
+        { ...live("gone"), responseCapability: "not_resumable" },
+      ],
+      "accept",
+    );
+
+    expect(targets.requestIds).toEqual(["default-options", "warned"]);
+    expect(targets.warnings).toEqual(["Deletes files outside the workspace"]);
+  });
+
+  it("denies every live approval that offers a decline", () => {
+    const targets = pendingApprovalBulkTargets(
+      [live("default-options"), live("accept-only", [{ decision: "accept", label: "Allow" }])],
+      "decline",
+    );
+
+    expect(targets.requestIds).toEqual(["default-options"]);
+    expect(targets.warnings).toEqual([]);
+  });
+});
 
 describe("declining approvals before sending", () => {
   const approval: ThreadPendingApproval = {

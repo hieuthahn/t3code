@@ -32,6 +32,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import { McpSchema, McpServer, Tool, Toolkit } from "effect/ai";
 
+import * as MergeQueueService from "../mergeQueue/MergeQueueService.ts";
 import * as ServerConfig from "../config.ts";
 import * as McpHttpServer from "../mcp/McpHttpServer.ts";
 import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
@@ -164,6 +165,7 @@ const makeLaptop = Effect.gen(function* () {
     Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
     Layer.provide(Layer.mock(ProjectService.ProjectService)({})),
     Layer.provide(Layer.mock(SecretRequests.SecretRequests)({})),
+    Layer.provide(Layer.mock(MergeQueueService.MergeQueueService)({})),
     Layer.provide(Layer.mock(ThreadLaunch.ThreadLaunchService)({})),
     Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
     Layer.provide(

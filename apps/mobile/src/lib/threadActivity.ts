@@ -7,6 +7,7 @@ import { turnItemIsWorkspacePreparation } from "@t3tools/client-runtime/state/tu
 import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
 import { formatSubagentDisplayTitle } from "@t3tools/client-runtime/state/subagent-display";
 import { isLiveSubagentTurnItem } from "@t3tools/client-runtime/state/subagentRuntime";
+import { requestResolutionLabel } from "@t3tools/client-runtime/work-log/request-resolution";
 import { extractToolActivityPresentation } from "@t3tools/client-runtime/work-log/tool-presentation";
 import {
   turnItemDetailRevision,
@@ -625,6 +626,10 @@ function itemSummary(
       ? dynamicToolTitle(item.toolName, item.input, item.title)
       : undefined) ?? item.title?.trim();
   if (item.type === "subagent") return formatSubagentDisplayTitle(title || "Subagent");
+  if (item.type === "approval_request" || item.type === "user_input_request") {
+    const resolution = requestResolutionLabel(item);
+    if (resolution !== null) return resolution;
+  }
   if (title) return toolPresentation?.displayName ?? capitalizePhrase(title);
   switch (item.type) {
     case "reasoning":

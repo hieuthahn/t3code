@@ -93,9 +93,11 @@ export const makeMergeQueueLanding = (deps: {
     fields: Record<string, string | null>,
   ) => Effect.Effect<void, MergeQueueError>;
   readonly childIsRunning: (threadId: ThreadId) => Effect.Effect<boolean, MergeQueueError>;
+  /** Take a queued item for landing; false when it left the queue, say because it was cancelled. */
+  readonly claim: (row: MergeQueueRow) => Effect.Effect<boolean, MergeQueueError>;
 }) => {
   const { git, gitOutput } = deps.git;
-  const { spawner, projects, settings, update, childIsRunning } = deps;
+  const { spawner, projects, settings, update, childIsRunning, claim } = deps;
 
   const runGate = Effect.fn("MergeQueue.runGate")(function* (script: ProjectScript, cwd: string) {
     const startedAt = yield* Clock.currentTimeMillis;
@@ -147,7 +149,7 @@ export const makeMergeQueueLanding = (deps: {
       effect: Effect.Effect<A, E>,
     ) => effect.pipe(Effect.mapError((cause) => stage(name, cause.message)));
 
-    yield* update(queued, { status: "updating" });
+    if (!(yield* claim(queued))) return;
     const head = yield* lift(
       "head_moved",
       gitOutput(queued.child_worktree, ["rev-parse", `refs/heads/${queued.child_branch}`]),

@@ -243,6 +243,27 @@ export function resolveSidebarDropTarget(
   return { section, pinnedOrder, activeOrder };
 }
 
+/** Return the row a one-step keyboard move drops onto, staying inside the row's own section. */
+export function resolveSidebarStepTarget(
+  items: readonly SidebarListItem[],
+  activeKey: string,
+  step: -1 | 1,
+): string | null {
+  const index = items.findIndex((item) => sidebarListItemId(item) === activeKey);
+  const active = items[index];
+  if (active?.kind !== "thread" || active.nested) return null;
+  for (let cursor = index + step; cursor >= 0 && cursor < items.length; cursor += step) {
+    const item = items[cursor]!;
+    if (item.kind === "marker") {
+      if (item.marker.startsWith(FANOUT_GROUP_MARKER_PREFIX)) continue;
+      return null;
+    }
+    if (item.section !== active.section) return null;
+    if (!item.nested) return item.key;
+  }
+  return null;
+}
+
 export type SidebarThreadDropPlan =
   | { readonly kind: "none" }
   | {

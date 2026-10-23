@@ -9,6 +9,7 @@ import {
   type MergeQueueTrunk,
   type MergeQueueView,
   type OrchestrationV2RuntimeRequestDecider,
+  type ProjectId,
   type ThreadId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -32,6 +33,7 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import {
   makeMergeQueueGit,
   makeMergeQueueLanding,
+  resolveMergeGates,
   type StageFailure,
 } from "./mergeQueueLanding.ts";
 import {
@@ -118,6 +120,21 @@ export const layerWith = (options: { readonly drainOnApprove: boolean }) =>
         projections
           .getThreadShell(threadId)
           .pipe(Effect.mapError(queueError("Could not read the thread for the merge queue.")));
+      const requireMergeGates = Effect.fn("MergeQueue.requireMergeGates")(function* (
+        projectId: ProjectId,
+        itemId?: MergeQueueItemId,
+      ) {
+        const gates = yield* resolveMergeGates(projects, settings, projectId).pipe(
+          Effect.mapError(queueError("Could not read the project's merge gates.", itemId)),
+        );
+        if (gates.length === 0) {
+          return yield* new MergeQueueError({
+            message:
+              "This project has no merge gate, so the queue cannot check the child before landing it. Mark a project script as a merge gate in the project's settings first.",
+            ...(itemId === undefined ? {} : { itemId }),
+          });
+        }
+      });
 
       const enqueue: MergeQueueService["Service"]["enqueue"] = Effect.fn("MergeQueue.enqueue")(
         function* (input) {
@@ -142,6 +159,7 @@ export const layerWith = (options: { readonly drainOnApprove: boolean }) =>
               message: "The parent thread or its project is gone.",
             });
           }
+          yield* requireMergeGates(child.projectId);
           const ownerCheckout = owner.worktreePath ?? project.value.workspaceRoot;
           const trunkRef =
             owner.branch ??
@@ -290,6 +308,7 @@ export const layerWith = (options: { readonly drainOnApprove: boolean }) =>
               itemId: row.item_id,
             });
           }
+          yield* requireMergeGates(row.project_id, row.item_id);
           yield* update(row, { status: "queued", approved_by_json: encodeDecider(decidedBy) });
           if (options.drainOnApprove) {
             yield* Effect.forkIn(drain, scope);

@@ -85,6 +85,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Result from "effect/Result";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -127,6 +128,7 @@ import { isLiveCallerShell, threadNotFound } from "./threadAccess.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
 import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
+import { resolveTeamTarget } from "../team/resolveTeamTarget.ts";
 
 const DEFAULT_WAIT_TIMEOUT_MS = 10 * 60 * 1_000;
 const MAX_WAIT_TIMEOUT_MS = 60 * 60 * 1_000;
@@ -1287,6 +1289,17 @@ const make = Effect.gen(function* () {
     );
   };
 
+  /** A team's architect may delegate only to its workers; other threads keep their own target. */
+  const teamTarget = (
+    parent: Pick<OrchestrationV2ThreadProjection, "thread">,
+    target: OrchestratorMcpTarget | undefined,
+  ) => {
+    const resolved = resolveTeamTarget(parent.thread.team, target);
+    return Result.isFailure(resolved)
+      ? Effect.fail(failure("invalid_request", resolved.failure))
+      : Effect.succeed(resolved.success);
+  };
+
   const resolveTarget = Effect.fn("OrchestratorMcpService.resolveTarget")(function* (input: {
     readonly parent: Pick<OrchestrationV2ThreadProjection, "thread">;
     readonly target: OrchestratorMcpTarget | undefined;
@@ -2046,7 +2059,7 @@ const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const target = yield* resolveTargetRechecking({
             parent,
-            target: task.target,
+            target: yield* teamTarget(parent, task.target),
             providers,
             skipProjectEnablementFilter: false,
           });
@@ -2459,6 +2472,11 @@ const make = Effect.gen(function* () {
       if (input.target !== undefined && environmentId !== undefined) {
         yield* requireCapability(callerScope);
         const scope = yield* requireThreadScope(callerScope, "delegate_task");
+        const caller = yield* loadProjection(scope.thread.threadId);
+        const teamRefusal = resolveTeamTarget(caller.thread.team, input.target);
+        if (Result.isFailure(teamRefusal)) {
+          return yield* failure("invalid_request", teamRefusal.failure);
+        }
         // The task's child runs as an ordinary thread there; this thread keeps the task.
         const { taskId } = yield* remoteDelegation.delegate(scope, {
           ...input,
@@ -2501,7 +2519,7 @@ const make = Effect.gen(function* () {
       const isRetryOfAcceptedDelegation = yield* threadManagement.hasReceipt(commandId);
       const target = yield* resolveTargetRechecking({
         parent,
-        target: input.target,
+        target: yield* teamTarget(parent, input.target),
         providers,
         skipProjectEnablementFilter: isRetryOfAcceptedDelegation,
       });
@@ -2928,7 +2946,7 @@ const make = Effect.gen(function* () {
                 parent,
                 target:
                   committedThread === null
-                    ? request.target
+                    ? yield* teamTarget(parent, request.target)
                     : {
                         ...request.target,
                         providerInstanceId: committedThread.modelSelection.instanceId,

@@ -87,6 +87,7 @@ import {
 import { threadSupportsProviderHandoff } from "@t3tools/client-runtime/state/thread-workflows";
 import { resolvePendingHandoff } from "@t3tools/client-runtime/handoff";
 import { HandoffRow } from "./chat/V2LifecycleRow";
+import { TurnRecapCard } from "./chat/TurnRecapCard";
 import {
   codexFeedbackMessage,
   shouldShowLoadEarlierControl,
@@ -249,6 +250,7 @@ import {
   useQuietThreadShell,
   useThreadVisibleTurnItems,
   useThreadCheckpointSummaries,
+  useThreadTurnRecap,
 } from "../state/entities";
 import { useEnvironmentShellHasSnapshot } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
@@ -1943,6 +1945,11 @@ export default function ChatView(props: ChatViewProps) {
     }
   };
   const sendAppMessageStable = useStableCallback(sendAppMessage);
+  const turnRecap = useThreadTurnRecap(isServerThread ? activeThreadRef : null);
+  const turnRecapCard =
+    turnRecap === null || !settings.turnRecaps || isWorking ? null : (
+      <TurnRecapCard key={turnRecap.summary} recap={turnRecap} onReply={sendAppMessageStable} />
+    );
   const queuedRunsControlRef = useRef<QueuedRunsControlHandle>(null);
 
   const {
@@ -3434,7 +3441,14 @@ export default function ChatView(props: ChatViewProps) {
                 isPreparingWorktree={!paintOnlyDisplayedTimeline && isPreparingWorktree}
                 footer={
                   paintOnlyDisplayedTimeline ? null : pendingHandoff === null ? (
-                    threadStatusLine
+                    turnRecapCard === null ? (
+                      threadStatusLine
+                    ) : (
+                      <>
+                        {turnRecapCard}
+                        {threadStatusLine}
+                      </>
+                    )
                   ) : (
                     <>
                       <div className="chat-content-lane">

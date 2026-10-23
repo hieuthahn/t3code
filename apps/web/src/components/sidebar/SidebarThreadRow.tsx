@@ -1201,7 +1201,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                     </Tooltip>
                   ) : topStatus &&
                     variantAction !== "unsettle" &&
-                    (props.nested || (props.compact && compactRowShowsStatus(topStatus.icon))) ? (
+                    (props.compact ? compactRowShowsStatus(topStatus.icon) : props.nested) ? (
                     <span
                       className={cn(
                         "inline-flex items-center gap-1 text-xs font-medium",

@@ -4,6 +4,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
 import { PromptSuggester } from "../orchestration-v2/PromptSuggestionHub.ts";
+import { TurnRecapper } from "../orchestration-v2/TurnRecapHub.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -45,6 +46,21 @@ export const layer = Layer.effect(
         const current = yield* instance;
         if (current?.suggestNextPrompt === undefined) return Option.none<string>();
         return yield* current.suggestNextPrompt(question);
+      }),
+    });
+  }),
+);
+
+/** Asks Haiku on the quick Claude account to recap a finished turn. */
+export const layerTurnRecapper = Layer.effect(
+  TurnRecapper,
+  Effect.gen(function* () {
+    const instance = yield* quickClaudeInstance;
+    return TurnRecapper.of({
+      recap: Effect.fn("TurnRecapper.recap")(function* (question) {
+        const current = yield* instance;
+        if (current?.recapTurn === undefined) return Option.none<string>();
+        return yield* current.recapTurn(question);
       }),
     });
   }),

@@ -21,6 +21,7 @@ import {
   type OrchestrationV2ServerCommand,
   type OrchestrationV2ConversationMessage,
   type OrchestrationV2CreationSource,
+  type OrchestrationV2RuntimeRequestDecider,
   type OrchestrationV2Run,
   type OrchestrationV2ThreadShellSnapshot,
   type OrchestrationV2ThreadProjection,
@@ -86,6 +87,14 @@ export function withCreationProvenance(
     default:
       return command;
   }
+}
+
+/** Stamps who answered a runtime request, replacing any decider the sender supplied. */
+export function withRuntimeRequestDecider(
+  command: OrchestrationV2Command,
+  decidedBy: OrchestrationV2RuntimeRequestDecider,
+): OrchestrationV2Command {
+  return command.type === "runtime-request.respond" ? { ...command, decidedBy } : command;
 }
 
 function existingThreadIdsForCommand(

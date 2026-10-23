@@ -224,7 +224,7 @@ import {
   SidebarSectionHeader,
   SidebarSectionPlaceholder,
   SidebarFanoutGroupHeader,
-  SidebarTimeBucketHeader,
+  SidebarBucketHeader,
   SidebarSettledGroupHeader,
 } from "./sidebar/SidebarListMarkers";
 import {
@@ -3408,7 +3408,7 @@ export default function Sidebar() {
                             const timeBucket = timeBucketByMarker.get(item.marker);
                             if (timeBucket !== undefined) {
                               items.push(
-                                <SidebarTimeBucketHeader
+                                <SidebarBucketHeader
                                   key={sidebarMarkerId(item.marker)}
                                   marker={item.marker}
                                   label={timeBucket.label}

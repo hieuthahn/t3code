@@ -165,7 +165,7 @@ export function SidebarSettledGroupHeader(props: {
   );
 }
 
-export function SidebarTimeBucketHeader(props: {
+export function SidebarBucketHeader(props: {
   marker: SidebarListMarker;
   label: string;
   threadCount: number;
@@ -173,7 +173,7 @@ export function SidebarTimeBucketHeader(props: {
   return (
     <SortableSidebarMarker
       marker={props.marker}
-      data-testid="sidebar-time-bucket-header"
+      data-testid="sidebar-bucket-header"
       className="mx-0.5 flex h-7 items-end gap-1.5 px-2 pb-1 text-xs font-medium text-sidebar-muted-foreground"
     >
       <span>{props.label}</span>

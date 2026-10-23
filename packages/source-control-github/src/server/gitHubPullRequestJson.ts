@@ -1607,6 +1607,43 @@ export function toReviewerCandidates(
   };
 }
 
+const decodeRepositoryTeams = Schema.decodeUnknownOption(
+  Schema.fromJsonString(
+    Schema.Array(Schema.Struct({ slug: Schema.String, name: Schema.optional(Schema.String) })),
+  ),
+);
+
+/**
+ * Offer the teams with access to the repository as reviewers, after whoever was already asked.
+ * An unreadable answer (no `read:org`, an outage) leaves the people-only list as it was.
+ */
+export function withRepositoryTeams(
+  list: PullRequestReviewerCandidateList,
+  owner: string,
+  teamsJson: string,
+): PullRequestReviewerCandidateList {
+  const teams = decodeRepositoryTeams(teamsJson);
+  if (teams._tag === "None") return list;
+  const known = new Set(list.candidates.map((candidate) => `${candidate.kind} ${candidate.id}`));
+  const teamCandidates = teams.value.flatMap((team): PullRequestReviewerCandidate[] => {
+    const slug = trimmed(team.slug);
+    if (slug === null || known.has(`team ${slug}`)) return [];
+    return [
+      {
+        id: slug,
+        kind: "team",
+        login: `${owner}/${slug}`,
+        name: trimmed(team.name),
+        avatarUrl: null,
+        isRequested: false,
+      },
+    ];
+  });
+  const requested = list.candidates.filter((candidate) => candidate.isRequested);
+  const rest = list.candidates.filter((candidate) => !candidate.isRequested);
+  return { ...list, candidates: [...requested, ...teamCandidates, ...rest] };
+}
+
 const ReviewerRequestSchema = Schema.Struct({
   reviewers: Schema.Array(Schema.String),
   team_reviewers: Schema.Array(Schema.String),

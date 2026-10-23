@@ -20,7 +20,6 @@ import type {
   ModelSelection,
   ProjectId,
   PreviewAnnotationPayload,
-  ProviderApprovalDecision,
   ThreadContextRecord,
   EnvironmentContextRecord,
   ProviderInteractionMode,
@@ -31,6 +30,7 @@ import type {
   ServerProvider,
   ThreadId,
 } from "@t3tools/contracts";
+import type { ApprovalResponder } from "@t3tools/client-runtime/state/thread-requests";
 import {
   EnvironmentRequestInvalidError,
   AuthOrchestrationOperateScope,
@@ -501,10 +501,7 @@ export interface ChatComposerProps {
   onResume: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
-  onRespondToApproval: (
-    requestId: RuntimeRequestId,
-    decision: ProviderApprovalDecision,
-  ) => Promise<unknown>;
+  onRespondToApproval: ApprovalResponder;
   onSelectActivePendingUserInputOption: (questionId: string, optionValue: string) => void;
   onAdvanceActivePendingUserInput: () => void;
   onDismissActivePendingUserInput: (requestId: RuntimeRequestId) => void;

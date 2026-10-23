@@ -1,5 +1,8 @@
-import { pendingApprovalBulkTargets } from "@t3tools/client-runtime/state/thread-requests";
-import type { ProviderApprovalDecision, RuntimeRequestId } from "@t3tools/contracts";
+import {
+  type ApprovalResponder,
+  pendingApprovalBulkTargets,
+} from "@t3tools/client-runtime/state/thread-requests";
+import type { RuntimeRequestId } from "@t3tools/contracts";
 import { ShieldIcon, TriangleAlertIcon } from "lucide-react";
 import { useId, useState } from "react";
 import { type PendingApproval } from "../../session-logic";
@@ -13,10 +16,7 @@ interface ComposerPendingApprovalGroupProps {
   approvals: ReadonlyArray<PendingApproval>;
   respondingRequestIds: ReadonlyArray<RuntimeRequestId>;
   disabled: boolean;
-  onRespondToApproval: (
-    requestId: RuntimeRequestId,
-    decision: ProviderApprovalDecision,
-  ) => Promise<unknown>;
+  onRespondToApproval: ApprovalResponder;
 }
 
 export function ComposerPendingApprovalGroup({
@@ -27,21 +27,26 @@ export function ComposerPendingApprovalGroup({
 }: ComposerPendingApprovalGroupProps) {
   const [expanded, setExpanded] = useState(false);
   const [bulkResponding, setBulkResponding] = useState(false);
+  const [unansweredAfterFailure, setUnansweredAfterFailure] = useState<number | null>(null);
   const listId = useId();
   const approveTargets = pendingApprovalBulkTargets(approvals, "accept");
   const denyTargets = pendingApprovalBulkTargets(approvals, "decline");
   const blocked = disabled || bulkResponding;
 
   // Each request goes through the same per-request call a single answer uses,
-  // one at a time so the provider sees them in the order it asked.
+  // one at a time in the order asked, and the first failure stops the rest.
   const respondToAll = async (
     requestIds: ReadonlyArray<RuntimeRequestId>,
     decision: "accept" | "decline",
   ) => {
+    setUnansweredAfterFailure(null);
     setBulkResponding(true);
-    for (const requestId of requestIds) {
+    for (const [index, requestId] of requestIds.entries()) {
       if (respondingRequestIds.includes(requestId)) continue;
-      await onRespondToApproval(requestId, decision);
+      if ((await onRespondToApproval(requestId, decision))?._tag !== "Success") {
+        setUnansweredAfterFailure(requestIds.length - index);
+        break;
+      }
     }
     setBulkResponding(false);
   };
@@ -60,7 +65,6 @@ export function ComposerPendingApprovalGroup({
       Approve all
     </Button>
   );
-
   return (
     <div role="group" aria-label={`${approvals.length} pending approvals`} className="grid gap-3">
       <ComposerBanner.Row layout="approval" data-chat-composer-collapsed-controls="true">
@@ -102,6 +106,11 @@ export function ComposerPendingApprovalGroup({
           )}
         </ComposerBanner.Actions>
       </ComposerBanner.Row>
+      {unansweredAfterFailure !== null ? (
+        <p role="alert" className="ps-8 text-xs text-destructive sm:ps-7">
+          {`Stopped after a request failed. ${unansweredAfterFailure} ${unansweredAfterFailure === 1 ? "request was" : "requests were"} not answered.`}
+        </p>
+      ) : null}
       {expanded ? (
         <ol id={listId} className="grid max-h-80 gap-3 overflow-y-auto">
           {approvals.map((approval) => (

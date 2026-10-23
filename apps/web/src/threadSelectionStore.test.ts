@@ -57,6 +57,24 @@ describe("threadSelectionStore", () => {
     });
   });
 
+  describe("addToSelection", () => {
+    it("adds every key, keeping the anchor or taking the first key when there is none", () => {
+      const store = useThreadSelectionStore.getState();
+      store.addToSelection([THREAD_B, THREAD_C]);
+
+      expect([...useThreadSelectionStore.getState().selectedThreadKeys]).toEqual([
+        THREAD_B,
+        THREAD_C,
+      ]);
+      expect(useThreadSelectionStore.getState().anchorThreadKey).toBe(THREAD_B);
+
+      store.addToSelection([THREAD_C, THREAD_D]);
+
+      expect(useThreadSelectionStore.getState().selectedThreadKeys.size).toBe(3);
+      expect(useThreadSelectionStore.getState().anchorThreadKey).toBe(THREAD_B);
+    });
+  });
+
   describe("setAnchor", () => {
     it("enables range select from a plain-click anchor", () => {
       const store = useThreadSelectionStore.getState();

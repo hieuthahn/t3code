@@ -1231,3 +1231,39 @@ it.effect("explicit settle clears snooze atomically and stays idempotent after r
     assert.deepInclude((yield* projections.getThreadProjection(threadId)).thread, active);
   }).pipe(Effect.provide(layerTest)),
 );
+
+it.effect("keeps a thread's fanout group from thread.create through every shell read", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const create = (threadId: ThreadId, fanoutGroupId?: string) =>
+      orchestrator.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make(`create:${threadId}`),
+        threadId,
+        projectId: ProjectId.make("project:fanout"),
+        title: "Compare models",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        createdBy: "user",
+        creationSource: "web",
+        ...(fanoutGroupId === undefined ? {} : { fanoutGroupId }),
+      });
+    const grouped = ThreadId.make("thread:fanout:grouped");
+    const solo = ThreadId.make("thread:fanout:solo");
+    yield* create(grouped, "fanout-1");
+    yield* create(solo);
+
+    assert.equal((yield* projections.getThread(grouped)).fanoutGroupId, "fanout-1");
+    assert.equal((yield* projections.getThreadShell(grouped))?.fanoutGroupId, "fanout-1");
+    const snapshot = yield* projections.getShellSnapshot();
+    const shellOf = (threadId: ThreadId) =>
+      snapshot.threads.find((thread) => thread.id === threadId);
+    assert.equal(shellOf(grouped)?.fanoutGroupId, "fanout-1");
+    assert.notProperty(shellOf(solo), "fanoutGroupId");
+    assert.notProperty(yield* projections.getThread(solo), "fanoutGroupId");
+  }).pipe(Effect.provide(layerTest)),
+);

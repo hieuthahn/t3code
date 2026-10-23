@@ -8,6 +8,7 @@ import { AsyncResult } from "effect/reactivity";
 import {
   archiveSelectedThreadEntries,
   deleteSelectedThreadEntries,
+  fanoutGroupMarker,
   getFallbackThreadIdAfterDelete,
   hasUnseenCompletion,
   resolveSidebarRowThreadId,
@@ -1110,6 +1111,25 @@ describe("Working shelf (beta)", () => {
         activeOrder: ["a1", "a2", "p1"],
       });
       expect(resolveSidebarDropVerb("active", "working")).toBeNull();
+    });
+
+    it("keeps a fanout group header out of the section and the inbox order", () => {
+      const grouped: readonly SidebarListItem[] = [
+        marker("pinned-header"),
+        marker("pinned-divider"),
+        row("a1", "active"),
+        marker(fanoutGroupMarker("active", "env-1:send-1")),
+        { kind: "thread", key: "g1", section: "active", nested: true },
+        { kind: "thread", key: "g2", section: "active", nested: true },
+        marker("settled-header"),
+        row("s1", "settled"),
+      ];
+
+      expect(resolveSidebarDropTarget(grouped, "a1", "g2")).toEqual({
+        section: "active",
+        pinnedOrder: [],
+        activeOrder: ["g1", "g2", "a1"],
+      });
     });
 
     it.each([

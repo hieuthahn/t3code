@@ -1965,6 +1965,9 @@ export const layerWsRpc = (
                     runtimeMode: input.runtimeMode,
                     interactionMode: input.interactionMode,
                     workspaceStrategy: input.workspaceStrategy,
+                    ...(input.fanoutGroupId === undefined
+                      ? {}
+                      : { fanoutGroupId: input.fanoutGroupId }),
                     ...(input.initialMessage === undefined
                       ? {}
                       : {

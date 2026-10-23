@@ -57,28 +57,42 @@ const projection = (thread: object, subagents: ReadonlyArray<object> = []) =>
     turnItems: [],
   }) as unknown as OrchestrationV2ThreadProjection;
 
-const gitOutputs: Readonly<Record<string, string>> = {
+const startSha = "3333333333333333333333333333333333333333";
+
+const gitOutputs = (childBranch: string): Readonly<Record<string, string>> => ({
   "rev-parse --is-inside-work-tree": "true",
-  "rev-parse --abbrev-ref HEAD": "update/report",
+  "rev-parse --abbrev-ref HEAD": childBranch,
   "rev-parse HEAD": "1111111111111111111111111111111111111111",
   "merge-base HEAD feat/parent": "2222222222222222222222222222222222222222",
   "rev-list --left-right --count 2222222222222222222222222222222222222222...HEAD": "0\t2",
+  [`merge-base HEAD ${startSha}`]: startSha,
+  [`rev-list --left-right --count ${startSha}...HEAD`]: "0\t5",
   "status --porcelain": "",
   "diff --no-renames --name-status 2222222222222222222222222222222222222222": "A\tsrc/report.ts",
   "diff --no-renames --numstat 2222222222222222222222222222222222222222": "12\t0\tsrc/report.ts",
-};
+  [`diff --no-renames --name-status ${startSha}`]: "M\tsrc/shared.ts",
+  [`diff --no-renames --numstat ${startSha}`]: "3\t1\tsrc/shared.ts",
+});
 
-const makeLayer = (input: {
+const makeLayer = (layerInput: {
   readonly childLineageParent: ThreadId | null;
+  readonly childWorktreePath?: string | null;
+  readonly childBranch?: string;
   readonly dispatched: Array<OrchestrationV2ServerCommand>;
   readonly gitCwds: Array<string>;
 }) => {
+  const input = {
+    childWorktreePath: "/worktrees/report",
+    childBranch: "update/report",
+    ...layerInput,
+  };
   const task = {
     id: taskId,
     threadId: parentThreadId,
     origin: "app_owned",
     childThreadId,
     status: "running",
+    startCommitSha: startSha,
   } as unknown as OrchestrationV2Subagent;
   const dependencies = Layer.mergeAll(
     NodeServices.layer,
@@ -89,7 +103,7 @@ const makeLayer = (input: {
             ? projection({
                 id: childThreadId,
                 projectId: ProjectId.make("project:report"),
-                worktreePath: "/worktrees/report",
+                worktreePath: input.childWorktreePath,
                 lineage: {
                   parentThreadId: input.childLineageParent,
                   relationshipToParent: input.childLineageParent === null ? null : "subagent",
@@ -113,7 +127,7 @@ const makeLayer = (input: {
       execute: (git) =>
         Effect.sync(() => {
           input.gitCwds.push(git.cwd);
-          const stdout = gitOutputs[git.args.join(" ")];
+          const stdout = gitOutputs(input.childBranch)[git.args.join(" ")];
           return {
             exitCode: stdout === undefined ? 1 : 0,
             stdout: stdout ?? "",
@@ -167,6 +181,35 @@ it.effect("records a delegated child's report with the git facts of its own chec
       questions: [],
     });
     assert.equal(command.observed?.baseRef, "feat/parent");
+  }),
+);
+
+it.effect("reads a child in the parent's checkout from the commit its task started at", () =>
+  Effect.gen(function* () {
+    const dispatched: Array<OrchestrationV2ServerCommand> = [];
+    const gitCwds: Array<string> = [];
+    const result = yield* Effect.gen(function* () {
+      const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+      return yield* service.reportTask(childScope, { status: "working", summary: "Halfway." });
+    }).pipe(
+      Effect.provide(
+        makeLayer({
+          childLineageParent: parentThreadId,
+          childWorktreePath: null,
+          childBranch: "feat/parent",
+          dispatched,
+          gitCwds,
+        }),
+      ),
+    );
+
+    assert.isTrue(gitCwds.every((cwd) => cwd === "/repo"));
+    assert.equal(result.observed?.baseSha, startSha);
+    assert.equal(result.observed?.aheadBy, 5);
+    assert.deepEqual(
+      result.observed?.filesChanged.map((file) => file.path),
+      ["src/shared.ts"],
+    );
   }),
 );
 

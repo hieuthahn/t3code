@@ -309,7 +309,10 @@ import { useProactivePanels } from "../hooks/useProactivePanels";
 import { useIncrementalTimelineEntries } from "../hooks/useIncrementalTimelineEntries";
 import { useRightPanelSurfaceClose } from "../hooks/useRightPanelSurfaceClose";
 import { useAgentOpenedPreviews } from "./preview/useAgentOpenedPreviews";
-import type { ComposerBannerStackItem } from "./chat/ComposerBannerStack";
+import type {
+  ComposerBannerStackContent,
+  ComposerBannerStackItem,
+} from "./chat/ComposerBannerStack";
 import { ComposerSurface } from "./chat/ComposerSurface";
 import { resolveThreadSyncPhase } from "../threadSync";
 import {
@@ -2490,6 +2493,7 @@ export default function ChatView(props: ChatViewProps) {
     acknowledgeActiveThreadWoke,
     activeBranchMismatchKey,
     backgroundWorkBanner,
+    childApprovalBanners,
     childInputBanner,
     goalBanner,
     handleSwitchCheckoutToThread,
@@ -2655,9 +2659,10 @@ export default function ChatView(props: ChatViewProps) {
       : null;
   const composerBannerItems = (() => {
     const limitRecoveryItems = limitRecoveryBanner === null ? [] : [limitRecoveryBanner];
-    const backgroundWorkItems = [childInputBanner, goalBanner, backgroundWorkBanner].filter(
-      (item) => item !== null,
-    );
+    const backgroundWorkItems = [
+      ...childApprovalBanners,
+      ...[childInputBanner, goalBanner, backgroundWorkBanner].filter((item) => item !== null),
+    ];
     const usageLimitsItems = [
       ...(usageLimitsBanner === null ? [] : [usageLimitsBanner]),
       ...(pinnedWarning === null
@@ -2713,7 +2718,7 @@ export default function ChatView(props: ChatViewProps) {
         },
       }),
     ];
-  })() as ComposerBannerStackItem[];
+  })() as Array<ComposerBannerStackItem | ComposerBannerStackContent>;
 
   if (
     terminalUiLaunchContext !== null &&

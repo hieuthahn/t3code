@@ -408,7 +408,7 @@ export interface ChatComposerProps {
   sendDisabledReason: string | null;
   isPreparingWorktree: boolean;
   isCompacting: boolean;
-  bannerItems: readonly ComposerBannerStackItem[];
+  bannerItems: ReadonlyArray<ComposerBannerStackItem | ComposerBannerStackContent>;
   resumeCompactionTokens: number | null;
   keepFullHistory: boolean;
   onToggleKeepFullHistory: () => void;

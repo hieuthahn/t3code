@@ -221,7 +221,7 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
   ),
   t3_pending_request_respond: writesThread((input) =>
     Effect.gen(function* () {
-      const { threads, projection } = yield* readQuestion(input);
+      const { threads, projection, scope } = yield* readQuestion(input);
       const result = yield* threads
         .dispatch({
           type: "runtime-request.respond",
@@ -229,6 +229,7 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
           commandId: yield* newCommandId(),
           requestId: input.requestId,
           answers: input.answers,
+          decidedBy: { actor: "agent", threadId: scope.thread?.threadId ?? null },
         })
         .pipe(Effect.mapError(dispatchFailure));
       return { sequence: result.sequence };

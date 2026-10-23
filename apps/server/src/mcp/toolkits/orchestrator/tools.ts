@@ -16,6 +16,8 @@ import {
   OrchestratorMcpEnvironmentTarget,
   OrchestratorMcpRequestSecretInput,
   OrchestratorMcpRequestSecretResult,
+  OrchestratorMcpChildReportInput,
+  OrchestratorMcpChildReportResult,
   OrchestratorMcpFailure,
   OrchestratorMcpListScheduledTasksInput,
   OrchestratorMcpListScheduledTasksResult,
@@ -220,6 +222,18 @@ const RequestSecretTool = Tool.make("request_secret", {
   .annotate(Tool.Title, "Request a secret from the user")
   .annotate(Tool.Destructive, false);
 
+const TaskReportTool = Tool.make("task_report", {
+  description:
+    "Only for a thread started by delegate_task. Report on your own task to the parent thread that delegated it: call it with status working at milestones, blocked or needs_decision when you cannot go on alone, and done or failed just before you end. Each call replaces your previous report. Name every check in tests with its real outcome, and put decisions you need in questions. The server adds what git shows in your checkout (branch, commits ahead and behind the parent's branch, changed files), so the parent sees your claim next to the facts. A question with audience parent goes to the delegating agent; audience user goes to the person.",
+  parameters: OrchestratorMcpChildReportInput,
+  success: OrchestratorMcpChildReportResult,
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies,
+})
+  .annotate(Tool.Title, "Report on a delegated task")
+  .annotate(Tool.Destructive, false);
+
 const CreateThreadsTool = Tool.make("create_threads", {
   description:
     "Create new top-level threads in this checkout. Not delegation. One thread or its own worktree: `t3_thread_launch`. Project, branch, and worktree inherit.",
@@ -369,6 +383,7 @@ export const OrchestratorToolkit = Toolkit.make(
   UpdateScheduledTaskTool,
   DeleteScheduledTaskTool,
   RequestSecretTool,
+  TaskReportTool,
   CreateThreadsTool,
   ThreadListTool,
   ThreadReadTool,

@@ -16,15 +16,14 @@ import { Button, InlineButton } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 
-/** Subagents waiting on the user, unless the parent is itself waiting on them. */
+/** Subagents waiting on the user with questions, which open in their own threads. */
 export function childInputBannerItem(input: {
   readonly childThreadInputs: ReadonlyArray<EnvironmentThreadShell>;
-  readonly parentAwaitingUser: boolean;
   readonly onOpenThread: (threadId: ThreadId) => void;
 }): ComposerBannerStackItem | null {
   const { childThreadInputs, onOpenThread } = input;
   const first = childThreadInputs[0];
-  if (!first || input.parentAwaitingUser) return null;
+  if (!first) return null;
   return {
     id: `child-input:${first.id}`,
     variant: "info",

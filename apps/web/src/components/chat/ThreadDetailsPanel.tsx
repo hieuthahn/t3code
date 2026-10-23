@@ -22,6 +22,7 @@ import { OpenInPicker } from "./OpenInPicker";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 import { ThreadAutomationsPanel } from "./ThreadAutomationsPanel";
 import { ThreadMergeQueuePanel } from "./ThreadMergeQueuePanel";
+import { ThreadTeamPanel } from "./ThreadTeamPanel";
 import { ThreadRelationshipsPanel } from "./ThreadRelationshipsControl";
 
 const GitActionsControl = memo(BaseGitActionsControl);
@@ -189,6 +190,10 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
 
           {density === "full" && !props.draftId ? (
             <ThreadMergeQueuePanel environmentId={props.environmentId} threadId={props.threadId} />
+          ) : null}
+
+          {density === "full" && !props.draftId ? (
+            <ThreadTeamPanel environmentId={props.environmentId} threadId={props.threadId} />
           ) : null}
 
           {density === "full" && !props.draftId ? (

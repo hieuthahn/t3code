@@ -3812,6 +3812,8 @@ export const OrchestrationV2SubscribeThreadInput = Schema.Struct({
   acceptCompactIds: Schema.optionalKey(Schema.Boolean),
   /** The client handles `prompt-suggestion` items; older clients would fail to decode them. */
   acceptPromptSuggestions: Schema.optionalKey(Schema.Boolean),
+  /** The client decodes `prompt-suggestion` items without `suggestion`; older clients reject them. */
+  acceptTurnRecaps: Schema.optionalKey(Schema.Boolean),
 });
 export type OrchestrationV2SubscribeThreadInput = typeof OrchestrationV2SubscribeThreadInput.Type;
 
@@ -3913,6 +3915,13 @@ const OrchestrationV2UnknownThreadStreamEvent = Schema.Struct({
   ),
 );
 
+export const OrchestrationV2TurnRecap = Schema.Struct({
+  summary: Schema.String,
+  question: Schema.optionalKey(Schema.String),
+  replies: Schema.Array(Schema.String),
+});
+export type OrchestrationV2TurnRecap = typeof OrchestrationV2TurnRecap.Type;
+
 export const OrchestrationV2ThreadStreamItem = withRecordIdTable(
   Schema.Union([
     Schema.Struct({
@@ -3933,10 +3942,14 @@ export const OrchestrationV2ThreadStreamItem = withRecordIdTable(
       sequence: NonNegativeInt,
       event: OrchestrationV2DomainEvent,
     }),
-    /** The predicted next prompt for the composer, null once a new run starts. Never persisted. */
+    /**
+     * Next-prompt and recap hints, null once a run starts, never persisted. Another arm here pushes
+     * the server's layers past TypeScript's instantiation limit, so new hints extend this one.
+     */
     Schema.Struct({
       kind: Schema.Literal("prompt-suggestion"),
-      suggestion: Schema.NullOr(Schema.String),
+      suggestion: Schema.optionalKey(Schema.NullOr(Schema.String)),
+      recap: Schema.optionalKey(Schema.NullOr(OrchestrationV2TurnRecap)),
     }),
     OrchestrationV2UnknownThreadStreamEvent,
   ]),

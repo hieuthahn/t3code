@@ -1,4 +1,5 @@
-export const DEFAULT_SLACK_REVIEW_ASSIGNEES = "@ort-internal";
+export const DEFAULT_SLACK_REVIEW_ASSIGNEES = "@web-team";
+const LEGACY_DEFAULT_SLACK_REVIEW_ASSIGNEES = "@ort-internal";
 
 /** Name a project after its repository: "hora-skills-ort-furo" reads "Hora Skills Ort Furo". */
 export function projectNameFromRepository(repository: string): string {
@@ -17,6 +18,13 @@ export function normalizeSlackAssignees(input: string): string {
     .filter((handle) => handle.length > 0)
     .map((handle) => (handle.startsWith("@") ? handle : `@${handle}`))
     .join(" ");
+}
+
+/** Read stored assignees, moving the retired "@ort-internal" default to the current one. */
+export function resolveStoredSlackAssignees(stored: string): string {
+  return normalizeSlackAssignees(stored) === LEGACY_DEFAULT_SLACK_REVIEW_ASSIGNEES
+    ? DEFAULT_SLACK_REVIEW_ASSIGNEES
+    : stored;
 }
 
 /** Write the four-line review request the #--tasks channel expects. */

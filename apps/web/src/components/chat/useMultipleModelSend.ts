@@ -9,7 +9,7 @@ import { deriveThreadTitleSeed } from "@t3tools/client-runtime/operations";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { useNavigate } from "@tanstack/react-router";
-import { newMessageId } from "~/lib/utils";
+import { newFanoutGroupId, newMessageId } from "~/lib/utils";
 import { collapseExpandedComposerCursor } from "../../composer-logic";
 import {
   type ComposerThreadTarget,
@@ -148,6 +148,7 @@ export function useMultipleModelSend(input: MultipleModelSendInput) {
           clearedDraftSnapshot &&
         appAtomRegistry.get(fanoutSelectionsAtom) === submittedSelections;
       setThreadError(threadId, null);
+      const fanoutGroupId = newFanoutGroupId();
       const starts = Promise.all(
         targets.map(async (target) => {
           const started = await startFanoutThread({
@@ -190,6 +191,7 @@ export function useMultipleModelSend(input: MultipleModelSendInput) {
                       branch,
                       worktreePath: null,
                       createdAt: createdAt,
+                      fanoutGroupId,
                     },
                     prepareWorktree: {
                       projectCwd: project.workspaceRoot,

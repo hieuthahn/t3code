@@ -104,6 +104,7 @@ import {
   isUndeliveredMailboxSteer,
 } from "./NotificationMailbox.ts";
 import { EventSinkV2 } from "./EventSink.ts";
+import { renderChildReport } from "./childReportText.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
 import type { OrchestrationEffectRequestV2, PendingOrchestrationEffectV2 } from "./EffectOutbox.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -497,6 +498,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "delegated_task.wake-policy":
     case "delegated_task.completion-delivery.acknowledge":
     case "delegated_task.completion-delivery.dispose":
+    case "child_report.record":
     case "thread.created.record":
       return command.parentThreadId;
     case "secret_request.record":
@@ -616,7 +618,7 @@ function legacyPullRequestLink(
 
 const DELEGATED_RESULT_INLINE_BYTES = 16_000;
 
-function delegatedCompletionWakeDetail(
+export function delegatedCompletionWakeDetail(
   taskIds: ReadonlyArray<string>,
   tasks: ReadonlyArray<OrchestrationV2Subagent>,
 ): string {
@@ -625,15 +627,27 @@ function delegatedCompletionWakeDetail(
     .map((taskId) => {
       const task = tasks.find((candidate) => candidate.id === taskId);
       const label = `Delegated task ${taskId}${task?.title == null ? "" : ` (${task.title})`}${task === undefined ? " reached a terminal state" : ` [${task.status}]`}`;
-      if (task?.result != null) {
-        const detail = `${label}:\n${task.result}`;
+      const fallback = `${label}. Use task_status with taskId ${taskId} to read the result.`;
+      const report = task?.report === undefined ? null : renderChildReport(task.report);
+      const candidates = [
+        ...(task?.result == null
+          ? []
+          : report === null
+            ? [`${label}:\n${task.result}`]
+            : [
+                `${label}:\n${task.result}\n\n${report}`,
+                `${label}:\n${task.result}\n\nUse task_status with taskId ${taskId} to read its report.`,
+              ]),
+        ...(report === null ? [] : [`${fallback}\n\n${report}`]),
+      ];
+      for (const detail of candidates) {
         const bytes = Buffer.byteLength(detail);
         if (bytes <= remainingBytes) {
           remainingBytes -= bytes;
           return detail;
         }
       }
-      return `${label}. Use task_status with taskId ${taskId} to read the result.`;
+      return fallback;
     })
     .join("\n\n");
 }
@@ -7817,6 +7831,54 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     }
   });
 
+  const dispatchChildReportRecord = Effect.fn("orchestrationV2.dispatch.childReportRecord")(
+    function* (
+      command: Extract<OrchestrationV2ServerCommand, { readonly type: "child_report.record" }>,
+      events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    ) {
+      const parentProjection = yield* projectionStore
+        .getThreadRecords(command.parentThreadId, ["subagents"])
+        .pipe(
+          Effect.mapError(
+            (cause) => new OrchestratorProjectionError({ threadId: command.parentThreadId, cause }),
+          ),
+        );
+      const task = parentProjection.subagents.find(
+        (candidate) => candidate.id === command.taskId && candidate.origin === "app_owned",
+      );
+      if (task === undefined) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: `Delegated task ${command.taskId} is not an app-owned task of thread ${command.parentThreadId}.`,
+        });
+      }
+      const now = yield* DateTime.now;
+      yield* emit(
+        events,
+        command,
+      )({
+        type: "subagent.updated",
+        threadId: command.parentThreadId,
+        ...(task.runId === null ? {} : { runId: task.runId }),
+        nodeId: task.id,
+        driver: task.driver,
+        providerInstanceId: task.providerInstanceId,
+        occurredAt: now,
+        payload: {
+          ...task,
+          report: {
+            revision: (task.report?.revision ?? 0) + 1,
+            reportedAt: DateTime.formatIso(now),
+            claimed: command.claimed,
+            observed: command.observed,
+          },
+          updatedAt: now,
+        },
+      });
+    },
+  );
+
   const dispatchCreatedThreadRecord = Effect.fn("orchestrationV2.dispatch.createdThreadRecord")(
     function* (
       command: Extract<OrchestrationV2Command, { readonly type: "thread.created.record" }>,
@@ -12141,6 +12203,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         break;
       case "delegated_task.wake-policy":
         yield* dispatchDelegatedTaskWakePolicy(command, events);
+        break;
+      case "child_report.record":
+        yield* dispatchChildReportRecord(command, events);
         break;
       case "delegated_task.completion-delivery.acknowledge":
       case "delegated_task.completion-delivery.dispose":

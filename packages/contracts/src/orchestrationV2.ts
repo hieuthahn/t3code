@@ -764,6 +764,68 @@ export const OrchestrationV2RemoteTaskChild = Schema.Struct({
 });
 export type OrchestrationV2RemoteTaskChild = typeof OrchestrationV2RemoteTaskChild.Type;
 
+const boundedText = (maximum: number) => Schema.String.check(Schema.isMaxLength(maximum));
+
+/** What a delegated child says about its own work. The parent reads it as the child's claim. */
+export const OrchestrationV2ChildReportClaim = Schema.Struct({
+  status: Schema.Literals(["working", "blocked", "needs_decision", "done", "failed"]),
+  summary: boundedText(4_000),
+  progress: Schema.optional(
+    Schema.Struct({ done: NonNegativeInt, total: NonNegativeInt, label: boundedText(200) }),
+  ),
+  tests: Schema.Array(
+    Schema.Struct({
+      command: boundedText(500),
+      outcome: Schema.Literals(["passed", "failed", "skipped", "not_run"]),
+      passed: Schema.optional(NonNegativeInt),
+      failed: Schema.optional(NonNegativeInt),
+      note: Schema.optional(boundedText(500)),
+    }),
+  ).check(Schema.isMaxLength(20)),
+  questions: Schema.Array(
+    Schema.Struct({
+      id: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
+      question: boundedText(1_000),
+      options: Schema.Array(
+        Schema.Struct({ label: boundedText(200), description: boundedText(500) }),
+      ).check(Schema.isMaxLength(6)),
+      allowCustom: Schema.Boolean,
+      audience: Schema.Literals(["user", "parent"]),
+    }),
+  ).check(Schema.isMaxLength(5)),
+});
+export type OrchestrationV2ChildReportClaim = typeof OrchestrationV2ChildReportClaim.Type;
+
+/** What the server read from git in the child's checkout when it reported. */
+export const OrchestrationV2ChildReportGitFacts = Schema.Struct({
+  branch: Schema.NullOr(Schema.String),
+  headSha: Schema.NullOr(Schema.String),
+  baseRef: Schema.NullOr(Schema.String),
+  baseSha: Schema.NullOr(Schema.String),
+  aheadBy: Schema.NullOr(NonNegativeInt),
+  behindBy: Schema.NullOr(NonNegativeInt),
+  dirty: Schema.Boolean,
+  filesChanged: Schema.Array(
+    Schema.Struct({
+      path: Schema.String,
+      status: Schema.String,
+      additions: Schema.NullOr(NonNegativeInt),
+      deletions: Schema.NullOr(NonNegativeInt),
+    }),
+  ),
+  filesTruncated: Schema.Boolean,
+});
+export type OrchestrationV2ChildReportGitFacts = typeof OrchestrationV2ChildReportGitFacts.Type;
+
+export const OrchestrationV2ChildReport = Schema.Struct({
+  revision: PositiveInt,
+  reportedAt: IsoDateTime,
+  claimed: OrchestrationV2ChildReportClaim,
+  /** Null when the child's checkout is not a git repository. */
+  observed: Schema.NullOr(OrchestrationV2ChildReportGitFacts),
+});
+export type OrchestrationV2ChildReport = typeof OrchestrationV2ChildReport.Type;
+
 export const OrchestrationV2Subagent = Schema.Struct({
   id: NodeId,
   threadId: ThreadId,
@@ -795,6 +857,8 @@ export const OrchestrationV2Subagent = Schema.Struct({
   ]),
   progress: Schema.optional(Schema.String),
   workflow: Schema.optional(OrchestrationV2SubagentWorkflow),
+  /** The latest structured report an app-owned child sent about its work. */
+  report: Schema.optional(OrchestrationV2ChildReport),
   result: Schema.NullOr(Schema.String),
   startedAt: Schema.NullOr(Schema.DateTimeUtc),
   completedAt: Schema.NullOr(Schema.DateTimeUtc),
@@ -3219,6 +3283,15 @@ const OrchestrationV2InternalCommand = Schema.Union([
     stoppedThere: Schema.optional(Schema.Literals(["ran-out", "stopped"])),
     /** The stop generation this report acknowledges; absent for the original unnumbered stop. */
     stopCount: Schema.optional(NonNegativeInt),
+  }),
+  /** Records the report a delegated child sent about its own work. */
+  Schema.Struct({
+    type: Schema.Literal("child_report.record"),
+    commandId: CommandId,
+    parentThreadId: ThreadId,
+    taskId: NodeId,
+    claimed: OrchestrationV2ChildReportClaim,
+    observed: Schema.NullOr(OrchestrationV2ChildReportGitFacts),
   }),
   /**
    * Owes a stop to the thread there of a remote task that already has its

@@ -35,6 +35,9 @@ import {
 import { ThreadTitleRegeneration } from "./threadTitle.ts";
 import {
   OrchestrationV2Actor,
+  OrchestrationV2ChildReport,
+  OrchestrationV2ChildReportClaim,
+  OrchestrationV2ChildReportGitFacts,
   OrchestrationV2CreationSource,
   OrchestrationV2RunStatus,
   OrchestrationV2TurnItemStatus,
@@ -246,8 +249,43 @@ export const OrchestratorMcpDelegateTaskResult = Schema.Struct({
     description:
       "True only on that mode=wait call when timeoutMs elapsed. The timeout does not cancel the child. Later task_status reads return false and use status for liveness.",
   }),
+  report: Schema.optional(OrchestrationV2ChildReport).annotate({
+    description:
+      "The child's latest task_report. claimed is the child's own account and is not verified; observed is what the server read from git in the child's checkout.",
+  }),
 });
 export type OrchestratorMcpDelegateTaskResult = typeof OrchestratorMcpDelegateTaskResult.Type;
+
+const childClaimFields = OrchestrationV2ChildReportClaim.fields;
+
+export const OrchestratorMcpChildReportInput = Schema.Struct({
+  status: childClaimFields.status.annotate({
+    description:
+      "working while you continue; blocked or needs_decision when you cannot go on alone; done or failed just before you end.",
+  }),
+  summary: childClaimFields.summary.annotate({
+    description: "What you did and where it stands, in a few sentences.",
+  }),
+  progress: childClaimFields.progress,
+  tests: Schema.optional(childClaimFields.tests).annotate({
+    description: "Each check you ran or meant to run, with its real outcome.",
+  }),
+  questions: Schema.optional(childClaimFields.questions).annotate({
+    description:
+      "Decisions you need. audience parent goes to the agent that delegated you; user goes to the person.",
+  }),
+});
+export type OrchestratorMcpChildReportInput = typeof OrchestratorMcpChildReportInput.Type;
+
+export const OrchestratorMcpChildReportResult = Schema.Struct({
+  taskId: NodeId,
+  revision: PositiveInt,
+  observed: Schema.NullOr(OrchestrationV2ChildReportGitFacts).annotate({
+    description:
+      "What the server read from git in your checkout, shown to the parent beside your claim.",
+  }),
+});
+export type OrchestratorMcpChildReportResult = typeof OrchestratorMcpChildReportResult.Type;
 
 export const OrchestratorMcpTaskStatusInput = Schema.Struct({
   taskId: NodeId,

@@ -1,8 +1,20 @@
 import { CollapsibleSectionHeader } from "../ui/collapsible-section-header";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ChevronRightIcon, Columns3Icon, FolderIcon, PinIcon, PinOffIcon } from "lucide-react";
-import { type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import {
+  ChevronRightIcon,
+  Columns3Icon,
+  FolderIcon,
+  GripVerticalIcon,
+  PinIcon,
+  PinOffIcon,
+} from "lucide-react";
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 import { cn } from "~/lib/utils";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -180,9 +192,24 @@ export function SidebarBucketHeader(props: {
   pinned?: boolean | undefined;
   onPinnedChange?: ((pinned: boolean) => void) | undefined;
   onContextMenu?: ((position: { x: number; y: number }) => void) | undefined;
+  reorder?:
+    | {
+        readonly groupId: string;
+        readonly dragging: boolean;
+        readonly onHandlePointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
+        readonly onStep: (step: -1 | 1) => void;
+      }
+    | undefined;
 }) {
   const isProject = props.project !== undefined;
   const canPin = isProject && props.onPinnedChange !== undefined;
+  const reorder = isProject ? props.reorder : undefined;
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (reorder === undefined || !event.altKey) return;
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    event.preventDefault();
+    reorder.onStep(event.key === "ArrowUp" ? -1 : 1);
+  };
   return (
     <SortableSidebarMarker
       marker={props.marker}
@@ -191,7 +218,8 @@ export function SidebarBucketHeader(props: {
       className={cn("mx-0.5 h-7", isProject && "not-first:h-9")}
     >
       <div
-        className="group/bucket relative h-full"
+        data-project-group={reorder?.groupId}
+        className={cn("group/bucket relative h-full", reorder?.dragging && "opacity-50")}
         onContextMenu={
           props.onContextMenu === undefined
             ? undefined
@@ -204,7 +232,9 @@ export function SidebarBucketHeader(props: {
         <button
           type="button"
           aria-expanded={props.expanded}
+          aria-keyshortcuts={reorder === undefined ? undefined : "Alt+ArrowUp Alt+ArrowDown"}
           onClick={props.onToggle}
+          onKeyDown={handleKeyDown}
           className={cn(
             "flex h-full w-full cursor-pointer items-end gap-1.5 rounded-md px-2 pb-1 text-left text-xs outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
             isProject
@@ -213,7 +243,13 @@ export function SidebarBucketHeader(props: {
           )}
         >
           {isProject ? (
-            <span aria-hidden className="mb-px flex size-3.5 shrink-0 self-end">
+            <span
+              aria-hidden
+              className={cn(
+                "mb-px flex size-3.5 shrink-0 self-end",
+                reorder !== undefined && "transition-opacity group-hover/bucket:opacity-0",
+              )}
+            >
               {props.project ? (
                 <ProjectFavicon project={props.project} className="size-3.5" />
               ) : (
@@ -259,6 +295,15 @@ export function SidebarBucketHeader(props: {
             />
           </span>
         </button>
+        {reorder === undefined ? null : (
+          <span
+            aria-hidden
+            onPointerDown={reorder.onHandlePointerDown}
+            className="pointer-events-none absolute inset-y-0 left-0 flex w-6 cursor-grab touch-none items-end justify-center pb-1 text-sidebar-muted-foreground opacity-0 transition-opacity hover:text-sidebar-foreground active:cursor-grabbing group-hover/bucket:pointer-events-auto group-hover/bucket:opacity-100"
+          >
+            <GripVerticalIcon className="mb-px size-3.5" />
+          </span>
+        )}
         {canPin ? (
           <Tooltip>
             <TooltipTrigger

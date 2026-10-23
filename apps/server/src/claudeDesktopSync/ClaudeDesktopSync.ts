@@ -57,6 +57,7 @@ import {
   type DesktopOp,
   type UndoStep,
 } from "./ClaudeDesktopSyncItems.ts";
+import { makeRun } from "./ClaudeDesktopSyncRun.ts";
 import { readT3Threads } from "./ClaudeDesktopT3Threads.ts";
 
 interface Gathered {
@@ -91,8 +92,14 @@ const make = (options: ClaudeDesktopSyncOptions) =>
       makeSyncFiles(fileSystem, path, config.baseDir);
 
     const gather = Effect.gen(function* () {
-      const desktop = yield* readDesktopSessions(roots);
-      const threads = [...(yield* readT3Threads(orchestrator, projects, roots.projects))];
+      const desktop = yield* readDesktopSessions(roots).pipe(
+        Effect.withSpan("ClaudeDesktopSync.readDesktopSessions"),
+      );
+      const threads = [
+        ...(yield* readT3Threads(orchestrator, projects, roots.projects).pipe(
+          Effect.withSpan("ClaudeDesktopSync.readT3Threads"),
+        )),
+      ];
       const links = (yield* readJson<{ links?: SyncLink[] }>(files.links, {})).links ?? [];
       const known = new Set(threads.map((thread) => thread.threadId));
       for (const link of links) {
@@ -130,7 +137,9 @@ const make = (options: ClaudeDesktopSyncOptions) =>
 
     const plan = Effect.gen(function* () {
       const gathered = yield* gather;
-      const parents = yield* forkParents(gathered);
+      const parents = yield* forkParents(gathered).pipe(
+        Effect.withSpan("ClaudeDesktopSync.findForkParents"),
+      );
       return {
         gathered,
         result: planSync({
@@ -465,20 +474,11 @@ const make = (options: ClaudeDesktopSyncOptions) =>
         Effect.provideService(Path.Path, path),
       );
 
-    const run = (
-      request: ClaudeDesktopSyncRequest,
-    ): Effect.Effect<ClaudeDesktopSyncResponse, ClaudeDesktopSyncError> => {
-      switch (request.action) {
-        case "preview":
-          return withFiles(preview).pipe(Effect.map((result) => ({ preview: result })));
-        case "apply":
-          return withFiles(apply(request.apply ?? { selectedIds: [], conflictChoices: [] })).pipe(
-            Effect.map((result) => ({ apply: result })),
-          );
-        case "undoLast":
-          return withFiles(undoLast).pipe(Effect.map((result) => ({ undoLast: result })));
-      }
-    };
+    const run = makeRun({
+      preview: withFiles(preview),
+      apply: (input) => withFiles(apply(input)),
+      undoLast: withFiles(undoLast),
+    });
 
     return { run } satisfies ClaudeDesktopSyncShape;
   });

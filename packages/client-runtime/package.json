@@ -351,6 +351,10 @@
       "types": "./src/state/vcs.ts",
       "default": "./src/state/vcs.ts"
     },
+    "./work-log/child-report": {
+      "types": "./src/work-log/childReport.ts",
+      "default": "./src/work-log/childReport.ts"
+    },
     "./work-log/request-resolution": {
       "types": "./src/work-log/requestResolution.ts",
       "default": "./src/work-log/requestResolution.ts"

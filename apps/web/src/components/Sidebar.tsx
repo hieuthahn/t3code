@@ -30,7 +30,10 @@ import {
   createInboxReturnTracker,
   isThreadWorking,
 } from "@t3tools/client-runtime/state/thread-inbox";
-import { sortSettledThreads } from "@t3tools/client-runtime/state/thread-sort";
+import {
+  resolveSettledThreadTimestamp,
+  sortSettledThreads,
+} from "@t3tools/client-runtime/state/thread-sort";
 import {
   nextShownOrder,
   threadSearchMatchKey,
@@ -114,7 +117,7 @@ import { useTerminalFocus } from "../hooks/useTerminalFocus";
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { registerSettleAndAdvance } from "../settleAndAdvance";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
-import { useClientSettings } from "../hooks/useSettings";
+import { updateClientSettings, useClientSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
@@ -184,6 +187,7 @@ import {
   type SidebarSection,
   resolveSidebarRowThreadId,
   fanoutGroupMarker,
+  timeBucketMarker,
   settledGroupIdOfMarker,
   settledGroupMarker,
   sidebarMarkerId,
@@ -241,6 +245,7 @@ import {
   SidebarSectionHeader,
   SidebarSectionPlaceholder,
   SidebarFanoutGroupHeader,
+  SidebarTimeBucketHeader,
   SidebarSettledGroupHeader,
 } from "./sidebar/SidebarListMarkers";
 import {
@@ -256,6 +261,11 @@ import {
   fanoutRowThreads,
   resolveFanoutGroupIds,
 } from "./sidebar/fanoutGroups";
+import {
+  bucketByTime,
+  sidebarThreadTimeMs,
+  sortThreadsByRecency,
+} from "./sidebar/sidebarTimeBuckets";
 import { sidebarProviderEntriesAtom } from "./sidebar/sidebarProviderEntries";
 
 const EMPTY_PROVIDER_ENTRIES: ReadonlyMap<string, SidebarProviderEntry> = new Map();
@@ -270,6 +280,7 @@ const SETTLED_GROUPS_EXPANDED_KEY = "t3code:sidebar:settled-groups-expanded";
 const NO_EXPANDED_SETTLED_GROUPS: readonly string[] = [];
 const SettledGroupIdsSchema = Schema.Array(Schema.String);
 const FANOUT_GROUPS_COLLAPSED_KEY = "t3code:sidebar:fanout-groups-collapsed";
+const FANOUT_GROUPS_EXPANDED_COMPACT_KEY = "t3code:sidebar:fanout-groups-expanded-compact";
 
 const inboxReturns = createInboxReturnTracker();
 
@@ -292,6 +303,7 @@ interface SidebarThreadPartitionInput {
   readonly serverConfigs: ReadonlyMap<EnvironmentId, EnvironmentServerConfig>;
   readonly optimisticDrop: SidebarOptimisticDrop | null;
   readonly workingShelfEnabled: boolean;
+  readonly compactModeEnabled: boolean;
   // Snooze wakes, the queued-turn grace and the Working shelf's exit grace depend
   // on the clock, so the minute tick, the precise snooze-wake tick and the inbox
   // tracker's expiry version are inputs: a new key repartitions.
@@ -300,6 +312,11 @@ interface SidebarThreadPartitionInput {
 
 function threadShellKey(thread: Pick<SidebarThreadSummary, "environmentId" | "id">): string {
   return scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
+}
+
+function settledThreadTimeMs(thread: EnvironmentThreadShell): number {
+  const timestamp = resolveSettledThreadTimestamp(thread);
+  return timestamp === null ? Number.NaN : Date.parse(timestamp);
 }
 
 const NO_DRAGGED_ORDER: readonly string[] = [];
@@ -314,8 +331,16 @@ function resolveDraggedOrders(input: {
   readonly settledThreads: readonly EnvironmentThreadShell[];
   readonly activeThreads: readonly EnvironmentThreadShell[];
   readonly workingShelfEnabled: boolean;
+  readonly compactModeEnabled: boolean;
 }): typeof NO_DRAGGED_ORDERS {
-  const { drag, threadByKey, settledThreads, activeThreads, workingShelfEnabled } = input;
+  const {
+    drag,
+    threadByKey,
+    settledThreads,
+    activeThreads,
+    workingShelfEnabled,
+    compactModeEnabled,
+  } = input;
   const thread = threadByKey.get(drag.activeKey);
   if (thread === undefined) return NO_DRAGGED_ORDERS;
   const others = (list: readonly EnvironmentThreadShell[]) =>
@@ -325,12 +350,17 @@ function resolveDraggedOrders(input: {
       ...others(settledThreads),
       applySidebarThreadDrop(thread, "settled", drag.occurredAt),
     ]).map(threadShellKey),
-    activeOrder: workingShelfEnabled
-      ? sortInboxThreadsByReturn(
-          [...others(activeThreads), applySidebarThreadDrop(thread, "active", drag.occurredAt)],
-          inboxReturns.returnedAt,
-        ).map(threadShellKey)
-      : undefined,
+    activeOrder: compactModeEnabled
+      ? sortThreadsByRecency([
+          ...others(activeThreads),
+          applySidebarThreadDrop(thread, "active", drag.occurredAt),
+        ]).map(threadShellKey)
+      : workingShelfEnabled
+        ? sortInboxThreadsByReturn(
+            [...others(activeThreads), applySidebarThreadDrop(thread, "active", drag.occurredAt)],
+            inboxReturns.returnedAt,
+          ).map(threadShellKey)
+        : undefined,
   };
 }
 
@@ -381,7 +411,9 @@ function useSidebarThreads(input: {
     inboxReturns.getSnapshot,
   );
   const settledGroupsEnabled = useClientSettings((s) => s.sidebarSettledProjectGroupsEnabled);
+  const compactModeEnabled = useClientSettings((s) => s.sidebarCompactModeEnabled);
   const nowMinute = useNowMinute();
+  const nowMs = Date.parse(`${nowMinute}:00.000Z`);
   // Minute-quantized clocks would delay second-precise snooze wakes by up to a minute.
   const [snoozeWakeTick, bumpSnoozeWakeTick] = useState(0);
   const [nextSnoozeWakeAt, setNextSnoozeWakeAt] = useState<string | null>(null);
@@ -414,6 +446,12 @@ function useSidebarThreads(input: {
     NO_EXPANDED_SETTLED_GROUPS,
     SettledGroupIdsSchema,
   );
+  // Compact mode folds every group until opened, so it remembers the opened ones instead.
+  const [expandedCompactFanoutGroupIds, setExpandedCompactFanoutGroupIds] = useLocalStorage(
+    FANOUT_GROUPS_EXPANDED_COMPACT_KEY,
+    NO_EXPANDED_SETTLED_GROUPS,
+    SettledGroupIdsSchema,
+  );
   const [settledTail, setSettledTail] = useState({
     scopeKey: projectScopeKey,
     count: SETTLED_TAIL_INITIAL_COUNT,
@@ -431,6 +469,7 @@ function useSidebarThreads(input: {
     serverConfigs,
     optimisticDrop,
     workingShelfEnabled,
+    compactModeEnabled,
     clockKey: `${nowMinute}:${snoozeWakeTick}:${inboxReturnsVersion}`,
   });
   const partitionNextWakeAt = partition.snoozedThreads[0]?.snoozedUntil ?? null;
@@ -449,7 +488,13 @@ function useSidebarThreads(input: {
   const settledCount =
     settledThreads.length + olderSettledShelf.unloadedCount(partition.visibleThreads);
   const fanoutGroupIdByKey = resolveFanoutGroupIds(threads, threadShellKey);
-  const collapsedFanoutGroupIdSet = new Set(collapsedFanoutGroupIds);
+  const collapsedFanoutGroupIdSet = compactModeEnabled
+    ? new Set(
+        [...fanoutGroupIdByKey.values()].filter(
+          (groupId) => !expandedCompactFanoutGroupIds.includes(groupId),
+        ),
+      )
+    : new Set(collapsedFanoutGroupIds);
   const fanoutRowsOf = (list: readonly EnvironmentThreadShell[]) =>
     arrangeFanoutRows({
       threads: list,
@@ -458,8 +503,19 @@ function useSidebarThreads(input: {
       collapsedGroupIds: collapsedFanoutGroupIdSet,
       routeThreadKey: routeRowThreadKey,
     });
+  const timeBucketRowsOf = (
+    list: readonly EnvironmentThreadShell[],
+    section: SidebarSection,
+    timeMsOf: (thread: EnvironmentThreadShell) => number,
+  ) =>
+    bucketByTime(list, timeMsOf, nowMs).map((bucket) => ({
+      marker: timeBucketMarker(section, bucket.bucket),
+      label: bucket.label,
+      threadCount: bucket.items.length,
+      rows: fanoutRowsOf(bucket.items),
+    }));
   const settledGroups =
-    settledGroupsEnabled && settledShelfExpanded
+    settledGroupsEnabled && settledShelfExpanded && !compactModeEnabled
       ? groupSettledThreads({
           threads: listedSettledThreads,
           targets: settledGroupTargets,
@@ -492,11 +548,18 @@ function useSidebarThreads(input: {
     }
     return visible.length === settledThreads.length ? settledThreads : visible;
   })();
-  const settledRows = fanoutRowsOf(
-    settledShelfExpanded
-      ? visibleSettledThreads
-      : routeThreadOnly(visibleSettledThreads, routeRowThreadKey),
-  );
+  const settledTimeBuckets =
+    compactModeEnabled && settledShelfExpanded
+      ? timeBucketRowsOf(visibleSettledThreads, "settled", settledThreadTimeMs)
+      : null;
+  const settledRows =
+    settledTimeBuckets !== null
+      ? settledTimeBuckets.flatMap((bucket) => bucket.rows)
+      : fanoutRowsOf(
+          settledShelfExpanded
+            ? visibleSettledThreads
+            : routeThreadOnly(visibleSettledThreads, routeRowThreadKey),
+        );
   const renderedSettledThreads =
     settledGroups !== null
       ? settledGroups.flatMap((group) => fanoutRowThreads(group.rows))
@@ -508,7 +571,13 @@ function useSidebarThreads(input: {
     ? workingThreads
     : routeThreadOnly(workingThreads, routeRowThreadKey);
   const pinnedRows = fanoutRowsOf(pinnedThreads);
-  const activeRows = fanoutRowsOf(activeThreads);
+  const activeTimeBuckets = compactModeEnabled
+    ? timeBucketRowsOf(activeThreads, "active", sidebarThreadTimeMs)
+    : null;
+  const activeRows =
+    activeTimeBuckets !== null
+      ? activeTimeBuckets.flatMap((bucket) => bucket.rows)
+      : fanoutRowsOf(activeThreads);
   const workingRows = fanoutRowsOf(visibleWorkingThreads);
   const snoozedRows = fanoutRowsOf(visibleSnoozedThreads);
   const fanoutGroupByMarker = new Map<SidebarListMarker, FanoutGroupHeader>();
@@ -562,6 +631,7 @@ function useSidebarThreads(input: {
     ...partition,
     threads,
     workingShelfEnabled,
+    compactModeEnabled,
     searchableThreads: [
       ...pinnedThreads,
       ...activeThreads,
@@ -600,9 +670,16 @@ function useSidebarThreads(input: {
     settledRows,
     fanoutGroupByMarker,
     toggleFanoutGroup: (groupId: string) =>
-      setCollapsedFanoutGroupIds((ids) =>
+      (compactModeEnabled ? setExpandedCompactFanoutGroupIds : setCollapsedFanoutGroupIds)((ids) =>
         ids.includes(groupId) ? ids.filter((id) => id !== groupId) : [...ids, groupId],
       ),
+    activeTimeBuckets,
+    settledTimeBuckets,
+    timeBucketByMarker: new Map(
+      [...(activeTimeBuckets ?? []), ...(settledTimeBuckets ?? [])].map(
+        (bucket) => [bucket.marker, bucket] as const,
+      ),
+    ),
     orderedThreadKeys: orderedThreads.map(threadShellKey),
     threadByKey: new Map(
       [...orderedThreads, ...collapsedFanoutMembers].map(
@@ -631,6 +708,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
     serverConfigs,
     optimisticDrop,
     workingShelfEnabled,
+    compactModeEnabled,
   } = input;
   const preciseNow = new Date().toISOString();
   const visible = filterSidebarV2VisibleThreads(threads, scopedProjectKeys, delegatedUnderParent);
@@ -691,9 +769,11 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
   }
   // Capability gates dragging only; mixed server versions must preserve the same pinned order across clients.
   const sortedPinned = sortPinnedThreadsForSidebar(pinned);
-  const sortedActive = workingShelfEnabled
-    ? sortInboxThreadsByReturn(active, inboxObservation.returnedAt)
-    : sortThreadsForSidebar(active);
+  const sortedActive = compactModeEnabled
+    ? sortThreadsByRecency(active)
+    : workingShelfEnabled
+      ? sortInboxThreadsByReturn(active, inboxObservation.returnedAt)
+      : sortThreadsForSidebar(active);
   return {
     pinnedThreads:
       optimisticDrop?.section !== "pinned" || optimisticDrop.order === null
@@ -1195,6 +1275,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const {
     threads,
     workingShelfEnabled,
+    compactModeEnabled,
     pinnedThreads,
     draggableThreadKeys,
     activeReorderableThreadKeys,
@@ -1226,6 +1307,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     settledRows,
     fanoutGroupByMarker,
     toggleFanoutGroup,
+    activeTimeBuckets,
+    settledTimeBuckets,
+    timeBucketByMarker,
     orderedThreadKeys,
     threadByKey,
     settledThreadKeys,
@@ -1871,7 +1955,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     items.push(...rowsOf(pinnedRows, "pinned"));
     items.push({ kind: "marker", marker: "pinned-divider" });
     items.push({ kind: "marker", marker: "active-placeholder" });
-    items.push(...rowsOf(activeRows, "active"));
+    if (activeTimeBuckets === null) items.push(...rowsOf(activeRows, "active"));
+    else {
+      for (const bucket of activeTimeBuckets) {
+        items.push({ kind: "marker", marker: bucket.marker });
+        items.push(...rowsOf(bucket.rows, "active"));
+      }
+    }
     if (workingThreads.length > 0) {
       items.push({ kind: "marker", marker: "working-header" });
       items.push(...rowsOf(workingRows, "working"));
@@ -1882,7 +1972,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     }
     items.push({ kind: "marker", marker: "settled-header" });
     items.push({ kind: "marker", marker: "settled-placeholder" });
-    if (settledGroups === null) {
+    if (settledTimeBuckets !== null) {
+      for (const bucket of settledTimeBuckets) {
+        items.push({ kind: "marker", marker: bucket.marker });
+        items.push(...rowsOf(bucket.rows, "settled"));
+      }
+    } else if (settledGroups === null) {
       items.push(...rowsOf(settledRows, "settled"));
     } else {
       for (const group of settledGroups) {
@@ -1947,6 +2042,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           settledThreads,
           activeThreads,
           workingShelfEnabled,
+          compactModeEnabled,
         });
   const sidebarSortingStrategy = createSidebarSortingStrategy({
     items: sidebarListItems,
@@ -1987,7 +2083,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             activeOrder: activeKeys,
             activeKeysById,
             activeReorderableKeys: activeReorderableThreadKeys,
-            activeTimeOrdered: workingShelfEnabled,
+            activeTimeOrdered: workingShelfEnabled || compactModeEnabled,
           }).kind !== "none"
         );
       },
@@ -2022,7 +2118,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       activeOrder: activeKeys,
       activeKeysById,
       activeReorderableKeys: activeReorderableThreadKeys,
-      activeTimeOrdered: workingShelfEnabled,
+      activeTimeOrdered: workingShelfEnabled || compactModeEnabled,
     });
     if (plan.kind === "none") return;
     if (plan.kind === "settle" && settlingThreadKeysRef.current.has(activeKey)) return;
@@ -3052,6 +3148,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                   </ComboboxPopup>
                 </Combobox>
               }
+              compactMode={compactModeEnabled}
+              onToggleCompactMode={() =>
+                void updateClientSettings({ sidebarCompactModeEnabled: !compactModeEnabled })
+              }
               onNewProject={openAddProjectCommandPalette}
               onNewThread={handleNewThreadClick}
               newThreadDisabled={projects.length === 0}
@@ -3183,7 +3283,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         );
                         const isCard =
                           section === "active" || section === "pinned" || section === "working";
-                        const rowVariant = isCard && !nested ? "card" : "slim";
+                        const rowVariant =
+                          isCard && !nested && !compactModeEnabled ? "card" : "slim";
                         return (
                           <SortableThreadRow
                             key={threadKey}
@@ -3196,6 +3297,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             }
                             thread={thread}
                             nested={nested}
+                            compact={compactModeEnabled}
                             variant={rowVariant}
                             variantAction={
                               section === "snoozed"
@@ -3416,6 +3518,18 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             );
                             break;
                           default: {
+                            const timeBucket = timeBucketByMarker.get(item.marker);
+                            if (timeBucket !== undefined) {
+                              items.push(
+                                <SidebarTimeBucketHeader
+                                  key={sidebarMarkerId(item.marker)}
+                                  marker={item.marker}
+                                  label={timeBucket.label}
+                                  threadCount={timeBucket.threadCount}
+                                />,
+                              );
+                              break;
+                            }
                             const fanoutGroup = fanoutGroupByMarker.get(item.marker);
                             if (fanoutGroup !== undefined) {
                               items.push(
@@ -3425,6 +3539,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                   label={fanoutGroup.label}
                                   memberCount={fanoutGroup.memberKeys.length}
                                   expanded={!fanoutGroup.collapsed}
+                                  compact={compactModeEnabled}
                                   onToggle={() => toggleFanoutGroup(fanoutGroup.id)}
                                   onCompare={() =>
                                     void router.navigate({

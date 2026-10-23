@@ -45,6 +45,8 @@ import {
 } from "./orchestrationV2.ts";
 import { ProviderOptionSelection, ProviderOptionSelectionValue } from "./model.ts";
 import { MergeQueueItemStatus } from "./mergeQueue.ts";
+import { TEAM_MAX_WORKERS } from "./team.ts";
+import { TeamRunStatus } from "./teamRun.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 
 const OrchestratorMcpPrompt = TrimmedNonEmptyString.check(Schema.isMaxLength(120_000)).annotate({
@@ -863,6 +865,68 @@ export const OrchestratorMcpProposeTasksResult = Schema.Struct({
   }),
 });
 export type OrchestratorMcpProposeTasksResult = typeof OrchestratorMcpProposeTasksResult.Type;
+
+export const OrchestratorMcpTeamAssignment = Schema.Struct({
+  key: OrchestratorMcpProposedTask.fields.key,
+  title: OrchestratorMcpProposedTask.fields.title,
+  task: OrchestratorMcpDelegateTaskInput.fields.task,
+  worker: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: TEAM_MAX_WORKERS })).annotate({
+    description: "The worker's number in the Workers list of your team rules.",
+  }),
+  dependsOn: Schema.optional(Schema.Array(OrchestratorMcpProposedTask.fields.key)).annotate({
+    description:
+      "Keys that must finish first: assignments already on the team or listed earlier in this call.",
+  }),
+  readOnly: Schema.optional(Schema.Boolean).annotate({
+    description: "True when it only reads, such as a review. A reader never waits for writers.",
+  }),
+  files: Schema.optional(Schema.Array(TrimmedNonEmptyString)).annotate({
+    description:
+      "Paths or folders it writes, relative to the checkout. Omit for the whole checkout. Writers sharing the checkout with overlapping files run one at a time.",
+  }),
+  isolation: OrchestratorMcpDelegateTaskInput.fields.isolation.annotate({
+    description:
+      "worktree (the default for writers) gives the worker its own checkout; shared (the default for readers) uses yours.",
+  }),
+});
+export type OrchestratorMcpTeamAssignment = typeof OrchestratorMcpTeamAssignment.Type;
+
+export const OrchestratorMcpTeamAssignInput = Schema.Struct({
+  assignments: Schema.Array(OrchestratorMcpTeamAssignment).check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(TEAM_MAX_WORKERS),
+  ),
+  reason: TrimmedNonEmptyString.annotate({
+    description: "One or two sentences on this round of work, shown to the user.",
+  }),
+});
+export type OrchestratorMcpTeamAssignInput = typeof OrchestratorMcpTeamAssignInput.Type;
+
+export const OrchestratorMcpTeamAssignResult = Schema.Struct({
+  status: Schema.Literals(["queued", "declined", "cancelled", "timed_out"]).annotate({
+    description:
+      "queued: the approved assignments joined the team. declined, cancelled, timed_out: the user's card ended without any.",
+  }),
+  started: Schema.Array(
+    Schema.Struct({ key: Schema.String, taskId: NodeId, childThreadId: Schema.NullOr(ThreadId) }),
+  ),
+  waiting: Schema.Array(Schema.Struct({ key: Schema.String, reason: Schema.String })).annotate({
+    description: "Assignments that start later on their own, with what each waits for.",
+  }),
+  declinedKeys: Schema.Array(Schema.String),
+  failed: Schema.Array(Schema.Struct({ key: Schema.String, message: Schema.String })),
+});
+export type OrchestratorMcpTeamAssignResult = typeof OrchestratorMcpTeamAssignResult.Type;
+
+export const OrchestratorMcpTeamFinishInput = Schema.Struct({
+  summary: TrimmedNonEmptyString.check(Schema.isMaxLength(6_000)).annotate({
+    description: "What the team achieved and what is left, for the user.",
+  }),
+});
+export type OrchestratorMcpTeamFinishInput = typeof OrchestratorMcpTeamFinishInput.Type;
+
+export const OrchestratorMcpTeamFinishResult = Schema.Struct({ status: TeamRunStatus });
+export type OrchestratorMcpTeamFinishResult = typeof OrchestratorMcpTeamFinishResult.Type;
 
 export const OrchestratorMcpMergeEnqueueInput = Schema.Struct({
   childThreadId: ThreadId.annotate({

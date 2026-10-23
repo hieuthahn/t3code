@@ -20,6 +20,7 @@ import {
   type HandoffTimelineRun,
 } from "@t3tools/client-runtime/handoff";
 import { formatSubagentDisplayTitle } from "@t3tools/client-runtime/state/subagent-display";
+import { childReportView } from "@t3tools/client-runtime/work-log/child-report";
 import {
   ProviderDriverKind,
   type OrchestrationV2Notification,
@@ -447,7 +448,10 @@ function SubagentTimelineLink(props: {
   const result = (agent?.result ?? props.result)?.trim();
   const progress = (agent?.progress ?? props.progress)?.trim();
   const settled = SETTLED_SUBAGENT_STATUSES.has(status ?? liveStatus);
-  const rawDetail = settled ? result || progress : progress || result;
+  const report = agent?.report === undefined ? null : childReportView(agent.report);
+  const rawDetail = settled
+    ? result || report?.headline || progress
+    : report?.headline || progress || result;
   const detail =
     rawDetail && !GENERIC_CHILD_END.test(rawDetail) ? plainDetail(rawDetail) || null : null;
   const failed = status === "failed";
@@ -546,6 +550,7 @@ function SubagentTimelineLink(props: {
           status={liveStatus}
           result={agent?.result ?? props.result}
           progress={agent?.progress ?? props.progress}
+          report={report}
         />
       </ThreadHoverCardPopup>
     </Tooltip>
@@ -557,6 +562,7 @@ function SubagentTimelineTooltip(
     model: string | null;
     modelSelection: OrchestrationV2Subagent["modelSelection"];
     elapsed: ReactNode;
+    report: ReturnType<typeof childReportView> | null;
   },
 ) {
   const environmentId = props.parentRef.environmentId;
@@ -586,6 +592,7 @@ function SubagentTimelineTooltip(
       status={props.status}
       result={props.result}
       progress={props.progress}
+      report={props.report}
       parentThread={parent}
       childThread={child}
       parentProject={parentProject ?? undefined}

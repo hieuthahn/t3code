@@ -12,6 +12,7 @@ import {
   type ProjectId,
   type ThreadId,
 } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -34,7 +35,7 @@ import {
   makeMergeQueueGit,
   makeMergeQueueLanding,
   resolveMergeGates,
-  type StageFailure,
+  StageFailure,
 } from "./mergeQueueLanding.ts";
 import {
   ACTIVE_STATUSES,
@@ -48,6 +49,11 @@ import {
 import { makeItemTransition } from "./mergeQueueTransition.ts";
 
 export type { MergeQueueItem };
+
+const squashedMessage = (cause: Cause.Cause<unknown>) => {
+  const error = Cause.squash(cause);
+  return error instanceof Error ? error.message : String(error);
+};
 
 export class MergeQueueService extends Context.Service<
   MergeQueueService,
@@ -282,13 +288,32 @@ export const layerWith = (options: { readonly drainOnApprove: boolean }) =>
           status: "failed",
           failure_json: encodeFailure({ stage: failure.stage, message: failure.message }),
         });
-        if (failure.stage !== "interrupted") {
+        if (failure.stage !== "interrupted" && failure.stage !== "error") {
           yield* tellChild(
             yield* readItem(row.item_id),
             `The merge queue did not land ${row.child_branch} on ${row.trunk_ref}. ${failure.message}`,
           );
         }
       });
+
+      /** Land one item; any failure but an interruption fails that item so the rest still land. */
+      const landOne = (row: MergeQueueRow) =>
+        land(row).pipe(
+          Effect.catchTag("StageFailure", (failure) => Effect.succeed(failure)),
+          Effect.catchCause((cause) =>
+            Cause.hasInterruptsOnly(cause)
+              ? Effect.failCause(cause)
+              : Effect.succeed(
+                  new StageFailure({
+                    stage: "error",
+                    message: `The merge queue hit an unexpected error: ${squashedMessage(cause)}`,
+                  }),
+                ),
+          ),
+          Effect.flatMap((failure) =>
+            failure === undefined ? Effect.void : failItem(row, failure),
+          ),
+        );
 
       const nextQueued = readRows(
         sql`SELECT * FROM merge_queue_items WHERE status = 'queued' ORDER BY updated_at, enqueued_at LIMIT 1`,
@@ -299,9 +324,7 @@ export const layerWith = (options: { readonly drainOnApprove: boolean }) =>
             const rows = yield* nextQueued;
             const row = rows[0];
             if (row === undefined) return;
-            yield* land(row).pipe(
-              Effect.catchTags({ StageFailure: (failure) => failItem(row, failure) }),
-            );
+            yield* landOne(row);
           }
         }).pipe(
           Effect.catchCause((cause) => Effect.logError("The merge queue stopped", { cause })),

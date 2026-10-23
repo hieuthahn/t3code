@@ -1,10 +1,10 @@
-import type {
-  MergeQueueError,
+import {
   MergeQueueFailureStage,
-  MergeQueueGateRun,
-  ProjectId,
-  ProjectScript,
-  ThreadId,
+  type MergeQueueError,
+  type MergeQueueGateRun,
+  type ProjectId,
+  type ProjectScript,
+  type ThreadId,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -26,7 +26,7 @@ export class GitStepFailure extends Schema.TaggedError<GitStepFailure>()("GitSte
 }) {}
 
 export class StageFailure extends Schema.TaggedError<StageFailure>()("StageFailure", {
-  stage: Schema.Literals(["head_moved", "update", "gate", "merge", "interrupted"]),
+  stage: MergeQueueFailureStage,
   message: Schema.String,
 }) {}
 

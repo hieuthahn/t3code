@@ -244,7 +244,9 @@ import {
 import {
   bucketByTime,
   countByTimeBucket,
+  everyBucketCollapsed,
   visibleBucketItems,
+  withBucketsCollapsed,
   sidebarThreadTimeMs,
   sortThreadsByRecency,
 } from "./sidebar/sidebarTimeBuckets";
@@ -654,6 +656,9 @@ function useSidebarThreads(input: {
   ] as const) {
     for (const thread of list) sectionByThreadKey.set(threadShellKey(thread), section);
   }
+  const visibleBucketMarkers = [...(activeBuckets ?? []), ...(settledBuckets ?? [])].map(
+    (bucket) => bucket.marker,
+  );
   return {
     routeRowThreadKey,
     ...partition,
@@ -707,6 +712,14 @@ function useSidebarThreads(input: {
         markers.includes(marker)
           ? markers.filter((entry) => entry !== marker)
           : [...markers, marker],
+      ),
+    bucketsCollapsed:
+      visibleBucketMarkers.length === 0
+        ? null
+        : everyBucketCollapsed(visibleBucketMarkers, collapsedBucketMarkers),
+    setAllBucketsCollapsed: (collapse: boolean) =>
+      setCollapsedBucketMarkers((markers) =>
+        withBucketsCollapsed(markers, visibleBucketMarkers, collapse),
       ),
     bucketByMarker: new Map(
       [...(activeBuckets ?? []), ...(settledBuckets ?? [])].map(
@@ -1319,6 +1332,8 @@ export default function Sidebar() {
     activeBuckets,
     settledBuckets,
     toggleBucket,
+    bucketsCollapsed,
+    setAllBucketsCollapsed,
     bucketByMarker,
     orderedThreadKeys,
     threadByKey,
@@ -3094,6 +3109,8 @@ export default function Sidebar() {
               onCompactGroupByChange={(groupBy) =>
                 void updateClientSettings({ sidebarCompactGroupBy: groupBy })
               }
+              bucketsCollapsed={bucketsCollapsed}
+              onBucketsCollapsedChange={setAllBucketsCollapsed}
               onNewProject={openAddProjectCommandPalette}
               onNewThread={handleNewThreadClick}
               newThreadDisabled={projects.length === 0}

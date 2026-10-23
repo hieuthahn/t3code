@@ -27,6 +27,7 @@ export function ComposerPendingApprovalGroup({
 }: ComposerPendingApprovalGroupProps) {
   const [expanded, setExpanded] = useState(false);
   const [bulkResponding, setBulkResponding] = useState(false);
+  const [confirmingApproveAll, setConfirmingApproveAll] = useState(false);
   const [unansweredAfterFailure, setUnansweredAfterFailure] = useState<number | null>(null);
   const listId = useId();
   const approveTargets = pendingApprovalBulkTargets(approvals, "accept");
@@ -39,6 +40,7 @@ export function ComposerPendingApprovalGroup({
     requestIds: ReadonlyArray<RuntimeRequestId>,
     decision: "accept" | "decline",
   ) => {
+    setConfirmingApproveAll(false);
     setUnansweredAfterFailure(null);
     setBulkResponding(true);
     for (const [index, requestId] of requestIds.entries()) {
@@ -55,9 +57,9 @@ export function ComposerPendingApprovalGroup({
     <Button
       size="xs"
       variant="default"
-      disabled={blocked || approveTargets.requestIds.length === 0}
+      disabled={blocked || confirmingApproveAll || approveTargets.requestIds.length === 0}
       aria-description={approveTargets.warnings.join(" ") || undefined}
-      onClick={() => void respondToAll(approveTargets.requestIds, "accept")}
+      onClick={() => setConfirmingApproveAll(true)}
     >
       {approveTargets.warnings.length > 0 ? (
         <TriangleAlertIcon className="size-3 shrink-0" />
@@ -65,6 +67,11 @@ export function ComposerPendingApprovalGroup({
       Approve all
     </Button>
   );
+  const approveTargetApprovals = approvals.filter((candidate) =>
+    approveTargets.requestIds.includes(candidate.requestId),
+  );
+  const confirmationLabel = `Approve ${approveTargets.requestIds.length} requests?`;
+
   return (
     <div role="group" aria-label={`${approvals.length} pending approvals`} className="grid gap-3">
       <ComposerBanner.Row layout="approval" data-chat-composer-collapsed-controls="true">
@@ -110,6 +117,46 @@ export function ComposerPendingApprovalGroup({
         <p role="alert" className="ps-8 text-xs text-destructive sm:ps-7">
           {`Stopped after a request failed. ${unansweredAfterFailure} ${unansweredAfterFailure === 1 ? "request was" : "requests were"} not answered.`}
         </p>
+      ) : null}
+      {confirmingApproveAll ? (
+        <div
+          role="group"
+          aria-label={confirmationLabel}
+          className="grid gap-3 border-t border-warning/20 pt-3 ps-8 sm:ps-7"
+        >
+          <p className="text-xs font-medium text-foreground">{confirmationLabel}</p>
+          <ol className="grid max-h-60 gap-3 overflow-y-auto">
+            {approveTargetApprovals.map((target) => {
+              const targetWarning = target.options?.find(
+                (option) => option.decision === "accept",
+              )?.warning;
+              return (
+                <li key={target.requestId} className="grid gap-1">
+                  <ComposerPendingApprovalPanel approval={target} pendingCount={1} />
+                  {targetWarning ? (
+                    <span className="flex items-start gap-1 text-xs text-warning">
+                      <TriangleAlertIcon aria-hidden className="mt-0.5 size-3 shrink-0" />
+                      {targetWarning}
+                    </span>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ol>
+          <span className="flex justify-end gap-1.5">
+            <Button size="xs" variant="outline" onClick={() => setConfirmingApproveAll(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="xs"
+              variant="default"
+              disabled={blocked}
+              onClick={() => void respondToAll(approveTargets.requestIds, "accept")}
+            >
+              {`Approve ${approveTargets.requestIds.length}`}
+            </Button>
+          </span>
+        </div>
       ) : null}
       {expanded ? (
         <ol id={listId} className="grid max-h-80 gap-3 overflow-y-auto">

@@ -403,6 +403,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["next prompt suggestion ghost text predict tab autocomplete composer"],
   },
   {
+    id: "turn-recaps",
+    title: "Turn recaps",
+    to: "/settings/general",
+    searchTerms: ["recap summary next step card reply buttons turn end"],
+  },
+  {
     id: "new-design",
     title: "New design",
     to: "/settings/beta",

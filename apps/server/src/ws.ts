@@ -104,7 +104,9 @@ import {
   HttpServerRespondable,
   HttpServerResponse,
 } from "effect/http";
+import type { Rpc, RpcGroup } from "effect/rpc";
 import { RpcSerialization, RpcServer } from "effect/rpc";
+import type { ChildProcessSpawner } from "effect/process";
 
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as ServerConfig from "./config.ts";
@@ -260,6 +262,10 @@ import {
 import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
 import * as ClaudeDesktopSync from "./claudeDesktopSync/ClaudeDesktopSync.ts";
 import * as AgentSessionImporter from "./project/AgentSessionImporter.ts";
+import type * as AntigravityInstallation from "./provider/AntigravityInstallation.ts";
+import type * as CodexInstallation from "./provider/CodexInstallation.ts";
+import type * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
+import type * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 
 const CONFIG_DISCOVERY_TIMEOUT = Duration.seconds(5);
@@ -1186,7 +1192,96 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
   },
 );
 
-export const layerWsRpc = (
+/** The services every WebSocket RPC handler needs, so callers read this instead of re-inferring the handlers. */
+type WsRpcServices =
+  | AcpRegistryRuntimeCoordinator.AcpRegistryRuntimeCoordinator
+  | AcpRegistrySupport.AcpRegistryCatalog
+  | AgentSessionImporter.AgentSessionImporter
+  | AgentSessionScanner.AgentSessionScanner
+  | AnalyticsService.AnalyticsService
+  | AntigravityInstallation.AntigravityInstallation
+  | BackgroundPolicy.BackgroundPolicy
+  | CheckpointDiffQuery.CheckpointDiffQuery
+  | ChildProcessSpawner.ChildProcessSpawner
+  | ClaudeDesktopSync.ClaudeDesktopSync
+  | CodexInstallation.CodexInstallation
+  | CommandOutputHub.CommandOutputHub
+  | Crypto.Crypto
+  | DatabaseStorage.DatabaseStorage
+  | DeviceService.DeviceService
+  | DirectEndpoints.DirectEndpoints
+  | EnvironmentAuth.EnvironmentAuth
+  | EnvironmentTheme.EnvironmentThemeService
+  | ExternalLauncher.ExternalLauncher
+  | FileSystem.FileSystem
+  | GitWorkflowService.GitWorkflowService
+  | HostResources.HostResources
+  | Keybindings.Keybindings
+  | ManagedProjectFolders.ManagedProjectFolders
+  | McpAppRequests.McpAppRequests
+  | ModelManifest.ModelManifest
+  | OrchestrationEventStore.OrchestrationEventStore
+  | Orchestrator.OrchestratorV2
+  | OtlpEndpointCheck.OtlpEndpointCheck
+  | PairingGrantStore.PairingGrantStore
+  | Path.Path
+  | PeerLinkRequests.PeerLinkRequests
+  | PeerLinks.PeerLinks
+  | PortScanner.PortDiscovery
+  | PreviewManager.PreviewManager
+  | ProcessDiagnostics.ProcessDiagnostics
+  | ProcessResourceMonitor.ProcessResourceMonitor
+  | ProjectCloneTracker.ProjectCloneTracker
+  | ProjectEnrichmentService.ProjectEnrichmentService
+  | ProjectFaviconResolver.ProjectFaviconResolver
+  | ProjectService.ProjectService
+  | ProjectSetupScriptRunner.ProjectSetupScriptRunner
+  | ProjectStore.ProjectStoreV2
+  | PromptSuggestionHub.PromptSuggestionHub
+  | ProviderAuthService.ProviderAuthService
+  | ProviderInstanceRegistry.ProviderInstanceRegistry
+  | ProviderLatestVersions.ProviderLatestVersions
+  | ProviderMaintenanceRunner.ProviderMaintenanceRunner
+  | ProviderRegistry.ProviderRegistry
+  | ProviderSessionManager.ProviderSessionManagerV2
+  | PullRequestReviewGuideService.PullRequestReviewGuideService
+  | PullRequestService.PullRequestService
+  | PullRequestSyncReactor.PullRequestSyncReactor
+  | RelayClient.RelayClient
+  | RemoteOpenTargets.RemoteOpenTargets
+  | RepositoryIdentityResolver.RepositoryIdentityResolver
+  | ResourceTelemetry.ResourceTelemetry
+  | ReviewService.ReviewService
+  | ScheduledTasks.ScheduledTaskService
+  | SecretRequests.SecretRequests
+  | ServerConfig.ServerConfig
+  | ServerEnvironment.ServerEnvironment
+  | ServerLifecycleEvents.ServerLifecycleEvents
+  | ServerRuntimeStartup.ServerRuntimeStartup
+  | ServerSecretStore.ServerSecretStore
+  | ServerSelfUpdate.ServerSelfUpdate
+  | ServerSettings.ServerSettingsService
+  | SessionStore.SessionStore
+  | SourceControlDiscovery.SourceControlDiscovery
+  | SourceControlRepositoryService.SourceControlRepositoryService
+  | SqlClient.SqlClient
+  | StorageCleanup.StorageCleanup
+  | TerminalManager.TerminalManager
+  | ThreadLaunchService.ThreadLaunchService
+  | ThreadManagementService.ThreadManagementService
+  | ThreadSearch.ThreadSearch
+  | TraceDiagnostics.TraceDiagnostics
+  | TurnRecapHub.TurnRecapHub
+  | UsageLimitSources.UsageLimitSources
+  | UsageService.UsageService
+  | VcsProvisioningService.VcsProvisioningService
+  | VcsStatusBroadcaster.VcsStatusBroadcaster
+  | WorkspaceEntries.WorkspaceEntries
+  | WorkspaceFileSystem.WorkspaceFileSystem
+  | WorkspacePaths.WorkspacePaths
+  | WorktreeSetupTracker.WorktreeSetupTracker;
+
+const makeWsRpcLayer = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   clientOrigin: OrchestrationClientOrigin,
   clientAnalyticsProps: Readonly<Record<string, unknown>>,
@@ -3163,6 +3258,15 @@ export const layerWsRpc = (
     }),
   );
 
+export const layerWsRpc: (
+  currentSession: EnvironmentAuth.AuthenticatedSession,
+  clientOrigin: OrchestrationClientOrigin,
+  clientAnalyticsProps: Readonly<Record<string, unknown>>,
+  previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
+  serverBrowser: ServerBrowser.ServerBrowser["Service"],
+) => Layer.Layer<Rpc.ToHandler<RpcGroup.Rpcs<typeof ServerWsRpcGroup>>, never, WsRpcServices> =
+  makeWsRpcLayer;
+
 // RpcServer's default sends a socket-level Defect frame instead, and the client
 // ends every pending request on the socket with it.
 export const WS_RPC_SERVER_OPTIONS = {
@@ -3264,7 +3368,9 @@ export const layer = Layer.unwrap(
               // One server-lifetime service means clients share the same PR caches, and a WS
               // mutation invalidates the HTTP diff cache that every client reads from.
               Layer.provide(Layer.succeed(PullRequestService.PullRequestService, pullRequests)),
-              Layer.provide(Layer.succeed(ClaudeDesktopSync.ClaudeDesktopSync, claudeDesktopSyncService)),
+              Layer.provide(
+                Layer.succeed(ClaudeDesktopSync.ClaudeDesktopSync, claudeDesktopSyncService),
+              ),
               Layer.provide(OtlpEndpointCheck.layer),
               Layer.provide(
                 Layer.succeed(

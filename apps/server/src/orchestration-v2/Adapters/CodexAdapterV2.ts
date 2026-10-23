@@ -727,6 +727,7 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
     /** ChatGPT token sharing does not accept service tiers. */
     readonly omitServiceTier?: boolean;
     readonly appContext?: ProviderAdapter.ProviderAdapterV2TurnInput["appContext"];
+    readonly tokenSaverInstructions?: string;
   }) {
     const runtimeModeDefaults = codexRuntimeModeTurnDefaults(input.runtimePolicy.runtimeMode);
     const approvalPolicy =
@@ -769,10 +770,25 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
             },
           )
         : undefined;
+    if (input.tokenSaverInstructions !== undefined) {
+      yield* Effect.annotateCurrentSpan("tokenSaver.chars", input.tokenSaverInstructions.length);
+    }
+    // Codex drops developer_instructions for models whose catalog ships mode text.
+    const tokenSaverContext =
+      input.tokenSaverInstructions === undefined
+        ? {}
+        : {
+            t3_code_token_saver: {
+              kind: "application" as const,
+              value: input.tokenSaverInstructions,
+            },
+          };
     const additionalContext =
-      t3Context === undefined && Object.keys(appContext).length === 0
+      t3Context === undefined &&
+      Object.keys(appContext).length === 0 &&
+      input.tokenSaverInstructions === undefined
         ? undefined
-        : { ...t3Context, ...appContext };
+        : { ...t3Context, ...tokenSaverContext, ...appContext };
     const collaborationMode: CodexSchema.ClientRequest__CollaborationMode | undefined =
       input.runtimePolicy.interactionMode !== "plan" && developerInstructions === undefined
         ? undefined
@@ -6338,6 +6354,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               deviceToolsAvailable: mcpSession?.capabilities?.has("device") ?? false,
               omitServiceTier: adapterOptions.resolveRuntime !== undefined,
               ...(turnInput.appContext === undefined ? {} : { appContext: turnInput.appContext }),
+              ...(turnInput.tokenSaver === undefined
+                ? {}
+                : { tokenSaverInstructions: turnInput.tokenSaver.instructions }),
             });
             yield* Ref.update(pendingRootTurns, (current) => {
               const updated = new Map(current);

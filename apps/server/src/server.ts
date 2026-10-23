@@ -177,6 +177,7 @@ import * as CursorAccountReader from "@t3tools/provider-cursor/server/CursorAcco
 import * as CursorKeychain from "@t3tools/provider-cursor/server/CursorKeychain";
 import * as CursorUsageAccounts from "@t3tools/provider-cursor/server/CursorUsageAccounts";
 import * as UsageService from "./usage/UsageService.ts";
+import * as TokenSaver from "./tokenSaver/TokenSaverService.ts";
 import * as CodexUsageHistory from "./usage/CodexUsageHistory.ts";
 import * as RuntimeLayer from "./orchestration-v2/runtimeLayer.ts";
 import * as AutoEffort from "./autoEffort/AutoEffortService.ts";
@@ -505,6 +506,7 @@ const layerScheduledTaskWebhookOrigin = Layer.effect(
 
 const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
   Layer.provide(AutoEffort.layer),
+  Layer.provide(TokenSaver.layer),
   Layer.provide(PromptSuggester.layer),
   Layer.provide(PromptSuggester.layerTurnRecapper),
   Layer.provide(layerScheduledTaskWebhookOrigin),
@@ -681,6 +683,7 @@ const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
 
 const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
   Layer.provideMerge(layerUsage),
+  Layer.provideMerge(TokenSaver.layer.pipe(Layer.provide(layerServerSettings))),
   Layer.provideMerge(layerBackground),
   Layer.provideMerge(layerResourceDiagnostics),
   Layer.provideMerge(TraceDiagnostics.layer),

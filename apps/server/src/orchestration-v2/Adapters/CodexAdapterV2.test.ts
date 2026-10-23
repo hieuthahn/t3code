@@ -203,6 +203,28 @@ describe("CodexAdapterV2 runtime policy", () => {
       assert.isDefined(withT3.additionalContext?.["t3_code_runtime"]);
     }),
   );
+
+  it.effect("sends Token Saver rules as application context, outside the collaboration mode", () =>
+    Effect.gen(function* () {
+      const params = yield* CodexAdapterV2.buildCodexTurnStartParams({
+        nativeThreadId: "native-token-saver",
+        codexInput: [{ type: "text", text: "hello" }],
+        runtimePolicy: { runtimeMode: "full-access", interactionMode: "default", cwd: null },
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+        hasT3Mcp: true,
+        tokenSaverInstructions: "## Token Saver sentinel",
+      });
+      assert.deepEqual(params.additionalContext?.["t3_code_token_saver"], {
+        kind: "application",
+        value: "## Token Saver sentinel",
+      });
+      assert.notInclude(
+        params.collaborationMode?.settings.developer_instructions ?? "",
+        "Token Saver sentinel",
+      );
+      assert.isDefined(params.additionalContext?.["t3_code_runtime"]);
+    }),
+  );
 });
 
 describe("CodexAdapterV2 native protocol logging", () => {

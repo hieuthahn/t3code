@@ -49,6 +49,11 @@ import {
   ProviderDriverKind,
 } from "./providerInstance.ts";
 import { PullRequestMergeMethod } from "./pullRequest.ts";
+import {
+  DEFAULT_TOKEN_SAVER_CONFIG,
+  TokenSaverConfig,
+  TokenSaverConciseLevel,
+} from "./tokenSaver.ts";
 
 export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"]);
 export const LimitedThreadSwitchMode = Schema.Literals(["off", "ask", "auto"]);
@@ -1005,6 +1010,14 @@ export const BackgroundActivitySettings = Schema.Struct({
 }).pipe(Schema.withDecodingDefault(Effect.succeed({})));
 export type BackgroundActivitySettings = typeof BackgroundActivitySettings.Type;
 
+export const TokenSaverSettings = Schema.Struct({
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  defaults: TokenSaverConfig.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_TOKEN_SAVER_CONFIG)),
+  ),
+}).pipe(Schema.withDecodingDefault(Effect.succeed({})));
+export type TokenSaverSettings = typeof TokenSaverSettings.Type;
+
 export const ResponseStreamingMode = Schema.Literals(["turn", "paragraph"]);
 export type ResponseStreamingMode = typeof ResponseStreamingMode.Type;
 
@@ -1304,6 +1317,8 @@ export const ServerSettings = Schema.Struct({
   promptSuggestions: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /** Whether a multi-step turn ends with a recap card under its last message. */
   turnRecaps: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /** Response-style packs injected into the system prompt; a thread may override `defaults`. */
+  tokenSaver: TokenSaverSettings,
   sidebarAutoSettleKeepPullRequests: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
@@ -1676,6 +1691,18 @@ export const ServerSettingsPatch = Schema.Struct({
   autoEffortDefault: Schema.optionalKey(Schema.Boolean),
   promptSuggestions: Schema.optionalKey(Schema.Boolean),
   turnRecaps: Schema.optionalKey(Schema.Boolean),
+  tokenSaver: Schema.optionalKey(
+    Schema.Struct({
+      enabled: Schema.optionalKey(Schema.Boolean),
+      defaults: Schema.optionalKey(
+        Schema.Struct({
+          concise: Schema.optionalKey(TokenSaverConciseLevel),
+          leanCode: Schema.optionalKey(Schema.Boolean),
+          quietTools: Schema.optionalKey(Schema.Boolean),
+        }),
+      ),
+    }),
+  ),
   snoozeLimitedThreads: Schema.optionalKey(Schema.Boolean),
   backgroundActivity: Schema.optionalKey(
     Schema.Struct({

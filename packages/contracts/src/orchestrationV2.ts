@@ -76,6 +76,7 @@ import {
   ToolActivitySource,
 } from "./providerRuntime.ts";
 import { ThreadTokenUsageSnapshot } from "./providerRuntime.ts";
+import { TokenSaverConfig } from "./tokenSaver.ts";
 
 export const OrchestrationV2Actor = Schema.Literals(["user", "agent", "system"]);
 export type OrchestrationV2Actor = typeof OrchestrationV2Actor.Type;
@@ -428,6 +429,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
   delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
   /** Shared by the threads one multiple-models send starts, so they can be shown together. */
   fanoutGroupId: Schema.optional(TrimmedNonEmptyString),
+  /** Absent means the thread follows the server's Token Saver defaults. */
+  tokenSaver: Schema.optional(TokenSaverConfig),
   lineage: OrchestrationV2AppThreadLineage,
   forkedFrom: Schema.NullOr(
     Schema.Union([
@@ -2019,6 +2022,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   linkOrigin: Schema.optional(OrchestrationV2LinkOrigin),
   delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
   fanoutGroupId: Schema.optional(TrimmedNonEmptyString),
+  tokenSaver: Schema.optional(TokenSaverConfig),
   latestRunId: Schema.NullOr(RunId),
   latestRunRequestedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   latestRunStartedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
@@ -2909,6 +2913,8 @@ export const OrchestrationV2Command = Schema.Union([
     limitRecovery: Schema.optional(Schema.NullOr(OrchestrationV2LimitRecoveryUpdate)),
     /** Link (object) or unlink (null) a pull request (#8160); absent leaves it unchanged. */
     linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
+    /** Override (object) or follow the server defaults again (null); absent leaves it unchanged. */
+    tokenSaver: Schema.optional(Schema.NullOr(TokenSaverConfig)),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.pull-request.link"),

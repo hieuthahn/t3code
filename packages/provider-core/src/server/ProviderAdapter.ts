@@ -443,6 +443,8 @@ export interface ProviderAdapterV2TurnInput {
   readonly modelSelection: ModelSelection;
   readonly runtimePolicy: ProviderAdapterV2RuntimePolicy;
   readonly appContext?: ReadonlyArray<{ readonly key: string; readonly text: string }>;
+  /** Response-style rules for this turn; adapters with a system prompt place them there. */
+  readonly tokenSaver?: { readonly profileKey: string; readonly instructions: string };
 }
 
 export interface ProviderAdapterV2SteerInput {

@@ -53,6 +53,15 @@ export const makeMergeQueueGit = (driver: GitVcsDriver.GitVcsDriver["Service"]) 
 
 export type MergeQueueGit = ReturnType<typeof makeMergeQueueGit>;
 
+/** Find the worktree, if any, that has `branch` checked out, from `git worktree list --porcelain`. */
+export const worktreeHolding = (porcelain: string, branch: string) =>
+  porcelain
+    .split("\n\n")
+    .map((block) => block.split("\n"))
+    .find((lines) => lines.includes(`branch refs/heads/${branch}`))
+    ?.find((line) => line.startsWith("worktree "))
+    ?.slice("worktree ".length);
+
 /** Build the steps that land one approved item, failing with the stage that stopped it. */
 export const makeMergeQueueLanding = (deps: {
   readonly git: MergeQueueGit;
@@ -231,6 +240,16 @@ export const makeMergeQueueLanding = (deps: {
       }
       yield* lift("merge", gitOutput(queued.owner_checkout, ["merge", "--ff-only", landed]));
     } else {
+      const holder = worktreeHolding(
+        yield* lift("merge", gitOutput(queued.owner_checkout, ["worktree", "list", "--porcelain"])),
+        queued.trunk_ref,
+      );
+      if (holder !== undefined) {
+        return yield* stage(
+          "merge",
+          `${queued.trunk_ref} is checked out in ${holder}, so moving it would change that worktree under it. Switch that worktree to another branch, then queue the child again.`,
+        );
+      }
       yield* lift(
         "merge",
         gitOutput(queued.owner_checkout, [

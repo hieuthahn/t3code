@@ -454,9 +454,11 @@ function useActiveThreadRefFromRoute(): ScopedThreadRef | null {
 function ThreadToastVisibleAutoDismiss({
   toastId,
   dismissAfterVisibleMs,
+  hovered,
 }: {
   toastId: ToastId;
   dismissAfterVisibleMs: number | undefined;
+  hovered: boolean;
 }) {
   useEffect(() => {
     if (!dismissAfterVisibleMs || dismissAfterVisibleMs <= 0) return;
@@ -504,7 +506,7 @@ function ThreadToastVisibleAutoDismiss({
     };
 
     const syncTimer = () => {
-      const shouldRun = document.visibilityState === "visible" && document.hasFocus();
+      const shouldRun = !hovered && document.visibilityState === "visible" && document.hasFocus();
       if (shouldRun) {
         start();
         return;
@@ -524,7 +526,7 @@ function ThreadToastVisibleAutoDismiss({
       pause();
       clearTimer();
     };
-  }, [dismissAfterVisibleMs, toastId]);
+  }, [dismissAfterVisibleMs, hovered, toastId]);
 
   return null;
 }
@@ -541,6 +543,7 @@ function ToastProvider({ children, position = "top-right", ...props }: ToastProv
 function Toasts({ position }: { position: ToastPosition }) {
   const { toasts } = Toast.useToastManager<ThreadToastData>();
   const activeThreadRef = useActiveThreadRefFromRoute();
+  const [hovered, setHovered] = useState(false);
   const isTop = position.startsWith("top");
   const visibleToasts = toasts.filter((toast) =>
     shouldRenderThreadScopedToast(toast.data, activeThreadRef),
@@ -569,6 +572,8 @@ function Toasts({ position }: { position: ToastPosition }) {
         )}
         data-position={position}
         data-slot="toast-viewport"
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
         style={
           {
             "--toast-frontmost-height": `${visibleToastLayout.frontmostHeight}px`,
@@ -643,6 +648,7 @@ function Toasts({ position }: { position: ToastPosition }) {
             >
               <ThreadToastVisibleAutoDismiss
                 dismissAfterVisibleMs={toast.data?.dismissAfterVisibleMs}
+                hovered={hovered}
                 toastId={toast.id}
               />
               <div className={toastCornerDismissClass}>

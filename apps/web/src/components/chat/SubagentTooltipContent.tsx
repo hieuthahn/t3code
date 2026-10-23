@@ -195,16 +195,16 @@ export function SubagentTooltipContent(props: {
             <MessageSquareTextIcon aria-hidden className="mt-0.5 size-3 shrink-0" />
             <span className="sr-only">Reported by the subagent</span>
             <span className="flex min-w-0 flex-col">
-              <span className={cn("truncate", props.report.attention && "text-warning")}>
+              <span className={cn("line-clamp-2", props.report.attention && "text-warning")}>
                 {props.report.headline}
               </span>
               <span className="line-clamp-3 text-foreground/75">{props.report.summary}</span>
             </span>
           </div>
-          <div className="flex min-w-0 items-center gap-2">
-            <GitCommitHorizontalIcon aria-hidden className="size-3 shrink-0" />
+          <div className="flex min-w-0 items-start gap-2">
+            <GitCommitHorizontalIcon aria-hidden className="mt-0.5 size-3 shrink-0" />
             <span className="sr-only">Read from git</span>
-            <span className="truncate">{props.report.observed}</span>
+            <span className="line-clamp-2 min-w-0">{props.report.observed}</span>
           </div>
         </>
       ) : null}

@@ -597,3 +597,30 @@ it.live("fails an item that hit an unexpected error and lands the next one", () 
     }),
   ),
 );
+
+it.live("shows the changes the child adds at the approved commit", () =>
+  withQueue(({ fixture, queue }) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const api = yield* addChild(fixture, "api", "api.txt", "retry once\nretry twice\n");
+      const item = yield* queue.enqueue({
+        callerThreadId: ownerThreadId,
+        childThreadId: api.childThreadId,
+      });
+      yield* fs.writeFileString(`${fixture.repository}/hotfix.txt`, "hotfix\n");
+      yield* git(fixture.repository, ["add", "."]);
+      yield* git(fixture.repository, ["commit", "-m", "Add a hotfix by hand"]);
+      yield* fs.writeFileString(`${api.worktree}/late.txt`, "late\n");
+      yield* git(api.worktree, ["add", "."]);
+      yield* git(api.worktree, ["commit", "-m", "Add a late change"]);
+
+      const diff = yield* queue.diff({ itemId: item.id, headSha: item.headShaAtEnqueue });
+      assert.equal(diff.headSha, item.headShaAtEnqueue);
+      assert.deepEqual(diff.files, [{ path: "api.txt", additions: 2, deletions: 0 }]);
+      assert.include(diff.patch, "+retry twice");
+      assert.notInclude(diff.patch, "hotfix");
+      assert.notInclude(diff.patch, "late.txt");
+      assert.isFalse(diff.truncated);
+    }),
+  ),
+);

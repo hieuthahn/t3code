@@ -65,4 +65,35 @@ describe("SidebarBucketHeader", () => {
       .poll(() => document.querySelector("[data-slot=tooltip-popup]")?.textContent)
       .toBe("hora-skills-ort-furo");
   });
+
+  it("pins and unpins a project group from its header", async () => {
+    const onPinnedChange = vi.fn();
+    const header = (pinned: boolean) => (
+      <ul>
+        <SidebarBucketHeader
+          marker={timeBucketMarker("active", "today")}
+          label="hora-skills-ort-furo"
+          threadCount={4}
+          expanded
+          onToggle={() => {}}
+          project={null}
+          pinned={pinned}
+          onPinnedChange={onPinnedChange}
+        />
+      </ul>
+    );
+    await using screen = await render(header(false));
+
+    await act(() =>
+      screen.container.querySelector<HTMLButtonElement>("[aria-label='Pin project']")?.click(),
+    );
+    expect(onPinnedChange).toHaveBeenLastCalledWith(true);
+
+    await screen.rerender(header(true));
+    expect(screen.container.querySelector("[aria-label='Pinned']")).not.toBeNull();
+    await act(() =>
+      screen.container.querySelector<HTMLButtonElement>("[aria-label='Unpin project']")?.click(),
+    );
+    expect(onPinnedChange).toHaveBeenLastCalledWith(false);
+  });
 });

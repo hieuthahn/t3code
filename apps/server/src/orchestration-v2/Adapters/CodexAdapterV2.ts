@@ -736,6 +736,7 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
     readonly omitServiceTier?: boolean;
     readonly appContext?: ProviderAdapter.ProviderAdapterV2TurnInput["appContext"];
     readonly tokenSaverInstructions?: string;
+    readonly teamInstructions?: string;
   }) {
     const runtimeModeDefaults = codexRuntimeModeTurnDefaults(input.runtimePolicy.runtimeMode);
     const approvalPolicy =
@@ -785,12 +786,17 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
               value: input.tokenSaverInstructions,
             },
           };
+    const teamContext =
+      input.teamInstructions === undefined
+        ? {}
+        : { t3_code_team: { kind: "application" as const, value: input.teamInstructions } };
     const additionalContext =
       t3Context === undefined &&
       Object.keys(appContext).length === 0 &&
-      input.tokenSaverInstructions === undefined
+      input.tokenSaverInstructions === undefined &&
+      input.teamInstructions === undefined
         ? undefined
-        : { ...t3Context, ...tokenSaverContext, ...appContext };
+        : { ...t3Context, ...tokenSaverContext, ...teamContext, ...appContext };
     return yield* decodeCodexTurnStartParamsWithCollaborationMode({
       threadId: input.nativeThreadId,
       input: input.codexInput,
@@ -6280,6 +6286,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               ...(turnInput.tokenSaver === undefined
                 ? {}
                 : { tokenSaverInstructions: turnInput.tokenSaver.instructions }),
+              ...(turnInput.team === undefined
+                ? {}
+                : { teamInstructions: turnInput.team.instructions }),
             });
             yield* Ref.update(pendingRootTurns, (current) => {
               const updated = new Map(current);

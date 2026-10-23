@@ -25,6 +25,7 @@ import {
   MessageId,
   type NodeId,
   type ModelSelection,
+  OrchestrationV2ChildProposal,
   OrchestrationV2Command,
   type OrchestrationV2InternalCommand,
   type OrchestrationV2LimitRecoveryUpdate,
@@ -438,6 +439,7 @@ function isGoalCommand(message: {
 }
 
 const threadPullRequestLinksEqual = Schema.toEquivalence(Schema.NullOr(ThreadLinkedPullRequest));
+const sameChildProposals = Schema.toEquivalence(Schema.Array(OrchestrationV2ChildProposal));
 
 function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
   switch (command.type) {
@@ -503,6 +505,9 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
       return command.parentThreadId;
     case "secret_request.record":
     case "link_request.record":
+    case "child_plan.record":
+    case "child_plan.decide":
+    case "child_plan.launched":
       return command.threadId;
     case "thread.fork":
     case "thread.merge_back":
@@ -8096,6 +8101,185 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     },
   );
 
+  const readChildPlanCard = Effect.fn("orchestrationV2.readChildPlanCard")(function* (
+    command: Extract<
+      OrchestrationV2InternalCommand,
+      { readonly type: "child_plan.record" | "child_plan.decide" | "child_plan.launched" }
+    >,
+  ) {
+    const projection = yield* projectionStore
+      .getThreadRecords(
+        command.threadId,
+        ["runs", "nodes", "turnItems", "attempts", "providerTurns"],
+        { turnItemTypes: ["child_plan_request"], messageRoles: [] },
+      )
+      .pipe(
+        Effect.mapError(
+          (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+        ),
+      );
+    const existing = projection.turnItems.find((item) => item.id === command.turnItemId);
+    if (existing !== undefined && existing.type !== "child_plan_request") {
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: `Turn item ${command.turnItemId} is not a proposal of child sessions.`,
+      });
+    }
+    return { projection, existing };
+  });
+
+  const emitChildPlanCard = (
+    command: Extract<
+      OrchestrationV2InternalCommand,
+      { readonly type: "child_plan.record" | "child_plan.decide" | "child_plan.launched" }
+    >,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    run: OrchestrationV2ThreadProjection["runs"][number],
+    turnItem: Extract<OrchestrationV2TurnItem, { readonly type: "child_plan_request" }>,
+  ) =>
+    emit(
+      events,
+      command,
+    )({
+      type: "turn-item.updated",
+      threadId: command.threadId,
+      runId: run.id,
+      nodeId: turnItem.nodeId ?? run.rootNodeId ?? undefined,
+      providerInstanceId: run.providerInstanceId,
+      occurredAt: turnItem.updatedAt,
+      payload: turnItem,
+    });
+
+  /** Records the proposal card while its agent waits, or closes it unanswered. */
+  const dispatchChildPlanRecord = Effect.fn("orchestrationV2.dispatch.childPlanRecord")(function* (
+    command: Extract<OrchestrationV2InternalCommand, { readonly type: "child_plan.record" }>,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+  ) {
+    const { projection, existing } = yield* readChildPlanCard(command);
+    const run = projection.runs.find((candidate) => candidate.id === command.runId);
+    if (
+      run === undefined ||
+      run.rootNodeId !== command.nodeId ||
+      (existing !== undefined && existing.runId !== command.runId)
+    ) {
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: `Proposal ${command.turnItemId} does not belong to run ${command.runId}.`,
+      });
+    }
+    const pending = command.planStatus === "pending";
+    const changed =
+      existing !== undefined &&
+      pending &&
+      (!sameChildProposals(existing.children, command.children) ||
+        existing.reason !== command.reason);
+    if (existing !== undefined && (existing.planStatus !== "pending" || (pending && !changed))) {
+      yield* emitChildPlanCard(command, events, run, existing);
+      return;
+    }
+    const now = yield* DateTime.now;
+    const children = pending || existing === undefined ? command.children : existing.children;
+    yield* emitChildPlanCard(command, events, run, {
+      id: command.turnItemId,
+      threadId: command.threadId,
+      runId: command.runId,
+      nodeId: command.nodeId,
+      providerThreadId: run.providerThreadId,
+      providerTurnId: providerTurnForRun(projection, run)?.id ?? null,
+      nativeItemRef: null,
+      parentItemId: null,
+      ordinal: existing?.ordinal ?? (yield* nextTurnItemOrdinal(projection)),
+      status: pending ? "waiting" : "cancelled",
+      title: `Proposed ${children.length} child ${children.length === 1 ? "session" : "sessions"}`,
+      startedAt: existing?.startedAt ?? now,
+      completedAt: pending ? null : now,
+      updatedAt: now,
+      type: "child_plan_request",
+      planId: command.planId,
+      revision: existing === undefined ? 1 : changed ? existing.revision + 1 : existing.revision,
+      planStatus: command.planStatus,
+      ...(command.reason === undefined ? {} : { reason: command.reason }),
+      children,
+      planDecision: null,
+    });
+  });
+
+  /** Records the user's decision on a proposal the agent still waits on. */
+  const dispatchChildPlanDecide = Effect.fn("orchestrationV2.dispatch.childPlanDecide")(function* (
+    command: Extract<OrchestrationV2InternalCommand, { readonly type: "child_plan.decide" }>,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+  ) {
+    const { projection, existing } = yield* readChildPlanCard(command);
+    const reject = (cause: string) =>
+      new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause,
+      });
+    if (existing === undefined || existing.planStatus !== "pending") {
+      return yield* reject(`Proposal ${command.turnItemId} is not waiting for a decision.`);
+    }
+    if (existing.revision !== command.revision) {
+      return yield* reject(
+        `The proposal changed after it was shown (revision ${command.revision}, now ${existing.revision}). Review it again.`,
+      );
+    }
+    const keys = existing.children.map((child) => child.key);
+    const unknown = command.approvedKeys.filter((key) => !keys.includes(key));
+    if (unknown.length > 0) {
+      return yield* reject(`The proposal has no child session ${unknown.join(", ")}.`);
+    }
+    const run = projection.runs.find((candidate) => candidate.id === existing.runId);
+    if (run === undefined || !isBlockingRun(run)) {
+      return yield* reject("The agent that proposed these child sessions stopped waiting.");
+    }
+    const approvedKeys = keys.filter((key) => command.approvedKeys.includes(key));
+    const declinedKeys = keys.filter((key) => !command.approvedKeys.includes(key));
+    const now = yield* DateTime.now;
+    yield* emitChildPlanCard(command, events, run, {
+      ...existing,
+      status: "completed",
+      completedAt: now,
+      updatedAt: now,
+      planStatus:
+        approvedKeys.length === 0
+          ? "declined"
+          : declinedKeys.length === 0
+            ? "approved"
+            : "partially_approved",
+      planDecision: {
+        decidedBy: command.decidedBy,
+        revision: command.revision,
+        approvedKeys,
+        declinedKeys,
+      },
+    });
+  });
+
+  const dispatchChildPlanLaunched = Effect.fn("orchestrationV2.dispatch.childPlanLaunched")(
+    function* (
+      command: Extract<OrchestrationV2InternalCommand, { readonly type: "child_plan.launched" }>,
+      events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    ) {
+      const { projection, existing } = yield* readChildPlanCard(command);
+      const run = projection.runs.find((candidate) => candidate.id === existing?.runId);
+      if (existing === undefined || existing.planDecision === null || run === undefined) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: `Proposal ${command.turnItemId} has no decision to launch from.`,
+        });
+      }
+      yield* emitChildPlanCard(command, events, run, {
+        ...existing,
+        updatedAt: yield* DateTime.now,
+        launches: command.launches,
+      });
+    },
+  );
+
   /**
    * Records or updates the card for a link an agent asked the user to make.
    * The pairing code goes straight to the link and never through orchestration.
@@ -12240,6 +12424,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         break;
       case "link_request.record":
         yield* dispatchLinkRequestRecord(command, events, effects);
+        break;
+      case "child_plan.record":
+        yield* dispatchChildPlanRecord(command, events);
+        break;
+      case "child_plan.decide":
+        yield* dispatchChildPlanDecide(command, events);
+        break;
+      case "child_plan.launched":
+        yield* dispatchChildPlanLaunched(command, events);
         break;
       default:
         return yield* dispatchUnsupported(command);

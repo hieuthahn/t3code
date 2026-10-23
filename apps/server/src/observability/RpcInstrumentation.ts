@@ -106,6 +106,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.teamPause]: "team",
   [WS_METHODS.teamResume]: "team",
   [WS_METHODS.teamStop]: "team",
+  [WS_METHODS.mergeQueueDiff]: "mergeQueue",
   [WS_METHODS.cloudGetRelayClientStatus]: "cloud",
   [WS_METHODS.cloudInstallRelayClient]: "cloud",
   [WS_METHODS.pullRequestsList]: "pull-requests",

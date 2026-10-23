@@ -150,6 +150,8 @@ export interface EnvironmentThreadShell {
   readonly linkOrigin: OrchestrationV2ThreadShell["linkOrigin"] | null;
   /** The thread in a linked environment that delegated this one, if one did. */
   readonly delegatedFrom: OrchestrationV2ThreadShell["delegatedFrom"] | null;
+  /** Shared by the threads one multiple-models send started. */
+  readonly fanoutGroupId?: string | null;
   readonly activeProviderThreadId: OrchestrationV2ThreadShell["activeProviderThreadId"];
   readonly latestRun: ThreadRunSummary | null;
   readonly runtime: ThreadRuntimeSummary | null;
@@ -303,6 +305,7 @@ export function presentThreadShell(
     forkedFrom: thread.forkedFrom,
     linkOrigin: thread.linkOrigin ?? null,
     delegatedFrom: thread.delegatedFrom ?? null,
+    fanoutGroupId: thread.fanoutGroupId ?? null,
     activeProviderThreadId: thread.activeProviderThreadId,
     latestRun,
     runtime,

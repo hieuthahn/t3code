@@ -84,6 +84,7 @@ import {
   resolveWorkingStartedAt,
   useRetainedValue,
   useSidebarRowSubscriptionLease,
+  formatChildSessionUsage,
 } from "../Sidebar.logic";
 import { resolveLocalCheckoutBranchMismatch } from "../BranchToolbar.logic";
 import {
@@ -536,6 +537,8 @@ type SidebarThreadRowProps = {
   thread: SidebarThreadSummary;
   /** Shown as one model's branch under its multiple-models group header. */
   nested?: boolean;
+  /** Shown under its parent as a child session: its own title and cost; the tooltip names the account. */
+  childSession?: boolean;
   /** Shown as one dense line, with live status in place of the time unless the thread is idle. */
   compact?: boolean;
   variant: "card" | "slim";
@@ -981,9 +984,18 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       </span>
     ) : null;
 
-  const visibleTitle = props.nested ? modelLabel : thread.title;
+  const namesModel = props.nested === true && props.childSession !== true;
+  const visibleTitle = namesModel ? modelLabel : thread.title;
+  const childUsageLabel = props.childSession ? formatChildSessionUsage(thread.source.usage) : null;
+  const childAccountLabel = props.childSession
+    ? (providerEntry?.displayName ?? modelInstanceId)
+    : null;
   const accessibility = resolveSidebarRowAccessibility({
-    title: props.nested ? `${thread.title} (${modelLabel})` : thread.title,
+    title: namesModel
+      ? `${thread.title} (${modelLabel})`
+      : childAccountLabel === null
+        ? thread.title
+        : [thread.title, childAccountLabel, childUsageLabel].filter(Boolean).join(", "),
     statusLabel: topStatus?.label ?? null,
     projectDisplayName: props.projectDisplayName,
     isActive: props.isActive,
@@ -1161,6 +1173,15 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             {accessibleTitle}
             {draftIndicator}
             {title}
+            {childUsageLabel === null ? null : (
+              <span
+                aria-hidden
+                data-testid="sidebar-child-session-usage"
+                className="shrink-0 text-xs tabular-nums text-secondary-label"
+              >
+                {childUsageLabel}
+              </span>
+            )}
             {pinIndicator}
             {terminalStatusIcon}
             {isRegeneratingTitle ? (

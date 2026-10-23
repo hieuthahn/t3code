@@ -7,6 +7,7 @@ import {
   type OrchestrationV2ThreadShell,
   type Project,
   type ProjectScript,
+  type ServerSettings as ServerSettingsValue,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -19,6 +20,7 @@ import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectService from "../project/ProjectService.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as MergeQueueService from "./MergeQueueService.ts";
 
@@ -30,6 +32,8 @@ interface Fixture {
   readonly repository: string;
   readonly shells: Map<ThreadId, OrchestrationV2ThreadShell>;
   readonly scripts: Array<ProjectScript>;
+  /** Scripts saved in the environment's project settings, which win over the project's own. */
+  readonly settingsScripts: Array<ProjectScript>;
   readonly sent: Array<{ readonly threadId: ThreadId; readonly text: string }>;
 }
 
@@ -99,6 +103,7 @@ const makeFixture = Effect.gen(function* () {
       ],
     ]),
     scripts: [],
+    settingsScripts: [],
     sent: [],
   };
   return fixture;
@@ -153,6 +158,20 @@ const layerFor = (fixture: Fixture) => {
               workspaceRoot: fixture.repository,
               scripts: fixture.scripts,
             } as unknown as Project),
+        }),
+        Layer.mock(ServerSettings.ServerSettingsService)({
+          getSettings: Effect.sync(
+            () =>
+              ({
+                defaultProjectScripts: [],
+                projectScriptOverrides: {},
+                projectSettingsFolded: false,
+                projectSettingsOverrides:
+                  fixture.settingsScripts.length === 0
+                    ? {}
+                    : { [projectId]: { defaultProjectScripts: fixture.settingsScripts } },
+              }) as unknown as ServerSettingsValue,
+          ),
         }),
         Layer.mock(ThreadManagementService.ThreadManagementService)({
           sendToThread: (input) =>
@@ -284,6 +303,26 @@ it.live("keeps a child out of the trunk when a gate fails and sends it the outpu
       assert.include(failed?.gateRuns[0]?.outputTail ?? "", "broken retry test");
       assert.equal(yield* git(fixture.repository, ["rev-parse", "main"]), trunkBefore);
       assert.include(fixture.sent[0]?.text ?? "", "broken retry test");
+    }),
+  ),
+);
+
+it.live("runs the gates saved in the environment's project settings", () =>
+  withQueue(({ fixture, queue }) =>
+    Effect.gen(function* () {
+      fixture.settingsScripts.push(gate("no TODO", "! git grep -n TODO"));
+      const notes = yield* addChild(fixture, "notes", "notes.txt", "TODO: write notes\n");
+      const trunkBefore = yield* git(fixture.repository, ["rev-parse", "main"]);
+      const item = yield* queue.enqueue({
+        callerThreadId: ownerThreadId,
+        childThreadId: notes.childThreadId,
+      });
+      yield* approveAndDrain(queue, item);
+
+      const failed = (yield* queue.view(ownerThreadId)).items[0];
+      assert.equal(failed?.failure?.stage, "gate");
+      assert.include(failed?.gateRuns[0]?.outputTail ?? "", "notes.txt");
+      assert.equal(yield* git(fixture.repository, ["rev-parse", "main"]), trunkBefore);
     }),
   ),
 );

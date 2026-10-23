@@ -1,4 +1,11 @@
-import { FolderPlusIcon, Rows3Icon, SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
+import {
+  FolderPlusIcon,
+  FolderTreeIcon,
+  Rows3Icon,
+  SearchIcon,
+  SquarePenIcon,
+  XIcon,
+} from "lucide-react";
 import {
   type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -18,6 +25,8 @@ export interface SidebarThreadHeaderProps {
   projectScope: ReactNode;
   compactMode: boolean;
   onToggleCompactMode: () => void;
+  compactGroupedByProject: boolean;
+  onToggleCompactGroupBy: () => void;
   onNewProject: () => void;
   onNewThread: (event: ReactMouseEvent) => void;
   newThreadDisabled: boolean;
@@ -40,6 +49,8 @@ export function SidebarThreadHeader({
   projectScope,
   compactMode,
   onToggleCompactMode,
+  compactGroupedByProject,
+  onToggleCompactGroupBy,
   onNewProject,
   onNewThread,
   newThreadDisabled,
@@ -116,6 +127,16 @@ export function SidebarThreadHeader({
         >
           <Rows3Icon />
         </SidebarHeaderIconButton>
+        {compactMode ? (
+          <SidebarHeaderIconButton
+            label="Group by project"
+            aria-pressed={compactGroupedByProject}
+            isActive={compactGroupedByProject}
+            onClick={onToggleCompactGroupBy}
+          >
+            <FolderTreeIcon />
+          </SidebarHeaderIconButton>
+        ) : null}
         {hasProjects ? (
           <>
             {projectScope}

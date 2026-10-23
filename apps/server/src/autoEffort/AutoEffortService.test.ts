@@ -313,7 +313,9 @@ describe("AutoEffortService", () => {
     run({ judge: "haiku", haikuReply: Effect.never }, ({ service }) =>
       Effect.gen(function* () {
         const fiber = yield* service.resolve(request()).pipe(Effect.forkChild);
-        yield* TestClock.adjust("1500 millis");
+        yield* TestClock.adjust("2999 millis");
+        expect(fiber.pollUnsafe()).toBeUndefined();
+        yield* TestClock.adjust("1 millis");
         const resolution = yield* Fiber.join(fiber);
         expect(effortOf(resolution)).toBe("medium");
         expect(resolution.notice).toBe("Auto effort: medium (judge unavailable)");

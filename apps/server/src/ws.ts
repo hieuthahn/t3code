@@ -114,6 +114,7 @@ import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as ThreadManagementService from "./orchestration-v2/ThreadManagementService.ts";
 import * as CommandOutputHub from "./orchestration-v2/CommandOutputHub.ts";
 import * as PromptSuggestionHub from "./orchestration-v2/PromptSuggestionHub.ts";
+import * as TurnRecapHub from "./orchestration-v2/TurnRecapHub.ts";
 import * as McpAppRequests from "./mcpApps/McpAppRequests.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
 import * as ThreadLaunchService from "./orchestration-v2/ThreadLaunchService.ts";
@@ -1226,6 +1227,7 @@ export const layerWsRpc = (
       const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
       const commandOutputHub = yield* CommandOutputHub.CommandOutputHub;
       const promptSuggestionHub = yield* PromptSuggestionHub.PromptSuggestionHub;
+      const turnRecapHub = yield* TurnRecapHub.TurnRecapHub;
       const providerSessionManager = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const scheduledTasks = yield* ScheduledTasks.ScheduledTaskService;
       const secretRequests = yield* SecretRequests.SecretRequests;
@@ -2049,11 +2051,15 @@ export const layerWsRpc = (
           Stream.unwrap(
             Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
               Effect.andThen(subscribeOrchestrationV2Thread(input)),
-              Effect.map((thread) =>
-                input.acceptPromptSuggestions === true
-                  ? Stream.merge(thread, promptSuggestionHub.subscribe(input.threadId))
-                  : thread,
-              ),
+              Effect.map((thread) => {
+                const withSuggestions =
+                  input.acceptPromptSuggestions === true
+                    ? Stream.merge(thread, promptSuggestionHub.subscribe(input.threadId))
+                    : thread;
+                return input.acceptTurnRecaps === true
+                  ? Stream.merge(withSuggestions, turnRecapHub.subscribe(input.threadId))
+                  : withSuggestions;
+              }),
             ),
           ),
         [ORCHESTRATION_V2_WS_METHODS.subscribeCommandOutput]: (input) =>

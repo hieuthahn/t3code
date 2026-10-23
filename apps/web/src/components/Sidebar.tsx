@@ -271,7 +271,12 @@ import {
   sortThreadsByRecency,
 } from "./sidebar/sidebarTimeBuckets";
 import { everythingFolded, foldEverything, type SidebarFoldState } from "./sidebar/sidebarFoldAll";
-import { arrangeProjectGroups, withProjectPinned } from "./sidebar/sidebarProjectArrangement";
+import {
+  arrangeProjectGroups,
+  moveProjectGroup,
+  withProjectPinned,
+} from "./sidebar/sidebarProjectArrangement";
+import { useProjectGroupDrag } from "./sidebar/useProjectGroupDrag";
 import { sidebarProviderEntriesAtom } from "./sidebar/sidebarProviderEntries";
 
 const EMPTY_PROVIDER_ENTRIES: ReadonlyMap<string, SidebarProviderEntry> = new Map();
@@ -461,7 +466,7 @@ function useSidebarThreads(input: {
     NO_EXPANDED_SETTLED_GROUPS,
     SettledGroupIdsSchema,
   );
-  const [projectOrder] = useLocalStorage(
+  const [projectOrder, setProjectOrder] = useLocalStorage(
     PROJECT_ORDER_KEY,
     NO_EXPANDED_SETTLED_GROUPS,
     SettledGroupIdsSchema,
@@ -772,6 +777,19 @@ function useSidebarThreads(input: {
     settledBuckets,
     setProjectPinned: (groupId: string, pin: boolean) =>
       setPinnedProjectIds((ids) => withProjectPinned(ids, groupId, pin)),
+    moveProjectGroupTo: (groupId: string, toIndex: number | { readonly step: -1 | 1 }) => {
+      const displayed = (activeBuckets ?? []).flatMap((bucket) =>
+        bucket.projectGroupId === null ? [] : [bucket.projectGroupId],
+      );
+      const order = moveProjectGroup({
+        displayed,
+        pinned: pinnedProjectIds,
+        saved: projectOrder,
+        id: groupId,
+        toIndex: typeof toIndex === "number" ? toIndex : displayed.indexOf(groupId) + toIndex.step,
+      });
+      if (order !== null) setProjectOrder(order);
+    },
     toggleBucket: (marker: SidebarListMarker) =>
       setCollapsedBucketMarkers((markers) =>
         markers.includes(marker)
@@ -1422,6 +1440,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     settledBuckets,
     toggleBucket,
     setProjectPinned,
+    moveProjectGroupTo,
     allCollapsed,
     setAllCollapsed,
     bucketByMarker,
@@ -2772,6 +2791,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     },
   );
 
+  const projectGroupDrag = useProjectGroupDrag(moveProjectGroupTo);
   const showProjectGroupContextMenu = useStableCallback(
     async (groupId: string, pinned: boolean, position: { x: number; y: number }) => {
       const api = readLocalApi();
@@ -3694,6 +3714,27 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                             position,
                                           )
                                   }
+                                  reorder={
+                                    compactBucket.projectGroupId === null ||
+                                    compactBucket.marker !==
+                                      projectBucketMarker("active", compactBucket.projectGroupId)
+                                      ? undefined
+                                      : {
+                                          groupId: compactBucket.projectGroupId,
+                                          dragging:
+                                            projectGroupDrag.drag?.id ===
+                                            compactBucket.projectGroupId,
+                                          onHandlePointerDown: (event) =>
+                                            projectGroupDrag.start(
+                                              compactBucket.projectGroupId,
+                                              event,
+                                            ),
+                                          onStep: (step) =>
+                                            moveProjectGroupTo(compactBucket.projectGroupId, {
+                                              step,
+                                            }),
+                                        }
+                                  }
                                 />,
                               );
                               break;
@@ -3765,6 +3806,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         </button>
                       </li>
                     ) : null}
+                    {projectGroupDrag.drag === null ? null : (
+                      <li
+                        aria-hidden
+                        className="pointer-events-none absolute inset-x-1 z-30 h-0.5 -translate-y-1/2 list-none rounded-full bg-primary"
+                        style={{ top: projectGroupDrag.drag.lineTop }}
+                      />
+                    )}
                   </ul>
                 </SortableContext>
               </DndContext>

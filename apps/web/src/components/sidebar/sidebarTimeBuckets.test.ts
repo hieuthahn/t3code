@@ -3,6 +3,8 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   bucketByTime,
   visibleBucketItems,
+  everyBucketCollapsed,
+  withBucketsCollapsed,
   countByTimeBucket,
   sidebarThreadTimeMs,
   sidebarTimeBucketOf,
@@ -112,5 +114,26 @@ describe("visibleBucketItems", () => {
   it("keeps only the open thread of a collapsed bucket", () => {
     expect(visibleBucketItems(items, true, (item) => item === "b")).toEqual(["b"]);
     expect(visibleBucketItems(items, true, () => false)).toEqual([]);
+  });
+});
+
+describe("everyBucketCollapsed", () => {
+  it("is true only when every listed bucket is folded", () => {
+    expect(everyBucketCollapsed(["a", "b"], ["b", "a", "z"])).toBe(true);
+    expect(everyBucketCollapsed(["a", "b"], ["a"])).toBe(false);
+  });
+
+  it("is false when there is no bucket", () => {
+    expect(everyBucketCollapsed([], ["a"])).toBe(false);
+  });
+});
+
+describe("withBucketsCollapsed", () => {
+  it("folds every listed bucket once and keeps other folds", () => {
+    expect(withBucketsCollapsed(["z", "a"], ["a", "b"], true)).toEqual(["z", "a", "b"]);
+  });
+
+  it("opens every listed bucket and keeps other folds", () => {
+    expect(withBucketsCollapsed(["z", "a", "b"], ["a", "b"], false)).toEqual(["z"]);
   });
 });

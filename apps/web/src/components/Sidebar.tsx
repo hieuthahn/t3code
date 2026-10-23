@@ -265,7 +265,9 @@ import {
 import {
   bucketByTime,
   countByTimeBucket,
+  everyBucketCollapsed,
   visibleBucketItems,
+  withBucketsCollapsed,
   sidebarThreadTimeMs,
   sortThreadsByRecency,
 } from "./sidebar/sidebarTimeBuckets";
@@ -538,6 +540,7 @@ function useSidebarThreads(input: {
       return {
         marker,
         label: bucket.label,
+        projectGroupId: null,
         threadCount: threadCountByBucket.get(bucket.bucket) ?? bucket.items.length,
         ...bucketRowsOf(marker, bucket.items),
       };
@@ -564,6 +567,7 @@ function useSidebarThreads(input: {
       return {
         marker,
         label: group.label,
+        projectGroupId: group.id,
         threadCount: threadCountByGroupId.get(group.id) ?? group.threads.length,
         ...bucketRowsOf(marker, group.threads),
       };
@@ -682,6 +686,9 @@ function useSidebarThreads(input: {
   ] as const) {
     for (const thread of list) sectionByThreadKey.set(threadShellKey(thread), section);
   }
+  const visibleBucketMarkers = [...(activeBuckets ?? []), ...(settledBuckets ?? [])].map(
+    (bucket) => bucket.marker,
+  );
   return {
     routeRowThreadKey,
     ...partition,
@@ -737,6 +744,14 @@ function useSidebarThreads(input: {
         markers.includes(marker)
           ? markers.filter((entry) => entry !== marker)
           : [...markers, marker],
+      ),
+    bucketsCollapsed:
+      visibleBucketMarkers.length === 0
+        ? null
+        : everyBucketCollapsed(visibleBucketMarkers, collapsedBucketMarkers),
+    setAllBucketsCollapsed: (collapse: boolean) =>
+      setCollapsedBucketMarkers((markers) =>
+        withBucketsCollapsed(markers, visibleBucketMarkers, collapse),
       ),
     bucketByMarker: new Map(
       [...(activeBuckets ?? []), ...(settledBuckets ?? [])].map(
@@ -1374,6 +1389,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     activeBuckets,
     settledBuckets,
     toggleBucket,
+    bucketsCollapsed,
+    setAllBucketsCollapsed,
     bucketByMarker,
     orderedThreadKeys,
     threadByKey,
@@ -3221,6 +3238,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               onCompactGroupByChange={(groupBy) =>
                 void updateClientSettings({ sidebarCompactGroupBy: groupBy })
               }
+              bucketsCollapsed={bucketsCollapsed}
+              onBucketsCollapsedChange={setAllBucketsCollapsed}
               onNewProject={openAddProjectCommandPalette}
               onNewThread={handleNewThreadClick}
               newThreadDisabled={projects.length === 0}
@@ -3597,6 +3616,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                   threadCount={compactBucket.threadCount}
                                   expanded={compactBucket.expanded}
                                   onToggle={() => toggleBucket(compactBucket.marker)}
+                                  project={
+                                    compactBucket.projectGroupId === null
+                                      ? undefined
+                                      : (projectGroupByScopeKey.get(compactBucket.projectGroupId) ??
+                                        null)
+                                  }
                                 />,
                               );
                               break;

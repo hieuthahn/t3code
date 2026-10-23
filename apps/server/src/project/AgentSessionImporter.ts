@@ -174,6 +174,7 @@ const make = Effect.gen(function* () {
   const runtimes = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
   const importRecentAgentThreads = Effect.fn("importRecentAgentThreadsV2")(function* (
     input: AgentSessionImportInput,
+    options?: { readonly onlyProviderSessionIds?: ReadonlySet<string> },
   ) {
     const project = yield* projects.getById(input.projectId).pipe(
       Effect.mapError((cause) => new AgentSessionScanError({ operation: "read-projects", cause })),
@@ -223,6 +224,12 @@ const make = Effect.gen(function* () {
           return;
         }
         const source = outcome.source;
+        if (
+          options?.onlyProviderSessionIds !== undefined &&
+          !options.onlyProviderSessionIds.has(source.providerSessionId)
+        ) {
+          return;
+        }
         const threadId = ThreadId.make(
           `import:${source.providerInstanceId}:${source.providerSessionId}`,
         );

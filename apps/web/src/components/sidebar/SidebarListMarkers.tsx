@@ -1,9 +1,11 @@
 import { CollapsibleSectionHeader } from "../ui/collapsible-section-header";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ChevronRightIcon, Columns3Icon } from "lucide-react";
+import { ChevronRightIcon, Columns3Icon, FolderIcon } from "lucide-react";
 import { type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { cn } from "~/lib/utils";
+import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   animateSidebarLayoutChanges,
   settledGroupMarker,
@@ -17,6 +19,7 @@ function SortableSidebarMarker(props: {
   className?: string;
   children?: ReactNode;
   "data-testid"?: string;
+  "data-kind"?: string;
 }) {
   const { setNodeRef, transform, transition } = useSortable({
     id: sidebarMarkerId(props.marker),
@@ -28,6 +31,7 @@ function SortableSidebarMarker(props: {
       ref={setNodeRef}
       data-thread-selection-safe
       data-testid={props["data-testid"]}
+      data-kind={props["data-kind"]}
       className={cn("list-none", props.className)}
       style={{
         transform: CSS.Translate.toString(transform),
@@ -165,34 +169,66 @@ export function SidebarSettledGroupHeader(props: {
   );
 }
 
+/** Head a compact date group, or a project group when `project` is given (null for Scratch or Other). */
 export function SidebarBucketHeader(props: {
   marker: SidebarListMarker;
   label: string;
   threadCount: number;
   expanded: boolean;
   onToggle: () => void;
+  project?: ProjectFaviconProject | null | undefined;
 }) {
+  const isProject = props.project !== undefined;
   return (
     <SortableSidebarMarker
       marker={props.marker}
       data-testid="sidebar-bucket-header"
-      className="mx-0.5 h-7"
+      data-kind={isProject ? "project" : "date"}
+      className={cn("mx-0.5 h-7", isProject && "not-first:h-9")}
     >
       <button
         type="button"
         aria-expanded={props.expanded}
         onClick={props.onToggle}
-        className="flex h-full w-full cursor-pointer items-end gap-1.5 rounded-md px-2 pb-1 text-left text-xs font-medium text-sidebar-muted-foreground outline-none hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className={cn(
+          "flex h-full w-full cursor-pointer items-end gap-1.5 rounded-md px-2 pb-1 text-left text-xs outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+          isProject
+            ? "font-semibold text-sidebar-foreground"
+            : "font-medium text-sidebar-muted-foreground hover:text-sidebar-foreground",
+        )}
       >
-        <span>{props.label}</span>
-        <span className="tabular-nums text-sidebar-muted-foreground/60">
+        {isProject ? (
+          <span aria-hidden className="mb-px flex size-3.5 shrink-0 self-end">
+            {props.project ? (
+              <ProjectFavicon project={props.project} className="size-3.5" />
+            ) : (
+              <FolderIcon className="size-3.5 text-sidebar-muted-foreground" />
+            )}
+          </span>
+        ) : null}
+        {isProject ? (
+          <Tooltip>
+            <TooltipTrigger render={<span className="min-w-0 truncate" />}>
+              {props.label}
+            </TooltipTrigger>
+            <TooltipPopup side="right">{props.label}</TooltipPopup>
+          </Tooltip>
+        ) : (
+          <span>{props.label}</span>
+        )}
+        <span
+          className={cn(
+            "tabular-nums font-medium text-sidebar-muted-foreground/60",
+            isProject && "ms-auto",
+          )}
+        >
           {props.threadCount}
           <span className="sr-only"> threads</span>
         </span>
         <ChevronRightIcon
           aria-hidden
           className={cn(
-            "mb-px size-3 shrink-0 transition-transform motion-reduce:transition-none",
+            "mb-px size-3 shrink-0 text-sidebar-muted-foreground transition-transform motion-reduce:transition-none",
             props.expanded && "rotate-90",
           )}
         />

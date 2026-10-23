@@ -1,4 +1,5 @@
 import { resolveThreadWorkingStartedAt } from "@t3tools/client-runtime/state/models";
+import { requestResolutionLabel } from "@t3tools/client-runtime/work-log/request-resolution";
 import {
   type AssetResource,
   type OrchestrationV2Checkpoint,
@@ -583,14 +584,14 @@ function projectedWorkEntry(row: OrchestrationV2ProjectedTurnItem): WorkLogEntry
     case "approval_request":
       return {
         ...common,
-        label: title ?? "Approval requested",
+        label: requestResolutionLabel(item) ?? title ?? "Approval requested",
         detail: item.prompt ?? item.requestKind,
         toolData: item,
       };
     case "user_input_request":
       return {
         ...common,
-        label: title ?? (item.questionAnswer ? "Answered questions" : "Input requested"),
+        label: requestResolutionLabel(item) ?? title ?? "Input requested",
         ...(item.questionAnswer ? { questionAnswer: item.questionAnswer } : {}),
         toolData: item,
       };

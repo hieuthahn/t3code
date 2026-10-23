@@ -8271,6 +8271,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         resolvedAt: now,
         ...(command.decision === undefined ? {} : { decision: command.decision }),
         ...(answers === undefined ? {} : { answers }),
+        ...(command.decidedBy === undefined ? {} : { decidedBy: command.decidedBy }),
       };
       const emitEvent = emit(events, command);
       const requestNode = context.node;
@@ -8343,6 +8344,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                     ),
                   },
                 }
+              : {}),
+            ...(approvalTurnItem.type === "approval_request" && command.decision !== undefined
+              ? { decision: command.decision }
+              : {}),
+            ...((approvalTurnItem.type === "approval_request" ||
+              approvalTurnItem.type === "user_input_request") &&
+            command.decidedBy !== undefined
+              ? { decidedBy: command.decidedBy }
               : {}),
             status: resolvedNodeStatus,
             completedAt: now,

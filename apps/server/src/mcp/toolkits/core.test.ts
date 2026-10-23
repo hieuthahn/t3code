@@ -23,7 +23,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { McpAttachmentInput } from "./attachment/input.ts";
-import { McpSchema, McpServer } from "effect/ai";
+import { McpSchema, McpServer, Tool } from "effect/ai";
 import { FetchHttpClient } from "effect/http";
 
 import {
@@ -55,6 +55,17 @@ import * as AttachmentHandlers from "./attachment/handlers.ts";
 import * as PeerForwarding from "../../peer/PeerForwarding.ts";
 import * as PeerLinkRequests from "../../peer/PeerLinkRequests.ts";
 import * as PeerLinks from "../../peer/PeerLinks.ts";
+import { AttachmentToolkit } from "./attachment/tools.ts";
+import { DeviceToolkit } from "./device/tools.ts";
+import { EnvironmentToolkit } from "./environment/tools.ts";
+import { HtmlToolkit } from "./html/tools.ts";
+import { OrchestratorToolkit } from "./orchestrator/tools.ts";
+import { PreviewToolkit } from "./preview/tools.ts";
+import { PreviewControlsToolkit } from "./previewControls/tools.ts";
+import { ProjectToolkit } from "./project/tools.ts";
+import { PullRequestsToolkit } from "./pullRequests/tools.ts";
+import { ThreadToolkit } from "./thread/tools.ts";
+import { WorktreeToolkit } from "./worktree/tools.ts";
 
 const layerOrchestratorToolkit = McpHttpServer.layerOrchestratorToolkit.pipe(
   Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
@@ -210,6 +221,128 @@ it.effect("an answered question reports already answered instead of not found", 
       ),
     ),
   );
+});
+
+it.effect("answering a question records the calling agent as the one who answered", () => {
+  const shell = McpToolAccessTestkit.liveThreadShell(threadId);
+  const requestId = RuntimeRequestId.make("pending-question");
+  const projection = McpToolAccessTestkit.idleThreadProjection(shell);
+  const dispatched: Array<unknown> = [];
+  return Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const result = yield* server
+      .callTool({
+        name: "t3_pending_request_respond",
+        arguments: { requestId, answers: { size: "large" } },
+      })
+      .pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
+    expect(result.isError).not.toBe(true);
+    expect(dispatched).toMatchObject([
+      {
+        type: "runtime-request.respond",
+        requestId,
+        decidedBy: { actor: "agent", threadId },
+      },
+    ]);
+  }).pipe(
+    Effect.provide(
+      layerThreadToolkit.pipe(
+        Layer.provideMerge(McpServer.McpServer.layer),
+        Layer.provide(NodeCrypto.layer),
+        Layer.provide(
+          Layer.mock(ThreadManagement.ThreadManagementService)({
+            getThreadShell: () => Effect.succeed(shell),
+            getProjectThreadRecords: () =>
+              Effect.succeed({
+                ...projection,
+                runtimeRequests: [
+                  {
+                    id: requestId,
+                    nodeId: NodeId.make("root"),
+                    providerTurnId: null,
+                    nativeRequestRef: null,
+                    kind: "user_input",
+                    status: "pending",
+                    responseCapability: { type: "message" },
+                    createdAt: shell.createdAt,
+                    resolvedAt: null,
+                  },
+                ],
+                turnItems: [
+                  {
+                    id: TurnItemId.make("pending-question-item"),
+                    threadId,
+                    runId: null,
+                    nodeId: null,
+                    providerThreadId: null,
+                    providerTurnId: null,
+                    nativeItemRef: null,
+                    parentItemId: null,
+                    ordinal: 0,
+                    status: "waiting",
+                    title: null,
+                    startedAt: shell.createdAt,
+                    completedAt: null,
+                    updatedAt: shell.updatedAt,
+                    type: "user_input_request",
+                    requestId,
+                    questions: [],
+                  },
+                ],
+              }),
+            dispatch: (command) => {
+              dispatched.push(command);
+              return Effect.succeed({ sequence: 1, storedEvents: [] });
+            },
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+it("offers agents no tool parameter that decides an approval or claims who answered", () => {
+  const toolkits = [
+    AttachmentToolkit,
+    DeviceToolkit,
+    EnvironmentToolkit,
+    HtmlToolkit,
+    OrchestratorToolkit,
+    PreviewToolkit,
+    PreviewControlsToolkit,
+    ProjectToolkit,
+    PullRequestsToolkit,
+    ThreadToolkit,
+    WorktreeToolkit,
+  ];
+  const propertyNames = (schema: unknown, names = new Set<string>()): Set<string> => {
+    if (Array.isArray(schema)) {
+      for (const entry of schema) propertyNames(entry, names);
+    } else if (schema !== null && typeof schema === "object") {
+      for (const [key, value] of Object.entries(schema)) {
+        if (key === "properties" && value !== null && typeof value === "object") {
+          for (const name of Object.keys(value)) names.add(name);
+        }
+        propertyNames(value, names);
+      }
+    }
+    return names;
+  };
+  expect(
+    propertyNames(Tool.getJsonSchema(ThreadToolkit.tools.t3_pending_request_respond)).has(
+      "answers",
+    ),
+  ).toBe(true);
+  for (const toolkit of toolkits) {
+    for (const [name, tool] of Object.entries(toolkit.tools)) {
+      const names = propertyNames(Tool.getJsonSchema(tool));
+      expect(names.has("decision"), name).toBe(false);
+      expect(names.has("decidedBy"), name).toBe(false);
+    }
+  }
 });
 
 it("bounds public command rejections and redacts internal dispatch causes", () => {

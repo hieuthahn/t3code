@@ -72,6 +72,7 @@ const input: NewProjectScriptInput = {
   runOnWorktreeCreate: false,
   waitForSetup: false,
   runOnSettle: false,
+  runAsMergeGate: false,
   previewUrl: null,
   autoOpenPreview: false,
 };

@@ -14,6 +14,8 @@ import {
   OrchestratorMcpDeleteScheduledTaskInput,
   OrchestratorMcpDeleteScheduledTaskResult,
   OrchestratorMcpEnvironmentTarget,
+  OrchestratorMcpMergeEnqueueInput,
+  OrchestratorMcpMergeEnqueueResult,
   OrchestratorMcpProposeTasksInput,
   OrchestratorMcpProposeTasksResult,
   OrchestratorMcpRequestSecretInput,
@@ -46,6 +48,7 @@ import { Tool, Toolkit } from "effect/ai";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 
+import * as MergeQueueService from "../../../mergeQueue/MergeQueueService.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as PeerForwarding from "../../../peer/PeerForwarding.ts";
 import * as PeerLinkRequests from "../../../peer/PeerLinkRequests.ts";
@@ -59,6 +62,8 @@ const dependencies = [
   ThreadManagementService.ThreadManagementService,
   OrchestratorMcpService.OrchestratorMcpService,
 ];
+/** Queueing a child's branch to land on this thread's trunk. */
+const mergeQueueDependencies = [...dependencies, MergeQueueService.MergeQueueService];
 /** Listing this environment's links. */
 const linkDependencies = [...dependencies, PeerForwarding.PeerForwarding];
 /** Making and forgetting links. */
@@ -214,6 +219,18 @@ const ProposeTasksTool = Tool.make("propose_tasks", {
   dependencies,
 })
   .annotate(Tool.Title, "Propose child sessions to the user")
+  .annotate(Tool.Destructive, false);
+
+const MergeEnqueueTool = Tool.make("merge_enqueue", {
+  description:
+    "Queue a finished child (started by delegate_task with its own worktree) to land on this thread's branch. The user approves the exact commit on the parent's merge queue panel; then the app merges this branch into the child, runs the project's merge gate scripts there, and fast-forwards this branch only if every gate passes. Items land one at a time. A failed step leaves this branch alone and sends the child a message saying why, with the gate output. Never merge a child's branch yourself while it is queued.",
+  parameters: OrchestratorMcpMergeEnqueueInput,
+  success: OrchestratorMcpMergeEnqueueResult,
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies: mergeQueueDependencies,
+})
+  .annotate(Tool.Title, "Queue a child session to merge")
   .annotate(Tool.Destructive, false);
 
 const TaskReportTool = Tool.make("task_report", {
@@ -377,6 +394,7 @@ export const OrchestratorToolkit = Toolkit.make(
   DeleteScheduledTaskTool,
   RequestSecretTool,
   ProposeTasksTool,
+  MergeEnqueueTool,
   TaskReportTool,
   CreateThreadsTool,
   ThreadListTool,

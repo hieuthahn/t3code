@@ -506,6 +506,7 @@ const layerScheduledTaskWebhookOrigin = Layer.effect(
 const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
   Layer.provide(AutoEffort.layer),
   Layer.provide(PromptSuggester.layer),
+  Layer.provide(PromptSuggester.layerTurnRecapper),
   Layer.provide(layerScheduledTaskWebhookOrigin),
   Layer.provide(ProviderEventIngestor.layerAnalytics),
   Layer.provide(layerCheckpointStore),

@@ -271,6 +271,31 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
     );
   });
 
+  it("places team rules after the Token Saver rules and before launch-argument text", () => {
+    const append = (teamInstructions?: string) =>
+      (
+        ClaudeAdapterV2.makeClaudeQueryOptions({
+          modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+          nativeThreadId: "native-team",
+          resume: false,
+          cwd: "/workspace",
+          settings: {
+            ...AUTO_COMPACT_CLAUDE_SETTINGS,
+            launchArgs: '--append-system-prompt "Inline"',
+          },
+          tokenSaverInstructions: "## Token Saver sentinel",
+          ...(teamInstructions === undefined ? {} : { teamInstructions }),
+        }).systemPrompt as { readonly append: string }
+      ).append;
+    assert.equal(
+      append("## Team sentinel"),
+      append().replace(
+        "## Token Saver sentinel\n\nInline",
+        "## Token Saver sentinel\n\n## Team sentinel\n\nInline",
+      ),
+    );
+  });
+
   it("asks for prompt suggestions and keeps them on near the usage limit", () => {
     const options = (promptSuggestions: boolean) =>
       ClaudeAdapterV2.makeClaudeQueryOptions({
@@ -530,6 +555,21 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
       }),
     );
     assert.notEqual(rotatedKey, initialKey);
+  });
+
+  it("reopens a live query when the thread's team rules change", () => {
+    const queryPolicy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(
+      ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        cwd: "/workspace",
+      }),
+    );
+    const key = (teamRulesKey?: string) =>
+      ClaudeAdapterV2.claudeEffectiveQueryPolicyKey(queryPolicy, {}, undefined, teamRulesKey);
+    assert.equal(key("team-a"), key("team-a"));
+    assert.notEqual(key("team-a"), key("team-b"));
+    assert.notEqual(key(), key("team-a"));
   });
 
   it("matches the read-only allowlist to the orchestrator toolkit annotations", () => {

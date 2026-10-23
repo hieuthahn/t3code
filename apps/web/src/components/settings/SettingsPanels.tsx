@@ -1245,7 +1245,7 @@ export function GeneralSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("compact-sidebar")}
-          description="Show every thread on one line, group threads by Today, This week and Older, and fold multiple-models groups."
+          description="Show every thread on one line, group threads by date or project, and fold multiple-models groups."
           resetAction={
             settings.sidebarCompactModeEnabled !==
             DEFAULT_UNIFIED_SETTINGS.sidebarCompactModeEnabled ? (

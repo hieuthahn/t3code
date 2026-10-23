@@ -117,8 +117,8 @@ export function modelSelectionsEqual(left: ModelSelection, right: ModelSelection
 }
 
 /**
- * Whether a composer's draft model pick is what the thread already runs. Web sends
- * `fastMode: false` for models with a fast toggle while mobile omits it, so off counts as unset.
+ * Whether a composer's draft model pick, account pin included, is what the thread already runs.
+ * Web sends `fastMode: false` where mobile omits it, so off counts as unset.
  */
 export function draftModelPickMatchesThread(pick: ModelSelection, thread: ModelSelection): boolean {
   const withoutFastModeOff = (selection: ModelSelection) =>
@@ -127,7 +127,10 @@ export function draftModelPickMatchesThread(pick: ModelSelection, thread: ModelS
       selection.model,
       selection.options?.filter((option) => option.id !== "fastMode" || option.value !== false),
     );
-  return modelSelectionsEqual(withoutFastModeOff(pick), withoutFastModeOff(thread));
+  return (
+    (pick.accountChoice === "pinned") === (thread.accountChoice === "pinned") &&
+    modelSelectionsEqual(withoutFastModeOff(pick), withoutFastModeOff(thread))
+  );
 }
 
 function resolveDescriptorChoiceValue(

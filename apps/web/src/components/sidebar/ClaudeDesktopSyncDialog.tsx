@@ -10,7 +10,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { ArrowLeftRightIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { claudeDesktopSyncRun } from "~/state/claudeDesktopSync";
 import { usePrimaryEnvironmentId } from "~/state/environments";
@@ -185,7 +185,7 @@ function ClaudeDesktopSyncDialog({
         </DialogHeader>
         <DialogPanel>
           {phase.kind === "loading" ? (
-            <p className="text-sm text-muted-foreground">Reading Claude Desktop sessions…</p>
+            <WaitingNote label="Reading Claude Desktop sessions and transcripts" />
           ) : phase.kind === "failed" ? (
             <p className="text-sm text-destructive-foreground">{phase.message}</p>
           ) : actionable.length === 0 ? (
@@ -224,6 +224,7 @@ function ClaudeDesktopSyncDialog({
               </ul>
             </details>
           ) : null}
+          {busy ? <WaitingNote label="Applying the selected changes" /> : null}
           {outcome !== null ? (
             <ul className="mt-3 flex flex-col gap-0.5 text-sm" aria-live="polite">
               {outcome.map((line) => (
@@ -333,4 +334,21 @@ function describeApply(result: ClaudeDesktopSyncApplyResult): ReadonlyArray<stri
   }
   for (const failure of result.failed) lines.push(`Failed ${failure.id}: ${failure.error}`);
   return lines;
+}
+
+function WaitingNote({ label }: { readonly label: string }) {
+  const [startedAt] = useState(() => performance.now());
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(
+      () => setSeconds(Math.floor((performance.now() - startedAt) / 1000)),
+      1000,
+    );
+    return () => clearInterval(timer);
+  }, [startedAt]);
+  return (
+    <p className="mt-3 text-sm text-muted-foreground first:mt-0" role="status">
+      {label}…{seconds >= 2 ? ` ${seconds} s` : ""}
+    </p>
+  );
 }

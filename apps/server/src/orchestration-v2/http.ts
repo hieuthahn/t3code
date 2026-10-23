@@ -5,6 +5,7 @@ import {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
@@ -31,6 +32,7 @@ import {
   OLDER_THREAD_USER_TURN_LIMIT,
 } from "./threadHistoryPaging.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
+import * as TokenSaver from "../tokenSaver/TokenSaverService.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import {
   buildActiveShellSnapshot,
@@ -59,6 +61,7 @@ export const layer = HttpApiBuilder.group(
     const sql = yield* SqlClient.SqlClient;
     const environment = yield* ServerEnvironment.ServerEnvironmentIdentity;
     const threadManagement = yield* ThreadManagementService.ThreadManagementService;
+    const tokenSaver = yield* Effect.serviceOption(TokenSaver.TokenSaverService);
     const applicationEvents = yield* OrchestrationEventStore.OrchestrationEventStore;
     const projectStore = yield* ProjectStore.ProjectStoreV2;
     const projectEnrichment = yield* ProjectEnrichmentService.ProjectEnrichmentService;
@@ -276,6 +279,26 @@ export const layer = HttpApiBuilder.group(
                     cause,
                   );
                 }),
+              ),
+            );
+        }),
+      )
+      .handle(
+        "threadTokenSaver",
+        Effect.fn("environment.orchestration.threadTokenSaver")(function* (args) {
+          yield* annotateEnvironmentRequest(args.endpoint.name);
+          yield* requireEnvironmentScope(AuthOrchestrationReadScope);
+          if (Option.isNone(tokenSaver)) {
+            return yield* failEnvironmentInternal(
+              "orchestration_token_saver_stats_failed",
+              "Token Saver is not available on this server.",
+            );
+          }
+          return yield* tokenSaver.value
+            .stats(args.params.threadId)
+            .pipe(
+              Effect.catch((cause) =>
+                failEnvironmentInternal("orchestration_token_saver_stats_failed", cause),
               ),
             );
         }),

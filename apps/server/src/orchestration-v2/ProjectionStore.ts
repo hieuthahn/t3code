@@ -1682,6 +1682,9 @@ export function threadShellFromProjection(
     ...(projection.thread.fanoutGroupId === undefined
       ? {}
       : { fanoutGroupId: projection.thread.fanoutGroupId }),
+    ...(projection.thread.tokenSaver === undefined
+      ? {}
+      : { tokenSaver: projection.thread.tokenSaver }),
     latestRunId: latestRun?.id ?? null,
     latestRunRequestedAt: latestRun?.requestedAt ?? null,
     latestRunStartedAt: latestRun?.startedAt ?? null,
@@ -1967,6 +1970,9 @@ function shellFromState(input: {
     ...(input.state.thread.fanoutGroupId === undefined
       ? {}
       : { fanoutGroupId: input.state.thread.fanoutGroupId }),
+    ...(input.state.thread.tokenSaver === undefined
+      ? {}
+      : { tokenSaver: input.state.thread.tokenSaver }),
     latestRunId: input.state.latestRunId,
     latestRunRequestedAt: input.state.latestRunRequestedAt,
     latestRunStartedAt: input.state.latestRunStartedAt,

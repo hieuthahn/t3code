@@ -363,6 +363,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["reasoning effort auto judge haiku jev typesafe thinking"],
   },
   {
+    id: "token-saver",
+    title: "Token Saver",
+    to: "/settings/general",
+    searchTerms: ["token saver concise terse lean code quiet tools cost tokens system prompt"],
+  },
+  {
     id: "prompt-suggestions",
     title: "Prompt suggestions",
     to: "/settings/general",

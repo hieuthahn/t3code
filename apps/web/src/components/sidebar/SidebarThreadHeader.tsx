@@ -38,6 +38,7 @@ export interface SidebarThreadHeaderProps {
   searchFieldRef?: RefObject<HTMLDivElement | null>;
   hasProjects: boolean;
   projectScope: ReactNode;
+  desktopSync?: ReactNode;
   compactMode: boolean;
   onCompactModeChange: (compact: boolean) => void;
   compactGroupBy: SidebarCompactGroupBy;
@@ -64,6 +65,7 @@ export function SidebarThreadHeader({
   searchFieldRef,
   hasProjects,
   projectScope,
+  desktopSync,
   compactMode,
   onCompactModeChange,
   compactGroupBy,
@@ -152,6 +154,7 @@ export function SidebarThreadHeader({
             </SidebarHeaderIconButton>
           </>
         ) : null}
+        {desktopSync}
         <SidebarHeaderIconButton
           label="New thread"
           tooltip={

@@ -7,6 +7,7 @@ import {
   type ScopedThreadRef,
   type TeamProfile,
   type TeamSetup,
+  teamLimitChangeProblems,
 } from "@t3tools/contracts";
 import { ChevronRightIcon, PlusIcon, UsersIcon } from "lucide-react";
 import { useState } from "react";
@@ -14,6 +15,8 @@ import { useState } from "react";
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "~/hooks/useSettings";
 import { randomUUID } from "~/lib/utils";
 import { useThreadShell } from "~/state/entities";
+import { useEnvironmentQuery } from "~/state/query";
+import { serverEnvironment } from "~/state/server";
 import { useEnvironmentScope } from "~/state/session";
 import { threadEnvironment } from "~/state/threads";
 import { useOrchestrationCommand } from "~/state/use-orchestration-command";
@@ -24,6 +27,7 @@ import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
+import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import { ComposerControl, ComposerControlIcon, type ComposerControlSize } from "./ComposerControl";
 import { useComposerMenuProps } from "./composerEventScope";
@@ -63,6 +67,11 @@ export function ComposerTeamControl(props: {
   const canWriteSettings = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
   const [draft, setDraft] = useState<TeamSetup | null>(null);
   const [profileId, setProfileId] = useState<string | null>(null);
+  const runQuery = useEnvironmentQuery(
+    thread?.team === undefined
+      ? null
+      : serverEnvironment.teamLive({ environmentId, input: { threadId } }),
+  );
 
   if (thread === null || !SUPPORTED_DRIVERS.has(props.driver)) return null;
   const team = thread.team ?? null;
@@ -74,6 +83,13 @@ export function ComposerTeamControl(props: {
       threadModel: props.threadModel,
     });
   const edit = (next: TeamSetup) => setDraft(next);
+  const run = runQuery.data;
+  const used =
+    run !== null &&
+    (run.status === "running" || run.status === "paused" || run.status === "interrupted")
+      ? run.usage
+      : NO_USAGE;
+  const limitProblems = team === null ? [] : teamLimitChangeProblems(setup.limits, used);
 
   const apply = (next: TeamSetup | null) => {
     void updateMetadata({
@@ -194,6 +210,19 @@ export function ComposerTeamControl(props: {
             ) : null}
           </section>
 
+          <label className="flex items-center justify-between gap-3 text-sm">
+            Start assignments without approval
+            <Switch
+              size="sm"
+              checked={setup.autonomous === true}
+              disabled={!canOperate}
+              onCheckedChange={(checked) => {
+                const { autonomous: _previous, ...rest } = setup;
+                edit(checked ? { ...rest, autonomous: true } : rest);
+              }}
+            />
+          </label>
+
           <Collapsible>
             <CollapsibleTrigger className="group flex items-center gap-1 text-xs font-medium text-muted-foreground">
               <ChevronRightIcon className="size-3.5 transition-transform group-data-panel-open:rotate-90" />
@@ -203,7 +232,7 @@ export function ComposerTeamControl(props: {
               <div className="pt-2">
                 <TeamLimitsFields
                   limits={setup.limits}
-                  used={NO_USAGE}
+                  used={used}
                   disabled={!canOperate}
                   onChange={(limits) => edit({ ...setup, limits })}
                 />
@@ -253,6 +282,12 @@ export function ComposerTeamControl(props: {
             </CollapsiblePanel>
           </Collapsible>
 
+          {limitProblems.length === 0 ? null : (
+            <p role="alert" className="text-xs text-destructive">
+              {limitProblems.join(" ")}
+            </p>
+          )}
+
           <div className="flex items-center justify-between gap-3 border-t pt-3">
             <label className="flex items-center gap-2 text-sm">
               <Checkbox
@@ -275,7 +310,11 @@ export function ComposerTeamControl(props: {
                   Single agent
                 </Button>
               )}
-              <Button size="sm" disabled={!canOperate} onClick={() => apply(setup)}>
+              <Button
+                size="sm"
+                disabled={!canOperate || limitProblems.length > 0}
+                onClick={() => apply(setup)}
+              >
                 {team === null ? "Start team" : "Apply"}
               </Button>
             </div>

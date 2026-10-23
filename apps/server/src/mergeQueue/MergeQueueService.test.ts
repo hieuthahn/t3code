@@ -55,9 +55,11 @@ const shell = (input: {
   readonly branch: string | null;
   readonly worktreePath: string | null;
   readonly parentThreadId: ThreadId | null;
+  readonly activeRunId?: string;
 }) =>
   ({
     id: input.id,
+    activeRunId: input.activeRunId ?? null,
     projectId,
     title: input.title,
     branch: input.branch,
@@ -102,7 +104,7 @@ const makeFixture = Effect.gen(function* () {
         }),
       ],
     ]),
-    scripts: [],
+    scripts: [gate("passes", "true")],
     settingsScripts: [],
     sent: [],
   };
@@ -243,7 +245,7 @@ it.live("lands two children in order, and the second gate runs on a trunk with t
       );
       assert.deepEqual(
         view.items[1]?.gateRuns.map((run) => run.exitCode),
-        [0],
+        [0, 0],
       );
       assert.deepEqual(view.items[0]?.approvedBy, decidedBy);
       const trunkHead = yield* git(fixture.repository, ["rev-parse", "main"]);
@@ -299,8 +301,8 @@ it.live("keeps a child out of the trunk when a gate fails and sends it the outpu
       const failed = (yield* queue.view(ownerThreadId)).items[0];
       assert.equal(failed?.status, "failed");
       assert.equal(failed?.failure?.stage, "gate");
-      assert.equal(failed?.gateRuns[0]?.exitCode, 3);
-      assert.include(failed?.gateRuns[0]?.outputTail ?? "", "broken retry test");
+      assert.equal(failed?.gateRuns.at(-1)?.exitCode, 3);
+      assert.include(failed?.gateRuns.at(-1)?.outputTail ?? "", "broken retry test");
       assert.equal(yield* git(fixture.repository, ["rev-parse", "main"]), trunkBefore);
       assert.include(fixture.sent[0]?.text ?? "", "broken retry test");
     }),
@@ -321,7 +323,7 @@ it.live("runs the gates saved in the environment's project settings", () =>
 
       const failed = (yield* queue.view(ownerThreadId)).items[0];
       assert.equal(failed?.failure?.stage, "gate");
-      assert.include(failed?.gateRuns[0]?.outputTail ?? "", "notes.txt");
+      assert.include(failed?.gateRuns.at(-1)?.outputTail ?? "", "notes.txt");
       assert.equal(yield* git(fixture.repository, ["rev-parse", "main"]), trunkBefore);
     }),
   ),
@@ -439,6 +441,123 @@ it.live("lets only a child's own parent queue it", () =>
         .pipe(Effect.result);
       assert.isTrue(Result.isFailure(stranger));
       assert.deepEqual((yield* queue.view(ownerThreadId)).items, []);
+    }),
+  ),
+);
+
+it.live("refuses to queue or approve a child when the project has no merge gate", () =>
+  withQueue(({ fixture, queue }) =>
+    Effect.gen(function* () {
+      const api = yield* addChild(fixture, "api", "api.txt");
+      const item = yield* queue.enqueue({
+        callerThreadId: ownerThreadId,
+        childThreadId: api.childThreadId,
+      });
+      fixture.scripts.length = 0;
+      const approved = yield* queue
+        .approve({ itemId: item.id, headSha: item.headShaAtEnqueue }, decidedBy)
+        .pipe(Effect.result);
+      assert.isTrue(Result.isFailure(approved));
+      assert.equal((yield* queue.view(ownerThreadId)).items[0]?.status, "awaiting_user");
+
+      const ui = yield* addChild(fixture, "ui", "ui.txt");
+      const queued = yield* queue
+        .enqueue({ callerThreadId: ownerThreadId, childThreadId: ui.childThreadId })
+        .pipe(Effect.result);
+      assert.isTrue(Result.isFailure(queued));
+      if (Result.isFailure(queued)) assert.include(queued.failure.message, "merge gate");
+    }),
+  ),
+);
+
+it.live("keeps the trunk when the gates are gone by the time an item lands", () =>
+  withQueue(({ fixture, queue }) =>
+    Effect.gen(function* () {
+      const api = yield* addChild(fixture, "api", "api.txt");
+      const trunkBefore = yield* git(fixture.repository, ["rev-parse", "main"]);
+      const item = yield* queue.enqueue({
+        callerThreadId: ownerThreadId,
+        childThreadId: api.childThreadId,
+      });
+      yield* queue.approve({ itemId: item.id, headSha: item.headShaAtEnqueue }, decidedBy);
+      fixture.scripts.length = 0;
+      yield* queue.drain;
+
+      const failed = (yield* queue.view(ownerThreadId)).items[0];
+      assert.equal(failed?.status, "failed");
+      assert.equal(failed?.failure?.stage, "gate");
+      assert.equal(yield* git(fixture.repository, ["rev-parse", "main"]), trunkBefore);
+    }),
+  ),
+);
+
+it.live("leaves a running child's worktree alone", () =>
+  withQueue(({ fixture, queue }) =>
+    Effect.gen(function* () {
+      const api = yield* addChild(fixture, "api", "api.txt");
+      const ui = yield* addChild(fixture, "ui", "ui.txt");
+      yield* approveAndDrain(
+        queue,
+        yield* queue.enqueue({ callerThreadId: ownerThreadId, childThreadId: api.childThreadId }),
+      );
+      fixture.shells.set(
+        ui.childThreadId,
+        shell({
+          id: ui.childThreadId,
+          title: "Do ui",
+          branch: "child/ui",
+          worktreePath: ui.worktree,
+          parentThreadId: ownerThreadId,
+          activeRunId: "run:ui",
+        }),
+      );
+      const childHead = yield* git(ui.worktree, ["rev-parse", "HEAD"]);
+      yield* approveAndDrain(
+        queue,
+        yield* queue.enqueue({ callerThreadId: ownerThreadId, childThreadId: ui.childThreadId }),
+      );
+
+      const refused = (yield* queue.view(ownerThreadId)).items[1];
+      assert.equal(refused?.status, "failed");
+      assert.equal(refused?.failure?.stage, "update");
+      assert.include(refused?.failure?.message ?? "", "still running");
+      assert.equal(yield* git(ui.worktree, ["rev-parse", "HEAD"]), childHead);
+    }),
+  ),
+);
+
+it.live("moves a trunk nobody has out, but not one checked out in another worktree", () =>
+  withQueue(({ fixture, queue }) =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const api = yield* addChild(fixture, "api", "api.txt");
+      const ui = yield* addChild(fixture, "ui", "ui.txt");
+      const first = yield* queue.enqueue({
+        callerThreadId: ownerThreadId,
+        childThreadId: api.childThreadId,
+      });
+      yield* git(fixture.repository, ["switch", "-c", "other"]);
+      yield* approveAndDrain(queue, first);
+      assert.equal((yield* queue.view(ownerThreadId)).items[0]?.status, "merged");
+      const trunkAfterFirst = yield* git(fixture.repository, ["rev-parse", "main"]);
+      assert.equal((yield* queue.view(ownerThreadId)).items[0]?.mergedSha, trunkAfterFirst);
+
+      const elsewhere = path.join(
+        fixture.repository,
+        "..",
+        `${path.basename(fixture.repository)}-main`,
+      );
+      yield* git(fixture.repository, ["worktree", "add", elsewhere, "main"]);
+      yield* approveAndDrain(
+        queue,
+        yield* queue.enqueue({ callerThreadId: ownerThreadId, childThreadId: ui.childThreadId }),
+      );
+
+      const refused = (yield* queue.view(ownerThreadId)).items[1];
+      assert.equal(refused?.status, "failed");
+      assert.equal(refused?.failure?.stage, "merge");
+      assert.include(refused?.failure?.message ?? "", elsewhere);
+      assert.equal(yield* git(fixture.repository, ["rev-parse", "main"]), trunkAfterFirst);
     }),
   ),
 );

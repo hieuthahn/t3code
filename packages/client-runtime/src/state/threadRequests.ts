@@ -16,6 +16,26 @@ export type ApprovalResponder = (
   decision: ProviderApprovalDecision,
 ) => Promise<AtomCommandResult<unknown, unknown> | undefined>;
 
+/** Lists the approvals a bulk Approve all or Deny all answers, with the warnings it accepts. */
+export function pendingApprovalBulkTargets(
+  approvals: ReadonlyArray<ThreadPendingApproval>,
+  decision: Extract<ProviderApprovalDecision, "accept" | "decline">,
+): {
+  readonly requestIds: ReadonlyArray<RuntimeRequestId>;
+  readonly warnings: ReadonlyArray<string>;
+} {
+  const requestIds: RuntimeRequestId[] = [];
+  const warnings: string[] = [];
+  for (const approval of approvals) {
+    if (approval.responseCapability !== "live") continue;
+    const option = approval.options?.find((candidate) => candidate.decision === decision);
+    if (approval.options !== undefined && option === undefined) continue;
+    requestIds.push(approval.requestId);
+    if (option?.warning !== undefined) warnings.push(option.warning);
+  }
+  return { requestIds, warnings };
+}
+
 /** Declines every approval a redirect replaces; any one still pending would block the agent. */
 export async function declinePendingApprovals(
   approvals: ReadonlyArray<ThreadPendingApproval>,

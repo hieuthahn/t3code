@@ -78,6 +78,7 @@ import {
   resolveSidebarRowAccessibility,
   type SidebarDropVerb,
   resolveSidebarThreadStatus,
+  compactRowShowsStatus,
   resolveThreadLastVisitedAt,
   shouldRecedeSidebarThread,
   resolveWorkingStartedAt,
@@ -535,7 +536,7 @@ type SidebarThreadRowProps = {
   thread: SidebarThreadSummary;
   /** Shown as one model's branch under its multiple-models group header. */
   nested?: boolean;
-  /** Shown as one dense line, with live status in place of the time, as the compact sidebar does. */
+  /** Shown as one dense line, with live status in place of the time unless the thread is idle. */
   compact?: boolean;
   variant: "card" | "slim";
   variantAction: SidebarSweepAction;
@@ -1198,9 +1199,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       />
                       <TooltipPopup side="top">Dismiss Woke notification</TooltipPopup>
                     </Tooltip>
-                  ) : (props.nested || props.compact) &&
-                    topStatus &&
-                    variantAction !== "unsettle" ? (
+                  ) : topStatus &&
+                    variantAction !== "unsettle" &&
+                    (props.nested || (props.compact && compactRowShowsStatus(topStatus.icon))) ? (
                     <span
                       className={cn(
                         "inline-flex items-center gap-1 text-xs font-medium",

@@ -8,6 +8,8 @@ import { AsyncResult } from "effect/reactivity";
 import {
   archiveSelectedThreadEntries,
   deleteSelectedThreadEntries,
+  describeChildSessions,
+  formatChildSessionUsage,
   fanoutGroupMarker,
   filterSidebarV2VisibleThreads,
   timeBucketMarker,
@@ -172,15 +174,18 @@ describe("sidebar thread lineage helpers", () => {
     const environmentId = EnvironmentId.make("environment-row");
     const otherEnvironmentId = EnvironmentId.make("environment-other");
     const subagentOf = (id: string, parentId: ThreadId, environment = environmentId) =>
-      makeThreadFixture({
-        id: ThreadId.make(id),
-        environmentId: environment,
-        lineage: {
-          rootThreadId: parentId,
-          parentThreadId: parentId,
-          relationshipToParent: "subagent",
-        },
-      });
+      withCreationSource(
+        makeThreadFixture({
+          id: ThreadId.make(id),
+          environmentId: environment,
+          lineage: {
+            rootThreadId: parentId,
+            parentThreadId: parentId,
+            relationshipToParent: "subagent",
+          },
+        }),
+        "provider",
+      );
     const root = makeThreadFixture({ id: ThreadId.make("thread-root"), environmentId });
     const fork = makeThreadFixture({
       id: ThreadId.make("thread-fork"),
@@ -206,6 +211,58 @@ describe("sidebar thread lineage helpers", () => {
     const loopA = subagentOf("thread-loop-a", ThreadId.make("thread-loop-b"));
     const loopB = subagentOf("thread-loop-b", loopA.id);
     expect(resolveSidebarRowThreadId(loopA.id, environmentId, [loopA, loopB])).toBe(loopA.id);
+  });
+
+  it("keeps an open child session on its own row, since it has one", () => {
+    const environmentId = EnvironmentId.make("environment-row");
+    const root = makeThreadFixture({ id: ThreadId.make("thread-root"), environmentId });
+    const child = childSessionOf("thread-child", root.id, environmentId);
+    const nativeTask = withCreationSource(
+      childSessionOf("thread-native-task", child.id, environmentId),
+      "provider",
+    );
+    const threads = [root, child, nativeTask];
+
+    expect(resolveSidebarRowThreadId(child.id, environmentId, threads)).toBe(child.id);
+    expect(resolveSidebarRowThreadId(nativeTask.id, environmentId, threads)).toBe(child.id);
+  });
+
+  it("lists a child session as a root row only when its parent has no row", () => {
+    const environmentId = EnvironmentId.make("environment-row");
+    const root = makeThreadFixture({ id: ThreadId.make("thread-root"), environmentId });
+    const archivedRoot = makeThreadFixture({
+      id: ThreadId.make("thread-archived-root"),
+      environmentId,
+      archivedAt: "2026-01-02T00:00:00.000Z",
+    });
+    const child = childSessionOf("thread-child", root.id, environmentId);
+    const grandchild = childSessionOf("thread-grandchild", child.id, environmentId);
+    const orphanOfArchived = childSessionOf(
+      "thread-orphan-archived",
+      archivedRoot.id,
+      environmentId,
+    );
+    const orphanOfMissing = childSessionOf(
+      "thread-orphan-missing",
+      ThreadId.make("thread-missing"),
+      environmentId,
+    );
+    const nativeOrphan = withCreationSource(
+      childSessionOf("thread-native-orphan", ThreadId.make("thread-missing"), environmentId),
+      "provider",
+    );
+
+    const visible = filterSidebarV2VisibleThreads(
+      [root, archivedRoot, child, grandchild, orphanOfArchived, orphanOfMissing, nativeOrphan],
+      null,
+      new Set(),
+    );
+
+    expect(visible.map((thread) => thread.id)).toEqual([
+      root.id,
+      orphanOfArchived.id,
+      orphanOfMissing.id,
+    ]);
   });
 });
 
@@ -234,6 +291,25 @@ describe("sidebar side questions", () => {
     );
   });
 });
+
+function withCreationSource(thread: Thread, creationSource: Thread["source"]["creationSource"]) {
+  return { ...thread, source: { ...thread.source, creationSource } };
+}
+
+function childSessionOf(id: string, parentId: ThreadId, environmentId: EnvironmentId): Thread {
+  return withCreationSource(
+    makeThreadFixture({
+      id: ThreadId.make(id),
+      environmentId,
+      lineage: {
+        rootThreadId: parentId,
+        parentThreadId: parentId,
+        relationshipToParent: "subagent",
+      },
+    }),
+    "mcp",
+  );
+}
 
 function makeLatestRun(overrides?: {
   completedAt?: string | null;
@@ -269,6 +345,40 @@ describe("orderItemsByPreferredIds", () => {
       "physical-a",
       "physical-b",
     ]);
+  });
+});
+
+describe("child session labels", () => {
+  const runtime = {
+    status: "running" as const,
+    activeRunId: null,
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    providerName: "Codex",
+    lastError: null,
+    updatedAt: "2026-03-09T10:00:00.000Z",
+  };
+  const idle = { hasPendingApprovals: false, hasPendingUserInput: false, runtime: null };
+
+  it("counts child sessions by what they are doing, leaving out empty counts", () => {
+    expect(
+      describeChildSessions([
+        { ...idle, runtime },
+        { ...idle, hasPendingApprovals: true },
+        { ...idle, runtime: { ...runtime, status: "failed" as const } },
+        idle,
+        idle,
+      ]),
+    ).toBe("5 child sessions · 1 working · 1 needs you · 1 failed · 2 done");
+    expect(describeChildSessions([{ ...idle, runtime }])).toBe("1 child session · 1 working");
+  });
+
+  it("shows a child's USD cost, or its tokens when the provider reports no cost", () => {
+    expect(formatChildSessionUsage({ totalTokens: 12_345, costUsd: 0.4234 })).toBe("$0.42");
+    expect(formatChildSessionUsage({ totalTokens: 12_345, costUsd: 0.004 })).toBe("<$0.01");
+    expect(formatChildSessionUsage({ totalTokens: 12_345, costUsd: null })).toBe("12.3k tokens");
+    expect(formatChildSessionUsage({ totalTokens: 1_250_000, costUsd: null })).toBe("1.3M tokens");
+    expect(formatChildSessionUsage({ totalTokens: 950, costUsd: null })).toBe("950 tokens");
+    expect(formatChildSessionUsage(undefined)).toBeNull();
   });
 });
 

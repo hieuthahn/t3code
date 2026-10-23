@@ -130,6 +130,8 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   delegate_task: tool(["Delegate", "Delegating", "Delegated", "a child task"], "delegate"),
   task_status: tool(["Get", "Getting", "Got", "delegated task status"], "task-status"),
   task_report: tool(["Report", "Reporting", "Reported", "on a delegated task"], "task-status"),
+  propose_tasks: tool(["Propose", "Proposing", "Proposed", "child sessions"], "delegate"),
+  merge_enqueue: tool(["Queue", "Queueing", "Queued", "a child to merge"], "delegate"),
   task_cancel: tool(
     ["Cancel", "Canceling", "Requested cancellation of", "a delegated task"],
     "task-cancel",

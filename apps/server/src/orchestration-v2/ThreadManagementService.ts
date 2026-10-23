@@ -88,12 +88,14 @@ export function withCreationProvenance(
   }
 }
 
-/** Stamps who answered a runtime request, replacing any decider the sender supplied. */
+/** Stamps who answered a runtime request or a proposal, replacing any decider the sender supplied. */
 export function withRuntimeRequestDecider(
   command: OrchestrationV2Command,
   decidedBy: OrchestrationV2RuntimeRequestDecider,
 ): OrchestrationV2Command {
-  return command.type === "runtime-request.respond" ? { ...command, decidedBy } : command;
+  return command.type === "runtime-request.respond" || command.type === "child_plan.decide"
+    ? { ...command, decidedBy }
+    : command;
 }
 
 function existingThreadIdsForCommand(

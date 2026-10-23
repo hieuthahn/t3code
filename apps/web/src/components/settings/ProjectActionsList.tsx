@@ -43,6 +43,11 @@ export function ProjectActionsList({
                 on settle
               </span>
             ) : null}
+            {script.runAsMergeGate ? (
+              <span className="shrink-0 rounded-sm border border-border/60 px-1.5 py-px text-2xs font-normal text-muted-foreground">
+                merge gate
+              </span>
+            ) : null}
             {script.previewUrl ? (
               <span className="shrink-0 rounded-sm border border-border/60 px-1.5 py-px text-2xs font-normal text-muted-foreground max-sm:hidden">
                 preview · desktop only

@@ -14,6 +14,7 @@ import {
   RuntimeRequestId,
   type ServerProvider,
   ThreadId,
+  TurnItemId,
 } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as DateTime from "effect/DateTime";
@@ -69,7 +70,7 @@ it("stamps authoritative provenance on commands that create threads or messages"
   expect(stamped).not.toHaveProperty("delegatedFrom");
 });
 
-it("replaces the decider a sender supplies on runtime-request.respond", () => {
+it("replaces the decider a sender supplies on a runtime request or a proposal", () => {
   const respond: OrchestrationV2Command = {
     type: "runtime-request.respond",
     commandId: CommandId.make("command:thread-management:respond"),
@@ -83,6 +84,19 @@ it("replaces the decider a sender supplies on runtime-request.respond", () => {
 
   expect(ThreadManagementService.withRuntimeRequestDecider(respond, decidedBy)).toMatchObject({
     decision: "accept",
+    decidedBy,
+  });
+  const decide: OrchestrationV2Command = {
+    type: "child_plan.decide",
+    commandId: CommandId.make("command:thread-management:decide"),
+    threadId: ThreadId.make("thread:thread-management:respond"),
+    turnItemId: TurnItemId.make("turn-item:child-plan:respond"),
+    revision: 1,
+    approvedKeys: ["api"],
+    decidedBy: { actor: "agent", threadId: null },
+  };
+  expect(ThreadManagementService.withRuntimeRequestDecider(decide, decidedBy)).toMatchObject({
+    approvedKeys: ["api"],
     decidedBy,
   });
   const stop: OrchestrationV2Command = {

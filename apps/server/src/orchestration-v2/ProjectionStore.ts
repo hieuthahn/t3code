@@ -32,6 +32,7 @@ import type {
   OrchestrationV2ThreadShellSnapshot,
   OrchestrationV2ShellThreadStatus,
   OrchestrationV2ThreadShell,
+  OrchestrationV2ThreadShellUsage,
   OrchestrationV2ThreadProjection,
   OrchestrationV2TurnItem,
   ProjectId,
@@ -1507,7 +1508,12 @@ function pendingRuntimeRequestSummary(
 function secretRequestAsPendingInput(
   item: OrchestrationV2TurnItem | null,
 ): OrchestrationV2PendingRuntimeRequestSummary | null {
-  if ((item?.type !== "secret_request" && item?.type !== "link_request") || item.nodeId === null)
+  if (
+    (item?.type !== "secret_request" &&
+      item?.type !== "link_request" &&
+      item?.type !== "child_plan_request") ||
+    item.nodeId === null
+  )
     return null;
   return {
     id: RuntimeRequestId.make(item.id),
@@ -1518,12 +1524,14 @@ function secretRequestAsPendingInput(
 }
 
 /**
- * A secret card is answered while its agent waits in the run. A link card's
+ * A secret or proposal card is answered while its agent waits in the run. A link card's
  * agent asked without waiting, so the card waits on the user after its run.
  */
 const waitsOnUser = (item: OrchestrationV2TurnItem, liveRunIds: ReadonlySet<RunId>) =>
   item.type === "link_request" ||
-  (item.type === "secret_request" && item.runId !== null && liveRunIds.has(item.runId));
+  ((item.type === "secret_request" || item.type === "child_plan_request") &&
+    item.runId !== null &&
+    liveRunIds.has(item.runId));
 
 export function threadShellFromProjection(
   projection: OrchestrationV2ThreadProjection,
@@ -1662,6 +1670,12 @@ export function threadShellFromProjection(
       projection.providerThreads,
       projection.thread.activeProviderThreadId,
     ),
+    ...shellUsageField(
+      usageForShell({
+        threadId: projection.thread.id,
+        providerThreads: projection.providerThreads,
+      }),
+    ),
     itemCount: activeLocalTurnItems(projection).length,
     visibleItemCount: projection.visibleTurnItems.length,
     createdAt: projection.thread.createdAt,
@@ -1702,6 +1716,27 @@ function providerInstanceHistoryForShell(input: {
     }
   }
   return history;
+}
+
+const shellUsageField = (usage: OrchestrationV2ThreadShellUsage | null) =>
+  usage === null ? {} : { usage };
+
+function usageForShell(input: {
+  readonly threadId: ThreadId;
+  readonly providerThreads: ReadonlyArray<
+    OrchestrationV2ThreadProjection["providerThreads"][number]
+  >;
+}): OrchestrationV2ThreadShellUsage | null {
+  let usage: { totalTokens: number; costUsd: number | null } | null = null;
+  for (const { appThreadId, ownerNodeId, contextUsage } of input.providerThreads) {
+    if (appThreadId !== input.threadId || ownerNodeId !== null || !contextUsage) continue;
+    usage ??= { totalTokens: 0, costUsd: null };
+    usage.totalTokens += contextUsage.totalProcessedTokens ?? contextUsage.usedTokens;
+    if (contextUsage.cost?.currency === "USD") {
+      usage.costUsd = (usage.costUsd ?? 0) + contextUsage.cost.amount;
+    }
+  }
+  return usage;
 }
 
 function activeProviderGoalForShell(
@@ -1747,6 +1782,7 @@ type ShellThreadState = {
   readonly pendingBackgroundTasks: OrchestrationV2ThreadShell["pendingBackgroundTasks"];
   readonly providerInstanceHistory: OrchestrationV2ThreadShell["providerInstanceHistory"];
   readonly goal: OrchestrationV2ThreadShell["goal"];
+  readonly usage: OrchestrationV2ThreadShellUsage | null;
   readonly itemCount: number;
   readonly runlessItemCount: number;
   readonly updatedAt: OrchestrationV2ThreadProjection["updatedAt"];
@@ -1915,6 +1951,7 @@ function shellFromState(input: {
     pendingBackgroundTasks: input.state.pendingBackgroundTasks,
     providerInstanceHistory: input.state.providerInstanceHistory,
     goal: input.state.goal,
+    ...shellUsageField(input.state.usage),
     itemCount: input.state.itemCount,
     visibleItemCount: input.visibleItemCount,
     createdAt: input.state.thread.createdAt,
@@ -5778,7 +5815,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 WHERE r.thread_id = t.thread_id
                   AND r.status IN ('preparing', 'starting', 'running', 'waiting')
                   AND secret.thread_id = t.thread_id AND secret.run_id = r.run_id
-                  AND secret.type = 'secret_request' AND secret.status = 'waiting'
+                  AND secret.type IN ('secret_request', 'child_plan_request')
+                  AND secret.status = 'waiting'
                 ORDER BY secret.updated_at DESC, secret.turn_item_id DESC
                 LIMIT 1
               ) AS pending_secret_request_payload_json,
@@ -6371,6 +6409,10 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             providerThreadsByThreadId.get(thread.id) ?? [],
             thread.activeProviderThreadId,
           ),
+          usage: usageForShell({
+            threadId: thread.id,
+            providerThreads: providerThreadsByThreadId.get(thread.id) ?? [],
+          }),
           itemCount: row.item_count,
           runlessItemCount: row.runless_item_count,
           updatedAt: thread.updatedAt,

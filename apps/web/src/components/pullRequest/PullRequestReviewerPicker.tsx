@@ -92,12 +92,12 @@ export function PullRequestReviewerPicker({
       onOpenChange={setOpen}
       query={query}
       onQueryChange={setQuery}
-      searchLabel="Search people with access"
+      searchLabel="Search people and teams with access"
       isPending={candidatesQuery.isPending && candidatesQuery.data === null}
       error={candidatesQuery.data === null ? candidatesQuery.error : null}
       candidates={candidates}
       emptyLabel="Nobody else has access to this repository."
-      noMatchLabel="Nobody with access matches that."
+      noMatchLabel="No person or team with access matches that."
       errorLabel="The people with access could not be read."
       truncated={candidatesQuery.data?.truncated === true}
       truncatedLabel="This repository has more people with access than are listed here. Ask for the rest on the host."

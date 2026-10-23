@@ -1113,6 +1113,10 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:scheduled-tasks:live",
       tag: WS_METHODS.scheduledTasksSubscribe,
     }),
+    mergeQueueLive: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:server:merge-queue:live",
+      tag: WS_METHODS.mergeQueueSubscribe,
+    }),
     // A cold transcript scan is measured in seconds, so keep the result around
     // long enough that switching windows or re-rendering does not rescan.
     usageSummary: createEnvironmentRpcQueryAtomFamily(runtime, {
@@ -1345,6 +1349,23 @@ export function createServerEnvironmentAtoms<R, E>(
         mode: "singleFlight",
         key: ({ environmentId, input }) =>
           JSON.stringify([environmentId, input.threadId, input.turnItemId]),
+      },
+    }),
+    // Like a secret card's answer: off the config lane, one decision per item at a time.
+    approveMergeQueueItem: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:merge-queue:approve",
+      tag: WS_METHODS.mergeQueueApprove,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.itemId]),
+      },
+    }),
+    cancelMergeQueueItem: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:merge-queue:cancel",
+      tag: WS_METHODS.mergeQueueCancel,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.itemId]),
       },
     }),
     // Like a secret card's answer: off the config lane, one per card at a time.

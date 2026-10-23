@@ -68,6 +68,7 @@ import * as McpHttpServer from "./mcp/McpHttpServer.ts";
 import * as PeerForwarding from "./peer/PeerForwarding.ts";
 import * as RemoteDelegation from "./peer/RemoteDelegation.ts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
+import * as ClaudeDesktopSync from "./claudeDesktopSync/ClaudeDesktopSync.ts";
 import * as PeerLinks from "./peer/PeerLinks.ts";
 import * as PeerMcpClient from "./peer/PeerMcpClient.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
@@ -747,6 +748,7 @@ const layerMakeRoutes = Layer.mergeAll(
       Layer.provideMerge(PeerLinks.layer),
     ),
   ),
+  Layer.provide(ClaudeDesktopSync.layer()),
   Layer.provide(PreviewAutomationBroker.layer),
   Layer.provide(ServerSelfUpdate.layer.pipe(Layer.provide(layerDesktopAppUpdate))),
   Layer.provide(layerCommandReadiness),

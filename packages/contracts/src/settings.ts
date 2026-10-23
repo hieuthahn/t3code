@@ -54,6 +54,7 @@ import {
   TokenSaverConfig,
   TokenSaverConciseLevel,
 } from "./tokenSaver.ts";
+import { TEAM_MAX_PROFILES, TeamProfile, TeamSetup } from "./team.ts";
 
 export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"]);
 export const LimitedThreadSwitchMode = Schema.Literals(["off", "ask", "auto"]);
@@ -1018,6 +1019,16 @@ export const TokenSaverSettings = Schema.Struct({
 }).pipe(Schema.withDecodingDefault(Effect.succeed({})));
 export type TokenSaverSettings = typeof TokenSaverSettings.Type;
 
+export const TeamSettings = Schema.Struct({
+  profiles: Schema.Array(TeamProfile)
+    .check(Schema.isMaxLength(TEAM_MAX_PROFILES))
+    .pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  /** The setup the Team popover opens with, and the one new threads copy when `newThreads` is on. */
+  defaultSetup: Schema.NullOr(TeamSetup).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  newThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+}).pipe(Schema.withDecodingDefault(Effect.succeed({})));
+export type TeamSettings = typeof TeamSettings.Type;
+
 export const ResponseStreamingMode = Schema.Literals(["turn", "paragraph"]);
 export type ResponseStreamingMode = typeof ResponseStreamingMode.Type;
 
@@ -1319,6 +1330,8 @@ export const ServerSettings = Schema.Struct({
   turnRecaps: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /** Response-style packs injected into the system prompt; a thread may override `defaults`. */
   tokenSaver: TokenSaverSettings,
+  /** Saved Team mode setups; a thread keeps its own copy once it runs as a team. */
+  team: TeamSettings,
   sidebarAutoSettleKeepPullRequests: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
@@ -1691,6 +1704,16 @@ export const ServerSettingsPatch = Schema.Struct({
   autoEffortDefault: Schema.optionalKey(Schema.Boolean),
   promptSuggestions: Schema.optionalKey(Schema.Boolean),
   turnRecaps: Schema.optionalKey(Schema.Boolean),
+  /** Each field replaces the saved value whole, so a removed profile or guidance stays removed. */
+  team: Schema.optionalKey(
+    Schema.Struct({
+      profiles: Schema.optionalKey(
+        Schema.Array(TeamProfile).check(Schema.isMaxLength(TEAM_MAX_PROFILES)),
+      ),
+      defaultSetup: Schema.optionalKey(Schema.NullOr(TeamSetup)),
+      newThreads: Schema.optionalKey(Schema.Boolean),
+    }),
+  ),
   tokenSaver: Schema.optionalKey(
     Schema.Struct({
       enabled: Schema.optionalKey(Schema.Boolean),

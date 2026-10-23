@@ -249,6 +249,28 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
     assert.isUndefined(options.extraArgs?.["dangerously-skip-permissions"]);
   });
 
+  it("places Token Saver rules after the T3 instructions and before launch-argument text", () => {
+    const append = (tokenSaverInstructions?: string) =>
+      (
+        ClaudeAdapterV2.makeClaudeQueryOptions({
+          modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+          nativeThreadId: "native-token-saver",
+          resume: false,
+          cwd: "/workspace",
+          settings: {
+            ...AUTO_COMPACT_CLAUDE_SETTINGS,
+            launchArgs: '--append-system-prompt "Inline"',
+          },
+          ...(tokenSaverInstructions === undefined ? {} : { tokenSaverInstructions }),
+        }).systemPrompt as { readonly append: string }
+      ).append;
+    const plain = append();
+    assert.equal(
+      append("## Token Saver sentinel"),
+      plain.replace(/\n\nInline$/, "\n\n## Token Saver sentinel\n\nInline"),
+    );
+  });
+
   it("asks for prompt suggestions and keeps them on near the usage limit", () => {
     const options = (promptSuggestions: boolean) =>
       ClaudeAdapterV2.makeClaudeQueryOptions({
@@ -2398,6 +2420,57 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       };
     });
   const makeWakeHarness = makeWakeHarnessWithOptions();
+
+  it.effect("reopens with resume when the thread's Token Saver rules change", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeWakeHarnessWithOptions({
+        close: Queue.shutdown,
+        freshQueueOnReopen: true,
+      });
+      const now = yield* DateTime.now;
+      let ordinal = 0;
+      const start = (profileKey: string, instructions: string) =>
+        harness.runtime.startTurn({
+          ...makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now,
+            attemptId: RunAttemptId.make(`attempt-token-saver-${++ordinal}`),
+            providerTurnOrdinal: ordinal,
+            text: "Hello.",
+            attachments: [],
+          }),
+          tokenSaver: { profileKey, instructions },
+        });
+      const finish = Effect.gen(function* () {
+        yield* harness.offerAndWait(
+          makeResultFrame({ uuid: `token-saver-result-${ordinal}`, result: "Done." }),
+        );
+        yield* Queue.take(harness.terminalReceipts);
+      });
+      const append = () =>
+        (harness.getOpenedOptions()?.systemPrompt as { readonly append?: string } | undefined)
+          ?.append ?? "";
+
+      yield* start("concise-lite", "Lite sentinel");
+      assert.include(append(), "Lite sentinel");
+      yield* finish;
+
+      yield* start("concise-lite", "Lite sentinel");
+      assert.lengthOf(harness.processQueues, 1);
+      yield* finish;
+
+      yield* start("concise-ultra", "Ultra sentinel");
+      assert.lengthOf(harness.processQueues, 2);
+      assert.include(append(), "Ultra sentinel");
+      assert.notInclude(append(), "Lite sentinel");
+      assert.isDefined(harness.getOpenedOptions()?.resume);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+      ),
+    ),
+  );
 
   describe("Claude settings restrictions", () => {
     it.effect("resolves cached managed policy from the configured home through the real SDK", () =>

@@ -23,6 +23,17 @@ import * as AutoEffort from "./AutoEffortService.ts";
 
 const CLAUDE = ProviderInstanceId.make("claude-viet");
 const CODEX = ProviderInstanceId.make("codex");
+const CLAUDE_HIEU = ProviderInstanceId.make("claude-hieu");
+const CLAUDE_DUNG = ProviderInstanceId.make("claude-dung");
+
+const withSessionUsage = (base: ServerProvider, usedPercent: number): ServerProvider =>
+  ({
+    ...base,
+    usageLimits: {
+      checkedAt: "2026-10-22T00:00:00.000Z",
+      windows: [{ id: "five_hour", kind: "session", label: "Session", usedPercent }],
+    },
+  }) as ServerProvider;
 
 const effortDescriptor = (id: string, levels: ReadonlyArray<string>) => ({
   id,
@@ -77,6 +88,8 @@ interface Harness {
   readonly judge?: "auto" | "haiku";
   readonly autoEffortDefault?: boolean;
   readonly levels?: ReadonlyArray<string>;
+  readonly claudeUsedPercent?: number;
+  readonly peers?: ReadonlyArray<ServerProvider>;
 }
 
 const run = <A>(
@@ -97,12 +110,16 @@ const run = <A>(
         Layer.mergeAll(
           Layer.mock(ProviderRegistry.ProviderRegistry)({
             getProviders: Effect.succeed([
-              provider(
-                CLAUDE,
-                "claudeAgent",
-                "effort",
-                harness.levels ?? ["low", "medium", "high", "xhigh", "max"],
+              withSessionUsage(
+                provider(
+                  CLAUDE,
+                  "claudeAgent",
+                  "effort",
+                  harness.levels ?? ["low", "medium", "high", "xhigh", "max"],
+                ),
+                harness.claudeUsedPercent ?? 10,
               ),
+              ...(harness.peers ?? []),
               provider(CODEX, "codex", "reasoningEffort", [
                 "low",
                 "medium",
@@ -222,6 +239,28 @@ describe("AutoEffortService", () => {
       }),
     ),
   );
+
+  it.effect("asks Haiku on the roomiest Claude account when the thread's own is full", () => {
+    const peer = (instanceId: ProviderInstanceId, usedPercent: number) =>
+      withSessionUsage(
+        provider(instanceId, "claudeAgent", "effort", ["medium", "high"]),
+        usedPercent,
+      );
+    return run(
+      {
+        judge: "haiku",
+        claudeUsedPercent: 100,
+        peers: [peer(CLAUDE_HIEU, 70), peer(CLAUDE_DUNG, 30)],
+      },
+      ({ service, haikuQuestions }) =>
+        Effect.gen(function* () {
+          expect(effortOf(yield* service.resolve(request()))).toBe("high");
+          expect((yield* Ref.get(haikuQuestions)).map((entry) => entry.instanceId)).toEqual([
+            CLAUDE_DUNG,
+          ]);
+        }),
+    );
+  });
 
   it.effect("judges a Codex thread through a Claude account and sets reasoningEffort", () =>
     run({ judge: "haiku" }, ({ service, haikuQuestions }) =>

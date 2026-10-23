@@ -10,6 +10,7 @@ interface ThreadSelectionStore extends ThreadSelectionState {
   /** Requires ordered scoped thread keys from the same project. */
   rangeSelectTo: (threadKey: string, orderedThreadKeys: readonly string[]) => void;
   clearSelection: () => void;
+  addToSelection: (threadKeys: readonly string[]) => void;
   removeFromSelection: (threadKeys: readonly string[]) => void;
   setAnchor: (threadKey: string) => void;
   hasSelection: () => boolean;
@@ -83,6 +84,18 @@ export const useThreadSelectionStore = create<ThreadSelectionStore>((set, get) =
   setAnchor: (threadKey) => {
     if (get().anchorThreadKey === threadKey) return;
     set({ anchorThreadKey: threadKey });
+  },
+
+  addToSelection: (threadKeys) => {
+    set((state) => {
+      const next = new Set(state.selectedThreadKeys);
+      for (const key of threadKeys) next.add(key);
+      if (next.size === state.selectedThreadKeys.size) return state;
+      return {
+        selectedThreadKeys: next,
+        anchorThreadKey: state.anchorThreadKey ?? threadKeys[0] ?? null,
+      };
+    });
   },
 
   removeFromSelection: (threadKeys) => {

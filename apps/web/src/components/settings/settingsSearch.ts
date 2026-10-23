@@ -381,6 +381,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["sidebar settled shelf folder project scratch nested worktree"],
   },
   {
+    id: "compact-sidebar",
+    title: "Compact sidebar",
+    to: "/settings/general",
+    searchTerms: ["sidebar density dense one line rows today this week older time groups"],
+  },
+  {
     id: "auto-settle-inactive-threads",
     title: "Auto-settle inactive threads",
     to: "/settings/general",

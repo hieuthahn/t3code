@@ -3589,7 +3589,7 @@ layer("GitHubPullRequestApi.layer", (it) => {
       }),
     );
 
-  it.effect("reads who may review in one request and the repository teams in a second", () =>
+  it.effect("reads who may review in one request and the organization teams in a second", () =>
     Effect.gen(function* () {
       mockedExecute
         .mockReturnValueOnce(Effect.succeed(reviewerCandidatesAnswer()))
@@ -3607,7 +3607,7 @@ layer("GitHubPullRequestApi.layer", (it) => {
 
       assert.strictEqual(mockedExecute.mock.calls.length, 2);
       expect(varsAt(0)).toMatchObject({ owner: "acme", name: "web", number: 7 });
-      expect(callAt(1)).toMatchObject({ kind: "rest", path: "repos/acme/web/teams?per_page=100" });
+      expect(callAt(1)).toMatchObject({ kind: "rest", path: "orgs/acme/teams?per_page=100" });
       expect(
         list.candidates.map((candidate) => [
           candidate.login,
@@ -3622,7 +3622,7 @@ layer("GitHubPullRequestApi.layer", (it) => {
     }),
   );
 
-  it.effect("keeps the people when the repository teams cannot be read", () =>
+  it.effect("keeps the people when the organization teams cannot be read", () =>
     Effect.gen(function* () {
       mockedExecute
         .mockReturnValueOnce(Effect.succeed(reviewerCandidatesAnswer()))
@@ -3630,7 +3630,7 @@ layer("GitHubPullRequestApi.layer", (it) => {
           Effect.fail(
             new GitHubRequestPolicy.GitHubApiResponseError({
               host: "github.com",
-              operation: "listRepositoryTeams",
+              operation: "listOrganizationTeams",
               status: 403,
             }),
           ),

@@ -1695,7 +1695,7 @@ describe("withOrganizationTeams", () => {
     { slug: "  ", name: "blank" },
   ]);
 
-  it("offers the repository teams after the requested reviewers and before the people", () => {
+  it("offers the organization teams after the requested reviewers and before the people", () => {
     const list = { candidates: [requestedTeam, user("alice")], truncated: false };
 
     expect(withOrganizationTeams(list, "openreachtech", teamsJson)).toEqual({

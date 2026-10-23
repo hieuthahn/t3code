@@ -594,13 +594,6 @@ export function buildBulkTitleRegenerationContextMenuItem(input: {
   };
 }
 
-export function buildBulkUnpinContextMenuItem(input: {
-  pinnedCount: number;
-}): ContextMenuItem<"unpin"> | null {
-  if (input.pinnedCount === 0) return null;
-  return { id: "unpin", label: `Unpin (${input.pinnedCount})` };
-}
-
 export interface ThreadStatusPill {
   label:
     | "Working"

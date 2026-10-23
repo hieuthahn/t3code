@@ -17,7 +17,12 @@ const DEFAULT_MAX_FILES = 50;
 export const readChildReportGitFacts = Effect.fn("ChildReport.readGitFacts")(
   function* (
     execute: ChildReportGitExecute,
-    input: { readonly cwd: string; readonly baseRef: string | null; readonly maxFiles?: number },
+    input: {
+      readonly cwd: string;
+      readonly baseRef: string | null;
+      readonly startCommitSha?: string;
+      readonly maxFiles?: number;
+    },
   ): Effect.fn.Return<OrchestrationV2ChildReportGitFacts | null, GitCommandError> {
     const git = (...args: ReadonlyArray<string>) =>
       execute({
@@ -30,10 +35,13 @@ export const readChildReportGitFacts = Effect.fn("ChildReport.readGitFacts")(
     if ((yield* git("rev-parse", "--is-inside-work-tree")) !== "true") return null;
     const branchName = yield* git("rev-parse", "--abbrev-ref", "HEAD");
     const headSha = yield* git("rev-parse", "HEAD");
+    const branch = branchName === null || branchName === "HEAD" ? null : branchName;
+    // A child on the parent's own branch shares its history, so the task's start commit is the base.
+    const ownBranch = input.baseRef !== null && input.baseRef !== branch;
+    const base =
+      ownBranch || input.startCommitSha === undefined ? input.baseRef : input.startCommitSha;
     const baseSha =
-      input.baseRef === null || headSha === null
-        ? null
-        : yield* git("merge-base", "HEAD", input.baseRef);
+      base === null || headSha === null ? null : yield* git("merge-base", "HEAD", base);
     const distance =
       baseSha === null
         ? null
@@ -49,9 +57,9 @@ export const readChildReportGitFacts = Effect.fn("ChildReport.readGitFacts")(
             input.maxFiles ?? DEFAULT_MAX_FILES,
           );
     return {
-      branch: branchName === null || branchName === "HEAD" ? null : branchName,
+      branch,
       headSha,
-      baseRef: input.baseRef,
+      baseRef: base === input.startCommitSha ? base.slice(0, 12) : base,
       baseSha,
       aheadBy,
       behindBy,

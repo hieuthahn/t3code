@@ -45,6 +45,7 @@ import {
   itemFromRow,
   type MergeQueueRow,
 } from "./mergeQueueRows.ts";
+import { makeItemTransition } from "./mergeQueueTransition.ts";
 
 export type { MergeQueueItem };
 
@@ -114,6 +115,19 @@ export const layerWith = (options: { readonly drainOnApprove: boolean }) =>
           Effect.mapError(queueError("Could not update the merge queue.", row.item_id)),
         );
         yield* PubSub.publish(changes, row.owner_thread_id);
+      });
+
+      const transition = makeItemTransition(sql);
+      const moveItem = Effect.fn("MergeQueue.moveItem")(function* (
+        row: MergeQueueRow,
+        from: ReadonlyArray<MergeQueueRow["status"]>,
+        fields: Record<string, string | null>,
+      ) {
+        const moved = yield* transition(row.item_id, from, fields, yield* now).pipe(
+          Effect.mapError(queueError("Could not update the merge queue.", row.item_id)),
+        );
+        if (moved) yield* PubSub.publish(changes, row.owner_thread_id);
+        return moved;
       });
 
       const readShell = (threadId: ThreadId) =>
@@ -257,6 +271,7 @@ export const layerWith = (options: { readonly drainOnApprove: boolean }) =>
           readShell(threadId).pipe(
             Effect.map((shell) => shell !== null && shell.activeRunId !== null),
           ),
+        claim: (row) => moveItem(row, ["queued"], { status: "updating" }),
       });
 
       const failItem = Effect.fn("MergeQueue.failItem")(function* (
@@ -309,7 +324,16 @@ export const layerWith = (options: { readonly drainOnApprove: boolean }) =>
             });
           }
           yield* requireMergeGates(row.project_id, row.item_id);
-          yield* update(row, { status: "queued", approved_by_json: encodeDecider(decidedBy) });
+          const queued = yield* moveItem(row, ["awaiting_user"], {
+            status: "queued",
+            approved_by_json: encodeDecider(decidedBy),
+          });
+          if (!queued) {
+            return yield* new MergeQueueError({
+              message: "This item is not waiting for approval.",
+              itemId: row.item_id,
+            });
+          }
           if (options.drainOnApprove) {
             yield* Effect.forkIn(drain, scope);
           }
@@ -319,13 +343,14 @@ export const layerWith = (options: { readonly drainOnApprove: boolean }) =>
       const cancel: MergeQueueService["Service"]["cancel"] = Effect.fn("MergeQueue.cancel")(
         function* (input) {
           const row = yield* readItem(input.itemId);
-          if (!["awaiting_user", "queued", "failed"].includes(row.status)) {
+          if (
+            !(yield* moveItem(row, ["awaiting_user", "queued", "failed"], { status: "cancelled" }))
+          ) {
             return yield* new MergeQueueError({
               message: "This item already ran.",
               itemId: row.item_id,
             });
           }
-          yield* update(row, { status: "cancelled" });
         },
       );
 

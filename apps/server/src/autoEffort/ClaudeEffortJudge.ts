@@ -64,6 +64,8 @@ export const makeClaudeEffortJudge = Effect.fn("makeClaudeEffortJudge")(function
     readonly systemPrompt?: string;
     /** False starts the first process on the first question instead of at start-up. */
     readonly warmAtStart?: boolean;
+    /** True answers a question asked while cold by starting a process for it. */
+    readonly waitWhenCold?: boolean;
   },
 ) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -169,7 +171,9 @@ export const makeClaudeEffortJudge = Effect.fn("makeClaudeEffortJudge")(function
         Effect.flatMap((current) =>
           Option.isSome(current)
             ? answer(current.value, question)
-            : Effect.succeed(Option.none<string>()),
+            : options?.waitWhenCold === true
+              ? spawnWarm.pipe(Effect.flatMap((cold) => answer(cold, question)))
+              : Effect.succeed(Option.none<string>()),
         ),
         Effect.catch(() => Effect.succeed(Option.none<string>())),
       ),

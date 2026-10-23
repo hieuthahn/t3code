@@ -18,6 +18,7 @@ import {
   SubagentElapsed,
   V2LifecycleRow,
 } from "./V2LifecycleRow";
+import { ChildPlanCard } from "./ChildPlanCard";
 import { LinkRequestCard } from "./LinkRequestCard";
 import { SecretRequestCard } from "./SecretRequestCard";
 import { TimelineRowCtx, type TimelineRow } from "./timelineRowContext";
@@ -32,6 +33,15 @@ export function V2EventTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
   if (item.type === "secret_request") {
     return (
       <SecretRequestCard
+        environmentId={ctx.activeThreadEnvironmentId}
+        item={item}
+        visibility={visibility}
+      />
+    );
+  }
+  if (item.type === "child_plan_request") {
+    return (
+      <ChildPlanCard
         environmentId={ctx.activeThreadEnvironmentId}
         item={item}
         visibility={visibility}

@@ -15,6 +15,7 @@ import {
 const NOTIFICATION_HISTORY_KEY = "t3code:notification-history:v1";
 // Base UI numbers toasts per page load, so a reload would reuse ids already in the history.
 const PAGE_LOAD_ID = Math.random().toString(36).slice(2, 10);
+const DESKTOP_LOG_MAX_CHARS = 8_192;
 
 interface RecordableToast {
   readonly id: string;
@@ -36,6 +37,14 @@ export function useNotificationHistory() {
     EMPTY_NOTIFICATION_HISTORY,
     NotificationHistorySchema,
   );
+}
+
+function logToDesktop(level: "warning" | "error", title: string, description: string) {
+  const text = description ? `${title}\n${description}` : title;
+  const message = text.slice(0, DESKTOP_LOG_MAX_CHARS);
+  void window.desktopBridge
+    ?.logRendererEvent?.({ level, source: "toast", message })
+    .catch(() => undefined);
 }
 
 function levelOf(type: string | undefined): NotificationLevel | null {
@@ -62,6 +71,7 @@ export function useRecordToasts(toasts: readonly RecordableToast[]) {
       recorded.set(toast.id, signature);
       if (level === "warning") console.warn("[toast]", title, description);
       if (level === "error") console.error("[toast]", title, description);
+      if (level === "warning" || level === "error") logToDesktop(level, title, description);
       changed.push({
         toastId: `${PAGE_LOAD_ID}:${toast.id}`,
         level,

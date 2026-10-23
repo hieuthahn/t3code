@@ -3,6 +3,7 @@ import type {
   MergeQueueFailureStage,
   MergeQueueGateRun,
   ProjectScript,
+  ThreadId,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -72,9 +73,10 @@ export const makeMergeQueueLanding = (deps: {
     row: MergeQueueRow,
     fields: Record<string, string | null>,
   ) => Effect.Effect<void, MergeQueueError>;
+  readonly childIsRunning: (threadId: ThreadId) => Effect.Effect<boolean, MergeQueueError>;
 }) => {
   const { git, gitOutput } = deps.git;
-  const { spawner, projects, settings, update } = deps;
+  const { spawner, projects, settings, update, childIsRunning } = deps;
 
   const runGate = Effect.fn("MergeQueue.runGate")(function* (script: ProjectScript, cwd: string) {
     const startedAt = yield* Clock.currentTimeMillis;
@@ -155,6 +157,12 @@ export const makeMergeQueueLanding = (deps: {
       return yield* stage(
         "update",
         "The child's worktree has uncommitted changes. Commit or discard them, then queue it again.",
+      );
+    }
+    if (yield* lift("update", childIsRunning(queued.child_thread_id))) {
+      return yield* stage(
+        "update",
+        `"${queued.child_title}" is still running, so the queue left its worktree alone. Queue it again once it stops.`,
       );
     }
     const trunkBefore = yield* lift(

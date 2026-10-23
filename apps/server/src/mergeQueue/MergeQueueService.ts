@@ -235,6 +235,10 @@ export const layerWith = (options: { readonly drainOnApprove: boolean }) =>
         projects,
         settings,
         update,
+        childIsRunning: (threadId) =>
+          readShell(threadId).pipe(
+            Effect.map((shell) => shell !== null && shell.activeRunId !== null),
+          ),
       });
 
       const failItem = Effect.fn("MergeQueue.failItem")(function* (

@@ -57,11 +57,19 @@ export function teamRulesKey(instructions: string): string {
   return `team-${hash.toString(16).padStart(8, "0")}`;
 }
 
-/** Rules for an architect turn, or nothing for a single agent and for a worker. */
+/** Drivers whose adapter puts the rules in a system prompt, as Token Saver's do. */
+export const TEAM_DRIVERS: ReadonlySet<string> = new Set(["claudeAgent", "codex"]);
+
+/** Rules for an architect turn, or nothing for a single agent, a worker or an unsupported driver. */
 export function resolveTeamTurn(
   thread: Pick<OrchestrationV2AppThread, "team" | "lineage">,
+  driver: string,
 ): { readonly rulesKey: string; readonly instructions: string } | undefined {
-  if (thread.team === undefined || thread.lineage.relationshipToParent === "subagent") {
+  if (
+    thread.team === undefined ||
+    thread.lineage.relationshipToParent === "subagent" ||
+    !TEAM_DRIVERS.has(driver)
+  ) {
     return undefined;
   }
   const instructions = buildTeamInstructions(thread.team);

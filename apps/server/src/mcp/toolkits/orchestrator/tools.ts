@@ -18,6 +18,10 @@ import {
   OrchestratorMcpMergeEnqueueResult,
   OrchestratorMcpProposeTasksInput,
   OrchestratorMcpProposeTasksResult,
+  OrchestratorMcpTeamAssignInput,
+  OrchestratorMcpTeamAssignResult,
+  OrchestratorMcpTeamFinishInput,
+  OrchestratorMcpTeamFinishResult,
   OrchestratorMcpRequestSecretInput,
   OrchestratorMcpRequestSecretResult,
   OrchestratorMcpChildReportInput,
@@ -50,6 +54,7 @@ import * as Struct from "effect/Struct";
 
 import * as MergeQueueService from "../../../mergeQueue/MergeQueueService.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
+import * as TeamService from "../../../team/TeamService.ts";
 import * as PeerForwarding from "../../../peer/PeerForwarding.ts";
 import * as PeerLinkRequests from "../../../peer/PeerLinkRequests.ts";
 import * as PeerLinks from "../../../peer/PeerLinks.ts";
@@ -64,6 +69,8 @@ const dependencies = [
 ];
 /** Queueing a child's branch to land on this thread's trunk. */
 const mergeQueueDependencies = [...dependencies, MergeQueueService.MergeQueueService];
+/** Running the calling thread's team. */
+const teamDependencies = [...dependencies, TeamService.TeamService];
 /** Listing this environment's links. */
 const linkDependencies = [...dependencies, PeerForwarding.PeerForwarding];
 /** Making and forgetting links. */
@@ -233,6 +240,31 @@ const MergeEnqueueTool = Tool.make("merge_enqueue", {
   .annotate(Tool.Title, "Queue a child session to merge")
   .annotate(Tool.Destructive, false);
 
+const TeamAssignTool = Tool.make("team_assign", {
+  description:
+    "Only for a thread running a team (your team rules list its workers). Give the team a round of assignments, each to one worker by its number. Outside autonomous mode the user approves them on a card first. The app starts each assignment as soon as its dependsOn keys are done, its worker's account has a free slot, the team is under its parallel limit, and no running writer on the shared checkout overlaps its files; the result says what each waiting one waits for. Every worker reports back to this thread when it ends, like delegate_task; end your turn instead of polling. A failed key can be assigned again with the same key, up to 3 attempts. Each call is one round and counts against the team's limits.",
+  parameters: OrchestratorMcpTeamAssignInput,
+  success: OrchestratorMcpTeamAssignResult,
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies: teamDependencies,
+})
+  .annotate(Tool.Title, "Assign work to the team")
+  .annotate(Tool.Destructive, true)
+  .annotate(Tool.OpenWorld, true);
+
+const TeamFinishTool = Tool.make("team_finish", {
+  description:
+    "Only for a thread running a team. Close the team once its work is done, with a summary for the user. It refuses while a worker still runs, and assignments still waiting are cancelled.",
+  parameters: OrchestratorMcpTeamFinishInput,
+  success: OrchestratorMcpTeamFinishResult,
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies: teamDependencies,
+})
+  .annotate(Tool.Title, "Finish the team")
+  .annotate(Tool.Destructive, false);
+
 const TaskReportTool = Tool.make("task_report", {
   description:
     "Only for a thread started by delegate_task. Report on your own task to the parent thread that delegated it: call it with status working at milestones, blocked or needs_decision when you cannot go on alone, and done or failed just before you end. Each call replaces your previous report. Name every check in tests with its real outcome, and put decisions you need in questions. The server adds what git shows in your checkout (branch, commits ahead and behind the parent's branch, changed files), so the parent sees your claim next to the facts. A question with audience parent goes to the delegating agent; audience user goes to the person.",
@@ -395,6 +427,8 @@ export const OrchestratorToolkit = Toolkit.make(
   RequestSecretTool,
   ProposeTasksTool,
   MergeEnqueueTool,
+  TeamAssignTool,
+  TeamFinishTool,
   TaskReportTool,
   CreateThreadsTool,
   ThreadListTool,

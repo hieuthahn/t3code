@@ -20,6 +20,7 @@ import {
   resolveSidebarSweepKeys,
   resolveSidebarThreadStatus,
   resolveSidebarV2TopStatus,
+  compactRowShowsStatus,
   resolveThreadStatusPill,
   resolveWorkingStartedAt,
   searchSidebarThreads,
@@ -1258,5 +1259,21 @@ describe("Working shelf (beta)", () => {
         unsnooze: false,
       });
     });
+  });
+});
+
+describe("compactRowShowsStatus", () => {
+  it.each([
+    ["working", true],
+    ["approval", true],
+    ["input", true],
+    ["failed", true],
+    ["limited", true],
+    ["done", true],
+    ["woke", true],
+    ["waiting", false],
+    [null, false],
+  ] as const)("shows %s as status: %s", (kind, shown) => {
+    expect(compactRowShowsStatus(kind)).toBe(shown);
   });
 });

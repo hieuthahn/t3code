@@ -7,6 +7,9 @@ import { Input } from "../ui/input";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 
+const SAVE_AS_VALUE = "team-profile:save-as";
+const NONE_VALUE = "team-profile:none";
+
 type NameEdit = { readonly kind: "save-as" } | { readonly kind: "rename"; readonly id: string };
 
 /** Pick a saved team, or keep the current setup under a name. */
@@ -22,6 +25,11 @@ export function TeamProfileBar(props: {
   const [edit, setEdit] = useState<NameEdit | null>(null);
   const [name, setName] = useState("");
   const selected = props.profiles.find((profile) => profile.id === props.selectedId) ?? null;
+  const canSaveAs = props.canWrite && props.profiles.length < TEAM_MAX_PROFILES;
+  const startSaveAs = () => {
+    setName("");
+    setEdit({ kind: "save-as" });
+  };
 
   if (edit !== null) {
     const submit = () => {
@@ -62,6 +70,7 @@ export function TeamProfileBar(props: {
       <Select
         value={props.selectedId ?? ""}
         onValueChange={(id) => {
+          if (id === SAVE_AS_VALUE) return startSaveAs();
           const profile = props.profiles.find((candidate) => candidate.id === id);
           if (profile !== undefined) props.onSelect(profile);
         }}
@@ -70,11 +79,20 @@ export function TeamProfileBar(props: {
           <SelectValue>{selected?.name ?? "Unsaved setup"}</SelectValue>
         </SelectTrigger>
         <SelectPopup>
-          {props.profiles.map((profile) => (
-            <SelectItem key={profile.id} value={profile.id}>
-              {profile.name}
+          {props.profiles.length === 0 ? (
+            <SelectItem value={NONE_VALUE} disabled>
+              No saved profiles
             </SelectItem>
-          ))}
+          ) : (
+            props.profiles.map((profile) => (
+              <SelectItem key={profile.id} value={profile.id}>
+                {profile.name}
+              </SelectItem>
+            ))
+          )}
+          <SelectItem value={SAVE_AS_VALUE} disabled={!canSaveAs}>
+            Save current setup as…
+          </SelectItem>
         </SelectPopup>
       </Select>
       <Menu>
@@ -91,13 +109,7 @@ export function TeamProfileBar(props: {
           <EllipsisIcon className="size-3.5" />
         </MenuTrigger>
         <MenuPopup align="end">
-          <MenuItem
-            disabled={props.profiles.length >= TEAM_MAX_PROFILES}
-            onClick={() => {
-              setName("");
-              setEdit({ kind: "save-as" });
-            }}
-          >
+          <MenuItem disabled={!canSaveAs} onClick={startSaveAs}>
             Save as…
           </MenuItem>
           <MenuItem

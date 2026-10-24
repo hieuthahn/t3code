@@ -319,7 +319,7 @@ export const layerWith = (options: { readonly drainOnApprove: boolean }) =>
       /** Land one item; any failure but an interruption fails that item so the rest still land. */
       const landOne = (row: MergeQueueRow) =>
         land(row).pipe(
-          Effect.catchTag("StageFailure", (failure) => Effect.succeed(failure)),
+          Effect.catchTags({ StageFailure: (failure) => Effect.succeed(failure) }),
           Effect.catchCause((cause) =>
             Cause.hasInterruptsOnly(cause)
               ? Effect.failCause(cause)

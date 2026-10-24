@@ -7,6 +7,8 @@ import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerControl, ComposerControlSeparator } from "./ComposerControl";
 import { ComposerTeamControl } from "./ComposerTeamControl";
 import { ComposerTokenSaverControl, supportsTokenSaver } from "./ComposerTokenSaverControl";
+import { TeamModelsTooltip } from "./TeamModelsTooltip";
+import { teamModelSuffix } from "./teamSetupDraft";
 import {
   ComposerFooterModeControls,
   ComposerModelPicker,
@@ -24,6 +26,7 @@ import {
 import { useState } from "react";
 
 import { cn } from "~/lib/utils";
+import { useThreadShell } from "~/state/entities";
 import {
   renderProviderTraitsMenuContent,
   renderProviderTraitsPicker,
@@ -132,6 +135,16 @@ export function ComposerControlsBar(props: {
     modelPickerIconClassName,
     getModelDisabledReason,
   } = props;
+  const team = useThreadShell(routeKind === "server" ? routeThreadRef : null)?.team ?? null;
+  const teamPickerProps =
+    team === null || multipleModelSelections !== null
+      ? {}
+      : {
+          triggerSuffix: teamModelSuffix(team, selectedModelSelection) ?? undefined,
+          triggerTooltip: (
+            <TeamModelsTooltip team={team} modelOptionsByInstance={modelOptionsByInstance} />
+          ),
+        };
   const [tokenSaverOpen, setTokenSaverOpen] = useState(false);
   const [overflowAnchor, setOverflowAnchor] = useState<HTMLDivElement | null>(null);
   // The mode block, which holds the Saver button, is the first to hide when the footer is tight.
@@ -285,6 +298,7 @@ export function ComposerControlsBar(props: {
       onOpenChange={onModelPickerOpenChange}
       getModelDisabledReason={getModelDisabledReason}
       onOpenProviderSetup={onOpenProviderSetup}
+      {...teamPickerProps}
     />
   );
   return showProviderUnavailable ? (

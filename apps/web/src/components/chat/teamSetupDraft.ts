@@ -43,6 +43,17 @@ export function teamControlName(team: TeamSetup | null): string {
   return team === null ? "Team" : `Team, ${plural(team.workers.length, "worker")}`;
 }
 
+/** What the model picker adds after the architect: the worker models other than the one shown. */
+export function teamModelSuffix(team: TeamSetup | null, shown: ModelSelection): string | null {
+  if (team === null) return null;
+  const others = new Set(
+    team.workers
+      .filter((worker) => worker.instanceId !== shown.instanceId || worker.model !== shown.model)
+      .map((worker) => `${worker.instanceId}\u0000${worker.model}`),
+  );
+  return others.size === 0 ? null : `+${plural(others.size, "model")}`;
+}
+
 export function upsertTeamProfile(
   profiles: ReadonlyArray<TeamProfile>,
   profile: TeamProfile,

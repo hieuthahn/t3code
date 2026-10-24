@@ -36,11 +36,11 @@ export const canAddTeamWorker = (setup: TeamSetup) => setup.workers.length < TEA
 export const leadGuidanceBytesLeft = (guidance: string) =>
   TEAM_LEAD_GUIDANCE_MAX_BYTES - 1 - utf8ByteLength(guidance);
 
-/** The label the composer shows: how many workers a running team has. */
-export function teamControlLabel(team: TeamSetup | null): string {
-  if (team === null) return "Team";
-  const count = team.workers.length;
-  return `Team · ${count} ${count === 1 ? "worker" : "workers"}`;
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
+
+/** The composer control's accessible name: how many workers a running team has. */
+export function teamControlName(team: TeamSetup | null): string {
+  return team === null ? "Team" : `Team, ${plural(team.workers.length, "worker")}`;
 }
 
 export function upsertTeamProfile(

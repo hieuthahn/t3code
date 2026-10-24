@@ -42,7 +42,7 @@ import {
   canAddTeamWorker,
   initialTeamSetup,
   leadGuidanceBytesLeft,
-  teamControlLabel,
+  teamControlName,
   upsertTeamProfile,
 } from "./teamSetupDraft";
 
@@ -133,11 +133,33 @@ export function ComposerTeamControl(props: {
         }
       }}
     >
-      <PopoverTrigger render={<ComposerControl size={size} type="button" aria-label="Team" />}>
-        <ComposerControlIcon icon={UsersIcon} size={size} />
+      <PopoverTrigger
+        render={
+          <ComposerControl
+            size={size}
+            type="button"
+            aria-label={teamControlName(team)}
+            aria-pressed={team !== null}
+            className="aria-pressed:font-semibold"
+          />
+        }
+      >
+        <ComposerControlIcon
+          icon={UsersIcon}
+          size={size}
+          {...(team === null ? {} : { className: "text-foreground" })}
+        />
         <span data-composer-control-label className="sr-only sm:not-sr-only">
-          {teamControlLabel(team)}
+          Team
         </span>
+        {team === null ? null : (
+          <span
+            aria-hidden="true"
+            className="min-w-4 rounded-full bg-foreground px-1 text-center text-2xs text-background tabular-nums"
+          >
+            {team.workers.length}
+          </span>
+        )}
       </PopoverTrigger>
       <PopoverPopup {...floatingLayerProps} side="top" align="start" className="w-96">
         <div className="grid gap-3">

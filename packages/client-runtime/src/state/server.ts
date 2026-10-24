@@ -1117,6 +1117,10 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:merge-queue:live",
       tag: WS_METHODS.mergeQueueSubscribe,
     }),
+    teamLive: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:server:team:live",
+      tag: WS_METHODS.teamSubscribe,
+    }),
     // A cold transcript scan is measured in seconds, so keep the result around
     // long enough that switching windows or re-rendering does not rescan.
     usageSummary: createEnvironmentRpcQueryAtomFamily(runtime, {
@@ -1366,6 +1370,31 @@ export function createServerEnvironmentAtoms<R, E>(
       concurrency: {
         mode: "singleFlight",
         key: ({ environmentId, input }) => JSON.stringify([environmentId, input.itemId]),
+      },
+    }),
+    // One control at a time per team, off the config lane like the merge queue's.
+    pauseTeam: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:team:pause",
+      tag: WS_METHODS.teamPause,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.threadId]),
+      },
+    }),
+    resumeTeam: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:team:resume",
+      tag: WS_METHODS.teamResume,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.threadId]),
+      },
+    }),
+    stopTeam: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:team:stop",
+      tag: WS_METHODS.teamStop,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.threadId]),
       },
     }),
     // Like a secret card's answer: off the config lane, one per card at a time.

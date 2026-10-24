@@ -44,6 +44,7 @@ function restartContinuationBlocked(
 ): boolean {
   const { thread } = projection;
   if (
+    thread.team !== undefined ||
     thread.archivedAt !== null ||
     thread.deletedAt !== null ||
     thread.settledOverride === "settled" ||
@@ -216,6 +217,14 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
       )
     )
       return;
+    const parentThreadId = projection.thread.lineage.parentThreadId;
+    if (parentThreadId !== null) {
+      const parent = yield* threads
+        .getThreadShell(parentThreadId)
+        .pipe(Effect.orElseSucceed(() => null));
+      // A team waits for the user's Resume after a restart, and its workers wait with it.
+      if (parent?.team !== undefined) return;
+    }
     if (
       projection.runs.some(
         (run) =>

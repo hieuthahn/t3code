@@ -8,6 +8,7 @@ import {
   ThreadId,
   WS_METHODS,
   WsMergeQueueApproveRpc,
+  WsTeamPauseRpc,
   WsSubscribeServerConfigRpc,
   type OrchestrationV2RuntimeRequestDecider,
   type OrchestrationV2StoredEvent,
@@ -76,6 +77,7 @@ import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
 import * as MergeQueueService from "./mergeQueue/MergeQueueService.ts";
+import * as TeamService from "./team/TeamService.ts";
 import * as SecretRequests from "./secrets/SecretRequests.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
@@ -352,6 +354,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(ScheduledTasks.ScheduledTaskService)({}),
   Layer.mock(SecretRequests.SecretRequests)({}),
   Layer.mock(MergeQueueService.MergeQueueService)({}),
+  Layer.mock(TeamService.TeamService)({}),
   Layer.mock(ServerLifecycleEvents.ServerLifecycleEvents)({}),
   Layer.mock(ServerRuntimeStartup.ServerRuntimeStartup)({}),
   Layer.mock(ServerSelfUpdate.ServerSelfUpdate)({}),
@@ -611,6 +614,70 @@ it.effect("approves a merge queue item as the user of the connection", () =>
         decidedBy: { actor: "user", authSessionId: AuthSessionId.make("merge-queue-approver") },
       },
     ]);
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        Layer.fresh(layerConfigSources),
+        Layer.mock(PreviewAutomationBroker.PreviewAutomationBroker)({}),
+        Layer.mock(ServerBrowser.ServerBrowser)({}),
+      ),
+    ),
+    Effect.scoped,
+  ),
+);
+
+it.effect("pauses a thread's team for the user of the connection", () =>
+  Effect.gen(function* () {
+    const paused: Array<ThreadId> = [];
+    const exits = yield* Queue.unbounded<string>();
+    const services = Layer.mergeAll(
+      layerUnusedConfigRpcServices,
+      Layer.mock(ExternalLauncher.ExternalLauncher)({}),
+      Layer.mock(ProviderRegistry.ProviderRegistry)({}),
+      Layer.mock(UsageLimitSources.UsageLimitSources)({}),
+      Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({}),
+      Layer.mock(DirectEndpoints.DirectEndpoints)({}),
+      Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: process.cwd() }),
+      Layer.mock(ServerEnvironment.ServerEnvironment)({}),
+      Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
+      Layer.mock(TeamService.TeamService)({
+        pause: (input) =>
+          Effect.sync(() => {
+            paused.push(input.threadId);
+          }),
+      }),
+    );
+    const server = yield* RpcServer.makeNoSerialization(RpcGroup.make(WsTeamPauseRpc), {
+      ...WS_RPC_SERVER_OPTIONS,
+      onFromServer: (response) =>
+        response._tag === "Exit" ? Queue.offer(exits, response.exit._tag) : Effect.void,
+    }).pipe(
+      Effect.provide(
+        layerWsRpc(
+          {
+            sessionId: AuthSessionId.make("team-operator"),
+            subject: "team-operator",
+            method: "browser-session-cookie",
+            scopes: [],
+          },
+          {},
+          {},
+          yield* PreviewAutomationBroker.PreviewAutomationBroker,
+          yield* ServerBrowser.ServerBrowser,
+        ).pipe(Layer.provide(services)),
+      ),
+    );
+    const threadId = ThreadId.make("thread:architect");
+    yield* server.write(0, {
+      _tag: "Request",
+      id: RpcMessage.RequestId("pause"),
+      tag: WS_METHODS.teamPause,
+      payload: { threadId },
+      headers: Headers.empty,
+    });
+
+    assert.equal(yield* Queue.take(exits), "Success");
+    assert.deepEqual(paused, [threadId]);
   }).pipe(
     Effect.provide(
       Layer.mergeAll(

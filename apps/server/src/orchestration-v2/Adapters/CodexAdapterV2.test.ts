@@ -225,6 +225,24 @@ describe("CodexAdapterV2 runtime policy", () => {
       assert.isDefined(params.additionalContext?.["t3_code_runtime"]);
     }),
   );
+
+  it.effect("sends team rules as application context next to Token Saver's", () =>
+    Effect.gen(function* () {
+      const params = yield* CodexAdapterV2.buildCodexTurnStartParams({
+        nativeThreadId: "native-team",
+        codexInput: [{ type: "text", text: "hello" }],
+        runtimePolicy: { runtimeMode: "full-access", interactionMode: "default", cwd: null },
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+        hasT3Mcp: true,
+        teamInstructions: "## Team sentinel",
+      });
+      assert.deepEqual(params.additionalContext?.["t3_code_team"], {
+        kind: "application",
+        value: "## Team sentinel",
+      });
+      assert.isDefined(params.additionalContext?.["t3_code_runtime"]);
+    }),
+  );
 });
 
 describe("CodexAdapterV2 native protocol logging", () => {

@@ -66,6 +66,8 @@ import * as ProjectSettingsOverrideSweep from "./provider/ProjectSettingsOverrid
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
 import * as MergeQueueService from "./mergeQueue/MergeQueueService.ts";
+import * as OrchestratorMcpService from "./mcp/OrchestratorMcpService.ts";
+import * as TeamService from "./team/TeamService.ts";
 import * as PeerForwarding from "./peer/PeerForwarding.ts";
 import * as RemoteDelegation from "./peer/RemoteDelegation.ts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
@@ -736,6 +738,13 @@ const layerMakeRoutes = Layer.mergeAll(
 ).pipe(
   Layer.provide(
     PullRequestReviewGuideService.layer.pipe(Layer.provide(PullRequestReviewGuides.layer)),
+  ),
+  // Teams start workers as their architect from /mcp, and the user steers them over WebSocket.
+  Layer.provide(
+    TeamService.layer.pipe(
+      Layer.provide(OrchestratorMcpService.layer),
+      Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
+    ),
   ),
   // delegate_task to a linked environment, from /mcp and the follower above.
   Layer.provide(RemoteDelegation.layer.pipe(Layer.provide(ProjectionStoreV2.layer))),

@@ -3,6 +3,7 @@ import {
   CheckpointRef,
   CheckpointScopeId,
   CommandId,
+  DEFAULT_TEAM_LIMITS,
   EnvironmentId,
   MessageId,
   NodeId,
@@ -42,6 +43,7 @@ import {
   revertThreadCheckpoint,
   resumeThreadQueue,
   startThreadTurn,
+  updateThreadMetadata,
 } from "./commands.ts";
 
 const layerTestCrypto = Layer.succeed(
@@ -198,6 +200,34 @@ describe("V2 environment commands", () => {
           revision: 2,
           approvedKeys: ["api"],
         },
+      ]);
+    }).pipe(Effect.provide(layerTestCrypto)),
+  );
+
+  it.effect("turns a thread's team on and off through thread metadata", () =>
+    Effect.gen(function* () {
+      const commands: OrchestrationV2Command[] = [];
+      const supervisor = yield* makeSupervisor({ commands, projects: [] });
+      const team = {
+        architect: { instanceId: ProviderInstanceId.make("claudeAgent"), model: "claude-opus-4-1" },
+        workers: [{ instanceId: ProviderInstanceId.make("codex"), model: "gpt-5-codex" }],
+        limits: DEFAULT_TEAM_LIMITS,
+      };
+
+      for (const [commandId, value] of [
+        ["team-on", team],
+        ["team-off", null],
+      ] as const) {
+        yield* updateThreadMetadata({
+          commandId: CommandId.make(commandId),
+          threadId: ThreadId.make("thread-1"),
+          team: value,
+        }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+      }
+
+      expect(commands).toEqual([
+        { type: "thread.metadata.update", commandId: "team-on", threadId: "thread-1", team },
+        { type: "thread.metadata.update", commandId: "team-off", threadId: "thread-1", team: null },
       ]);
     }).pipe(Effect.provide(layerTestCrypto)),
   );

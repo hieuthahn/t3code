@@ -19,6 +19,7 @@ import * as Layer from "effect/Layer";
 import { McpSchema, McpServer } from "effect/ai";
 
 import * as MergeQueueService from "../mergeQueue/MergeQueueService.ts";
+import * as TeamService from "../team/TeamService.ts";
 import * as ServerConfig from "../config.ts";
 import { CodexProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
@@ -161,6 +162,7 @@ const layerTools = Layer.mergeAll(
   Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
   Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
   Layer.provide(Layer.mock(MergeQueueService.MergeQueueService)({})),
+  Layer.provide(Layer.mock(TeamService.TeamService)({})),
   Layer.provide(Layer.mock(PeerLinks.PeerLinks)({})),
   Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
   Layer.provide(Layer.mock(RemoteDelegation.RemoteDelegation)({})),

@@ -377,6 +377,7 @@ import {
   MergeQueueSubscribeInput,
   MergeQueueView,
 } from "./mergeQueue.ts";
+import { TeamError, TeamRunView, TeamThreadInput } from "./teamRun.ts";
 import { SecretRequestAnswerInput, SecretRequestError } from "./secretRequest.ts";
 import {
   ProjectCloneActionInput,
@@ -548,6 +549,10 @@ export const WS_METHODS = {
   mergeQueueSubscribe: "mergeQueue.subscribe",
   mergeQueueApprove: "mergeQueue.approve",
   mergeQueueCancel: "mergeQueue.cancel",
+  teamSubscribe: "team.subscribe",
+  teamPause: "team.pause",
+  teamResume: "team.resume",
+  teamStop: "team.stop",
   scheduledTasksListWebhookDeliveries: "scheduledTasks.listWebhookDeliveries",
   scheduledTasksGetWebhookDelivery: "scheduledTasks.getWebhookDelivery",
 
@@ -1911,6 +1916,28 @@ const WsMergeQueueCancelRpc = Rpc.make(WS_METHODS.mergeQueueCancel, {
   error: Schema.Union([MergeQueueError, EnvironmentAuthorizationError]),
 });
 
+const WsTeamSubscribeRpc = Rpc.make(WS_METHODS.teamSubscribe, {
+  payload: TeamThreadInput,
+  success: Schema.NullOr(TeamRunView),
+  error: Schema.Union([TeamError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
+export const WsTeamPauseRpc = Rpc.make(WS_METHODS.teamPause, {
+  payload: TeamThreadInput,
+  error: Schema.Union([TeamError, EnvironmentAuthorizationError]),
+});
+
+const WsTeamResumeRpc = Rpc.make(WS_METHODS.teamResume, {
+  payload: TeamThreadInput,
+  error: Schema.Union([TeamError, EnvironmentAuthorizationError]),
+});
+
+const WsTeamStopRpc = Rpc.make(WS_METHODS.teamStop, {
+  payload: TeamThreadInput,
+  error: Schema.Union([TeamError, EnvironmentAuthorizationError]),
+});
+
 const WsScheduledTasksListWebhookDeliveriesRpc = Rpc.make(
   WS_METHODS.scheduledTasksListWebhookDeliveries,
   {
@@ -2042,6 +2069,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsMergeQueueSubscribeRpc,
   WsMergeQueueApproveRpc,
   WsMergeQueueCancelRpc,
+  WsTeamSubscribeRpc,
+  WsTeamPauseRpc,
+  WsTeamResumeRpc,
+  WsTeamStopRpc,
   WsScheduledTasksListWebhookDeliveriesRpc,
   WsScheduledTasksGetWebhookDeliveryRpc,
   WsServerReportClientActivityRpc,

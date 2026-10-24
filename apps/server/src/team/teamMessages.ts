@@ -38,6 +38,7 @@ export const teamMessage = {
     "This thread runs a team. Give work to its workers with team_assign, which keeps the team's limits.",
   /** Why a worker that ended while its team sat interrupted failed. */
   stoppedByRestart: "The app restarted while this worker ran.",
+  stoppedByUser: "The user stopped the team.",
   /** The worker's brief, with the report size its architect reads. */
   workerTask: (task: string, summaryLimitBytes: number) =>
     `${task}\n\nEnd with a final report under ${summaryLimitBytes} bytes: what you changed, each check you ran with its result, and what is left open.`,

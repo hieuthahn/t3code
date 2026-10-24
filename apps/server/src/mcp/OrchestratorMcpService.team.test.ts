@@ -308,6 +308,41 @@ it.effect("proposes a team's children on its workers only", () =>
   }),
 );
 
+it.effect("closes a waiting card with the reason its caller gives", () =>
+  Effect.gen(function* () {
+    const dispatched: Array<OrchestrationV2ServerCommand> = [];
+    const answer = yield* call((service) =>
+      service.askChildPlan(scope, {
+        reason: "Split the work.",
+        tasks: [{ key: "api", title: "Retry sends", task: "Do the api part" }],
+        closeReason: Effect.succeed("The user stopped the team."),
+      }),
+    ).pipe(Effect.provide(makeLayer({ dispatched, team })));
+    assert.equal(answer.status, "cancelled");
+    const closed = dispatched.find(
+      (command) => command.type === "child_plan.record" && command.planStatus === "cancelled",
+    );
+    assert.equal(
+      closed?.type === "child_plan.record" ? closed.closedReason : undefined,
+      "The user stopped the team.",
+    );
+  }),
+);
+
+it.effect("keeps a decision the user made before the card's caller closes it", () =>
+  Effect.gen(function* () {
+    const dispatched: Array<OrchestrationV2ServerCommand> = [];
+    const answer = yield* call((service) =>
+      service.askChildPlan(scope, {
+        reason: "Split the work.",
+        tasks: [{ key: "api", title: "Retry sends", task: "Do the api part" }],
+        closeReason: Effect.succeed("The user stopped the team."),
+      }),
+    ).pipe(Effect.provide(makeLayer({ approve: ["api"], dispatched, team })));
+    assert.deepEqual(answer.approvedKeys, ["api"]);
+  }),
+);
+
 it.effect("leaves a thread outside a team free to pick any model", () =>
   Effect.gen(function* () {
     const dispatched: Array<OrchestrationV2ServerCommand> = [];

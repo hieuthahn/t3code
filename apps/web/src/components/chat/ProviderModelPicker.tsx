@@ -6,7 +6,7 @@ import {
   type ResolvedKeybindingsConfig,
   type ThreadAccountChoice,
 } from "@t3tools/contracts";
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useState, type ReactNode } from "react";
 import { Badge } from "../ui/badge";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -51,6 +51,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   open?: boolean;
   triggerClassName?: string;
   triggerLabel?: string;
+  triggerSuffix?: string | undefined;
+  triggerTooltip?: ReactNode;
   triggerAriaLabel?: string;
   onOpenChange?: (open: boolean) => void;
   onOpenProviderSetup?: (instanceId: ProviderInstanceId) => void;
@@ -199,9 +201,20 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   const allModelNames = selectedEntries
     ? selectedEntries.map((selection) => selection.label).join(", ") || "Choose models"
     : undefined;
-  const triggerTooltipContent = shortcutLabel
-    ? `${props.triggerLabel ?? allModelNames ?? triggerLabel} · ${shortcutLabel}`
-    : (props.triggerLabel ?? allModelNames ?? triggerLabel);
+  const triggerTooltipText = props.triggerLabel ?? allModelNames ?? triggerLabel;
+  const triggerTooltipContent =
+    props.triggerTooltip === undefined ? (
+      shortcutLabel ? (
+        `${triggerTooltipText} · ${shortcutLabel}`
+      ) : (
+        triggerTooltipText
+      )
+    ) : (
+      <>
+        {props.triggerTooltip}
+        {shortcutLabel ? <span className="text-muted-foreground">{shortcutLabel}</span> : null}
+      </>
+    );
 
   return (
     <Popover
@@ -283,6 +296,12 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
               }
             >
               {props.triggerLabel ?? multipleLabel ?? triggerTitle}
+              {props.triggerSuffix === undefined || selectedEntries ? null : (
+                <>
+                  {" "}
+                  <span className="text-muted-foreground">{props.triggerSuffix}</span>
+                </>
+              )}
             </TooltipTrigger>
             <TooltipPopup side="top">{triggerTooltipContent}</TooltipPopup>
           </Tooltip>

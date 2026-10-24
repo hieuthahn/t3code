@@ -113,7 +113,7 @@ const renderControl = () =>
 it("starts a team from the thread's model and saves it as the default", async () => {
   setup();
   await using _screen = await renderControl();
-  const trigger = page.getByRole("button", { name: "Team" });
+  const trigger = page.getByRole("button", { name: /^Team(, |$)/ });
   await expect.element(trigger).toHaveTextContent("Team");
   await userEvent.click(trigger);
   await expect
@@ -134,16 +134,13 @@ it("starts a team from the thread's model and saves it as the default", async ()
 it("adds and removes workers up to six", async () => {
   setup({ team: { architect, workers: [worker], limits: DEFAULT_TEAM_LIMITS } });
   await using _screen = await renderControl();
-  await expect
-    .element(page.getByRole("button", { name: "Team" }))
-    .toHaveTextContent("Team · 1 worker");
-  await userEvent.click(page.getByRole("button", { name: "Team" }));
+  await userEvent.click(page.getByRole("button", { name: /^Team(, |$)/ }));
   const add = page.getByRole("button", { name: "Add worker" });
   for (let count = 1; count < 6; count += 1) await userEvent.click(add);
   await expect.element(page.getByText("Workers 6/6")).toBeVisible();
   await expect.element(add).not.toBeInTheDocument();
   await userEvent.click(page.getByRole("button", { name: "Remove Worker 6" }));
-  await userEvent.click(page.getByRole("button", { name: "Apply" }));
+  await userEvent.click(page.getByRole("button", { name: "Save setup" }));
   const applied = state.metadata[0] as { input: { team: TeamSetup } };
   expect(applied.input.team.workers).toHaveLength(5);
 });
@@ -158,13 +155,13 @@ it("keeps lead guidance after the rules and clears it with Reset", async () => {
     },
   });
   await using _screen = await renderControl();
-  await userEvent.click(page.getByRole("button", { name: "Team" }));
+  await userEvent.click(page.getByRole("button", { name: /^Team(, |$)/ }));
   await userEvent.click(page.getByRole("button", { name: "Lead guidance" }));
   await expect
     .element(page.getByRole("textbox", { name: "Lead guidance" }))
     .toHaveValue("Coordinate only.");
   await userEvent.click(page.getByRole("button", { name: "Reset" }));
-  await userEvent.click(page.getByRole("button", { name: "Apply" }));
+  await userEvent.click(page.getByRole("button", { name: "Save setup" }));
   const applied = state.metadata[0] as { input: { team: TeamSetup } };
   expect(applied.input.team).not.toHaveProperty("leadGuidance");
 });
@@ -172,7 +169,7 @@ it("keeps lead guidance after the rules and clears it with Reset", async () => {
 it("saves the setup as a named profile", async () => {
   setup();
   await using _screen = await renderControl();
-  await userEvent.click(page.getByRole("button", { name: "Team" }));
+  await userEvent.click(page.getByRole("button", { name: /^Team(, |$)/ }));
   await userEvent.click(page.getByRole("button", { name: "Team profile actions" }));
   await userEvent.click(page.getByRole("menuitem", { name: "Save as…" }));
   await userEvent.fill(page.getByRole("textbox", { name: "Team profile name" }), "Review crew");
@@ -184,8 +181,8 @@ it("saves the setup as a named profile", async () => {
 it("turns a team back into a single agent", async () => {
   setup({ team: { architect, workers: [worker], limits: DEFAULT_TEAM_LIMITS } });
   await using _screen = await renderControl();
-  await userEvent.click(page.getByRole("button", { name: "Team" }));
-  await userEvent.click(page.getByRole("button", { name: "Single agent" }));
+  await userEvent.click(page.getByRole("button", { name: /^Team(, |$)/ }));
+  await userEvent.click(page.getByRole("button", { name: "Use a single agent" }));
   expect(state.metadata).toEqual([
     { environmentId: threadRef.environmentId, input: { threadId: threadRef.threadId, team: null } },
   ]);
@@ -195,7 +192,7 @@ it("turns a team back into a single agent", async () => {
 it("refuses changes without permission to operate the thread", async () => {
   setup({ canOperate: false, canWriteSettings: false });
   await using _screen = await renderControl();
-  await userEvent.click(page.getByRole("button", { name: "Team" }));
+  await userEvent.click(page.getByRole("button", { name: /^Team(, |$)/ }));
   await expect.element(page.getByRole("button", { name: "Start team" })).toBeDisabled();
   await expect.element(page.getByRole("button", { name: "Team profile actions" })).toBeDisabled();
 });
@@ -203,9 +200,9 @@ it("refuses changes without permission to operate the thread", async () => {
 it("lets a team start assignments without the approval card", async () => {
   setup({ team: { architect, workers: [worker], limits: DEFAULT_TEAM_LIMITS } });
   await using _screen = await renderControl();
-  await userEvent.click(page.getByRole("button", { name: "Team" }));
+  await userEvent.click(page.getByRole("button", { name: /^Team(, |$)/ }));
   await userEvent.click(page.getByText("Start assignments without approval"));
-  await userEvent.click(page.getByRole("button", { name: "Apply" }));
+  await userEvent.click(page.getByRole("button", { name: "Save setup" }));
   const applied = state.metadata[0] as { input: { team: TeamSetup } };
   expect(applied.input.team.autonomous).toBe(true);
 });
@@ -234,26 +231,26 @@ it("refuses limits below what the running team already used", async () => {
     },
   });
   await using _screen = await renderControl();
-  await userEvent.click(page.getByRole("button", { name: "Team" }));
+  await userEvent.click(page.getByRole("button", { name: /^Team(, |$)/ }));
   await userEvent.click(page.getByRole("combobox", { name: "Team profile" }));
   await userEvent.click(page.getByRole("option", { name: "Small crew" }));
   await expect
     .element(page.getByRole("alert"))
     .toHaveTextContent("maxAssignments cannot go below the 5 assignments already made.");
-  await expect.element(page.getByRole("button", { name: "Apply" })).toBeDisabled();
+  await expect.element(page.getByRole("button", { name: "Save setup" })).toBeDisabled();
 });
 
 it("names the popover after the architect and its workers", async () => {
   setup();
   await using _screen = await renderControl();
-  await userEvent.click(page.getByRole("button", { name: "Team" }));
+  await userEvent.click(page.getByRole("button", { name: /^Team(, |$)/ }));
   await expect.element(page.getByText("Architect & workers")).toBeVisible();
 });
 
 it("offers to save the setup when no profile is saved yet", async () => {
   setup();
   await using _screen = await renderControl();
-  await userEvent.click(page.getByRole("button", { name: "Team" }));
+  await userEvent.click(page.getByRole("button", { name: /^Team(, |$)/ }));
   await userEvent.click(page.getByRole("combobox", { name: "Team profile" }));
   await expect.element(page.getByRole("option", { name: "No saved profiles" })).toBeVisible();
   await userEvent.click(page.getByRole("option", { name: "Save current setup as…" }));
@@ -266,9 +263,9 @@ it("offers to save the setup when no profile is saved yet", async () => {
 it("closes the popover once Apply lands", async () => {
   setup({ team: { architect, workers: [worker], limits: DEFAULT_TEAM_LIMITS } });
   await using _screen = await renderControl();
-  await userEvent.click(page.getByRole("button", { name: "Team" }));
-  await userEvent.click(page.getByRole("button", { name: "Apply" }));
-  await expect.element(page.getByRole("button", { name: "Apply" })).not.toBeInTheDocument();
+  await userEvent.click(page.getByRole("button", { name: /^Team(, |$)/ }));
+  await userEvent.click(page.getByRole("button", { name: "Save setup" }));
+  await expect.element(page.getByRole("button", { name: "Save setup" })).not.toBeInTheDocument();
 });
 
 it("keeps the popover open and shows why Apply failed", async () => {
@@ -277,10 +274,53 @@ it("keeps the popover open and shows why Apply failed", async () => {
     metadataFailure: "The thread is busy.",
   });
   await using _screen = await renderControl();
-  await userEvent.click(page.getByRole("button", { name: "Team" }));
-  await userEvent.click(page.getByRole("button", { name: "Apply" }));
+  await userEvent.click(page.getByRole("button", { name: /^Team(, |$)/ }));
+  await userEvent.click(page.getByRole("button", { name: "Save setup" }));
   await expect
     .element(page.getByRole("alert"))
     .toHaveTextContent("Could not apply the team: The thread is busy.");
-  await expect.element(page.getByRole("button", { name: "Apply" })).toBeVisible();
+  await expect.element(page.getByRole("button", { name: "Save setup" })).toBeVisible();
+});
+
+it("shows the Team button pressed while a team runs, with its worker count", async () => {
+  setup({ team: { architect, workers: [worker, worker], limits: DEFAULT_TEAM_LIMITS } });
+  await using _screen = await renderControl();
+  const trigger = page.getByRole("button", { name: "Team, 2 workers" });
+  await expect.element(trigger).toHaveAttribute("aria-pressed", "true");
+  await expect.element(trigger).toHaveTextContent("Team2");
+});
+
+it("shows the Team button released for a single agent", async () => {
+  setup();
+  await using _screen = await renderControl();
+  const trigger = page.getByRole("button", { name: "Team", exact: true });
+  await expect.element(trigger).toHaveAttribute("aria-pressed", "false");
+  await expect.element(trigger).toHaveTextContent("Team");
+});
+
+it("numbers the workers and closes from the header", async () => {
+  setup({ team: { architect, workers: [worker, worker], limits: DEFAULT_TEAM_LIMITS } });
+  await using _screen = await renderControl();
+  await userEvent.click(page.getByRole("button", { name: /^Team(, |$)/ }));
+  await expect.element(page.getByText("Plans & reviews")).toBeVisible();
+  await expect.element(page.getByText("Worker 1", { exact: true })).toBeVisible();
+  await expect.element(page.getByText("Worker 2", { exact: true })).toBeVisible();
+  await userEvent.click(page.getByRole("button", { name: "Close" }));
+  await expect.element(page.getByRole("button", { name: "Save setup" })).not.toBeInTheDocument();
+  expect(state.metadata).toEqual([]);
+});
+
+it("runs any number of workers at once when Unlimited is checked", async () => {
+  setup({
+    team: { architect, workers: [worker], limits: { ...DEFAULT_TEAM_LIMITS, maxParallel: 2 } },
+  });
+  await using _screen = await renderControl();
+  await userEvent.click(page.getByRole("button", { name: /^Team(, |$)/ }));
+  await userEvent.click(page.getByRole("button", { name: "Run limits & context" }));
+  await expect.element(page.getByRole("textbox", { name: "At once" })).toBeEnabled();
+  await userEvent.click(page.getByText("Unlimited", { exact: true }));
+  await expect.element(page.getByRole("textbox", { name: "At once" })).toBeDisabled();
+  await userEvent.click(page.getByRole("button", { name: "Save setup" }));
+  const applied = state.metadata[0] as { input: { team: TeamSetup } };
+  expect(applied.input.team.limits.maxParallel).toBe("unlimited");
 });

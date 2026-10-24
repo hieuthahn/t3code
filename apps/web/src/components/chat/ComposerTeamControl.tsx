@@ -13,7 +13,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { ChevronRightIcon, PlusIcon, UsersIcon } from "lucide-react";
+import { ChevronRightIcon, PlusIcon, UsersIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "~/hooks/useSettings";
@@ -30,7 +30,7 @@ import type { ProviderInstanceEntry } from "../../providerInstances";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
-import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
+import { Popover, PopoverClose, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import { ComposerControl, ComposerControlIcon, type ComposerControlSize } from "./ComposerControl";
@@ -42,7 +42,7 @@ import {
   canAddTeamWorker,
   initialTeamSetup,
   leadGuidanceBytesLeft,
-  teamControlLabel,
+  teamControlName,
   upsertTeamProfile,
 } from "./teamSetupDraft";
 
@@ -133,15 +133,42 @@ export function ComposerTeamControl(props: {
         }
       }}
     >
-      <PopoverTrigger render={<ComposerControl size={size} type="button" aria-label="Team" />}>
-        <ComposerControlIcon icon={UsersIcon} size={size} />
+      <PopoverTrigger
+        render={
+          <ComposerControl
+            size={size}
+            type="button"
+            aria-label={teamControlName(team)}
+            aria-pressed={team !== null}
+            className="aria-pressed:font-semibold"
+          />
+        }
+      >
+        <ComposerControlIcon
+          icon={UsersIcon}
+          size={size}
+          {...(team === null ? {} : { className: "text-foreground" })}
+        />
         <span data-composer-control-label className="sr-only sm:not-sr-only">
-          {teamControlLabel(team)}
+          Team
         </span>
+        {team === null ? null : (
+          <span
+            aria-hidden="true"
+            className="min-w-4 rounded-full bg-foreground px-1 text-center text-2xs text-background tabular-nums"
+          >
+            {team.workers.length}
+          </span>
+        )}
       </PopoverTrigger>
-      <PopoverPopup {...floatingLayerProps} side="top" align="start" className="w-96">
+      <PopoverPopup {...floatingLayerProps} side="top" align="start" className="w-md">
         <div className="grid gap-3">
-          <PopoverTitle>Architect & workers</PopoverTitle>
+          <div className="flex items-center justify-between gap-2">
+            <PopoverTitle>Architect & workers</PopoverTitle>
+            <PopoverClose render={<Button size="icon-xs" variant="ghost" />} aria-label="Close">
+              <XIcon className="size-3.5" />
+            </PopoverClose>
+          </div>
 
           <TeamProfileBar
             profiles={settings.profiles}
@@ -170,7 +197,10 @@ export function ComposerTeamControl(props: {
           />
 
           <section className="grid gap-1.5" aria-label="Architect">
-            <span className="font-medium text-muted-foreground text-xs">Architect</span>
+            <span className="flex items-center justify-between gap-2 text-xs">
+              <span className="font-medium text-muted-foreground">Architect</span>
+              <span className="text-muted-foreground">Plans & reviews</span>
+            </span>
             <TeamMemberPicker
               label="Architect"
               environmentId={environmentId}
@@ -188,30 +218,39 @@ export function ComposerTeamControl(props: {
               Workers {setup.workers.length}/6
             </span>
             {setup.workers.map((worker, index) => (
-              <TeamMemberPicker
-                // A worker seat has no identity beyond its position.
-                // oxlint-disable-next-line react/no-array-index-key
-                key={index}
-                label={`Worker ${index + 1}`}
-                environmentId={environmentId}
-                member={worker}
-                lockedProvider={null}
-                instanceEntries={props.instanceEntries}
-                modelOptionsByInstance={props.modelOptionsByInstance}
-                disabled={!canOperate}
-                onChange={(member) =>
-                  edit({
-                    ...setup,
-                    workers: setup.workers.map((current, at) => (at === index ? member : current)),
-                  })
-                }
-                {...(setup.workers.length > 1
-                  ? {
-                      onRemove: () =>
-                        edit({ ...setup, workers: setup.workers.filter((_, at) => at !== index) }),
-                    }
-                  : {})}
-              />
+              // A worker seat has no identity beyond its position.
+              // oxlint-disable-next-line react/no-array-index-key
+              <div key={index} className="flex min-w-0 items-center gap-2">
+                <span className="w-14 shrink-0 text-xs text-muted-foreground tabular-nums">
+                  Worker {index + 1}
+                </span>
+                <TeamMemberPicker
+                  label={`Worker ${index + 1}`}
+                  environmentId={environmentId}
+                  member={worker}
+                  lockedProvider={null}
+                  instanceEntries={props.instanceEntries}
+                  modelOptionsByInstance={props.modelOptionsByInstance}
+                  disabled={!canOperate}
+                  onChange={(member) =>
+                    edit({
+                      ...setup,
+                      workers: setup.workers.map((current, at) =>
+                        at === index ? member : current,
+                      ),
+                    })
+                  }
+                  {...(setup.workers.length > 1
+                    ? {
+                        onRemove: () =>
+                          edit({
+                            ...setup,
+                            workers: setup.workers.filter((_, at) => at !== index),
+                          }),
+                      }
+                    : {})}
+                />
+              </div>
             ))}
             {canAddTeamWorker(setup) ? (
               <Button
@@ -248,7 +287,7 @@ export function ComposerTeamControl(props: {
           <Collapsible>
             <CollapsibleTrigger className="group flex items-center gap-1 text-xs font-medium text-muted-foreground">
               <ChevronRightIcon className="size-3.5 transition-transform group-data-panel-open:rotate-90" />
-              Run limits
+              Run limits & context
             </CollapsibleTrigger>
             <CollapsiblePanel>
               <div className="pt-2">
@@ -316,36 +355,37 @@ export function ComposerTeamControl(props: {
             </p>
           )}
 
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox
+              checked={settings.newThreads}
+              disabled={!canWriteSettings}
+              onCheckedChange={(checked) =>
+                updateSettings({ team: { newThreads: Boolean(checked), defaultSetup: setup } })
+              }
+            />
+            Use for new threads
+          </label>
+
           <div className="flex items-center justify-between gap-3 border-t pt-3">
-            <label className="flex items-center gap-2 text-sm">
-              <Checkbox
-                checked={settings.newThreads}
-                disabled={!canWriteSettings}
-                onCheckedChange={(checked) =>
-                  updateSettings({ team: { newThreads: Boolean(checked), defaultSetup: setup } })
-                }
-              />
-              Use for new threads
-            </label>
-            <div className="flex items-center gap-1.5">
-              {team === null ? null : (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={!canOperate || applying}
-                  onClick={() => void apply(null)}
-                >
-                  Single agent
-                </Button>
-              )}
+            {team === null ? (
+              <span />
+            ) : (
               <Button
                 size="sm"
-                disabled={!canOperate || applying || limitProblems.length > 0}
-                onClick={() => void apply(setup)}
+                variant="ghost"
+                disabled={!canOperate || applying}
+                onClick={() => void apply(null)}
               >
-                {team === null ? "Start team" : "Apply"}
+                Use a single agent
               </Button>
-            </div>
+            )}
+            <Button
+              size="sm"
+              disabled={!canOperate || applying || limitProblems.length > 0}
+              onClick={() => void apply(setup)}
+            >
+              {team === null ? "Start team" : "Save setup"}
+            </Button>
           </div>
         </div>
       </PopoverPopup>

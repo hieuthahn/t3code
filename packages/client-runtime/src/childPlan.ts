@@ -34,7 +34,10 @@ export function childPlanChildState(
 }
 
 export function childPlanDisplay(
-  item: Pick<ChildPlanItem, "planStatus" | "planDecision" | "launches" | "children">,
+  item: Pick<
+    ChildPlanItem,
+    "planStatus" | "planDecision" | "launches" | "children" | "closedReason"
+  >,
   visibility: "local" | "inherited" | "synthetic",
 ): ChildPlanDisplay {
   switch (item.planStatus) {
@@ -45,7 +48,7 @@ export function childPlanDisplay(
     case "expired":
       return { kind: "closed", label: "Expired before a decision" };
     case "cancelled":
-      return { kind: "closed", label: "Closed before a decision" };
+      return { kind: "closed", label: item.closedReason ?? "Closed before a decision" };
     case "declined":
       return { kind: "decided", label: "Declined" };
     case "approved":

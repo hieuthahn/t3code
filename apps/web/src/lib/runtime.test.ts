@@ -3,6 +3,10 @@ import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
 import * as Effect from "effect/Effect";
 import * as Tracer from "effect/Tracer";
 
+// Loads the runtime graph at collection so each case only re-evaluates it; a cold load could
+// outlast a case's timeout, and its abandoned body would then run under the next case's stubs.
+import "./runtime";
+
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();

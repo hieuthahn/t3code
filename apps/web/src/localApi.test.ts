@@ -1,17 +1,23 @@
 import { type ConfirmDialogOptions, type ContextMenuItem } from "@t3tools/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-const showContextMenuFallbackMock =
-  vi.fn<
-    <T extends string>(
-      items: readonly ContextMenuItem<T>[],
-      position?: { x: number; y: number },
-    ) => Promise<T | null>
-  >();
-const dismissContextMenuMock = vi.fn<() => void>();
+// Loads the module graph at collection so the test only re-evaluates it; a cold load could
+// outlast the test's timeout.
+import "./localApi";
 
-const requestConfirmDialogMock =
-  vi.fn<(message: string, options?: ConfirmDialogOptions) => Promise<boolean> | undefined>();
+const { showContextMenuFallbackMock, dismissContextMenuMock, requestConfirmDialogMock } =
+  vi.hoisted(() => ({
+    showContextMenuFallbackMock:
+      vi.fn<
+        <T extends string>(
+          items: readonly ContextMenuItem<T>[],
+          position?: { x: number; y: number },
+        ) => Promise<T | null>
+      >(),
+    dismissContextMenuMock: vi.fn<() => void>(),
+    requestConfirmDialogMock:
+      vi.fn<(message: string, options?: ConfirmDialogOptions) => Promise<boolean> | undefined>(),
+  }));
 
 vi.mock("./contextMenuFallback", () => ({
   showContextMenuFallback: showContextMenuFallbackMock,

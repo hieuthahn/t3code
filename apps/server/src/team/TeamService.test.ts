@@ -342,7 +342,7 @@ const setMergeStatus = (title: string, status: string) =>
     yield* sql`UPDATE merge_queue_items SET status = ${status} WHERE item_id = ${`merge-queue:${title}`}`;
   });
 
-/** The architect finished its round and idles while the merge queue holds `title`. */
+/** The architect finished its round and idles while one of its merges waits for the user. */
 const idleWithMergeWaiting = (service: TeamService.TeamService["Service"], fixture: Fixture) =>
   Effect.gen(function* () {
     yield* insertMerge("Landed earlier", "merged");

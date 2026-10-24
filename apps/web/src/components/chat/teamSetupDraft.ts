@@ -39,7 +39,8 @@ export const leadGuidanceBytesLeft = (guidance: string) =>
 /** The label the composer shows: how many workers a running team has. */
 export function teamControlLabel(team: TeamSetup | null): string {
   if (team === null) return "Team";
-  return `Team · ${team.workers.length}`;
+  const count = team.workers.length;
+  return `Team · ${count} ${count === 1 ? "worker" : "workers"}`;
 }
 
 export function upsertTeamProfile(

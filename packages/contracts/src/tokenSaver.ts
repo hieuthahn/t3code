@@ -6,14 +6,18 @@ import { NonNegativeInt, ThreadId } from "./baseSchemas.ts";
 export const TokenSaverConciseLevel = Schema.Literals(["off", "lite", "full", "ultra"]);
 export type TokenSaverConciseLevel = typeof TokenSaverConciseLevel.Type;
 
+const packOff = Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false)));
+
+/** A saved config may be sparse, since settings drop values equal to the default; a missing pack is off. */
 export const TokenSaverConfig = Schema.Struct({
-  concise: TokenSaverConciseLevel,
-  leanCode: Schema.Boolean,
-  quietTools: Schema.Boolean,
-  rtk: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  concise: TokenSaverConciseLevel.pipe(Schema.withDecodingDefault(Effect.succeed("off" as const))),
+  leanCode: packOff,
+  quietTools: packOff,
+  rtk: packOff,
 });
 export type TokenSaverConfig = typeof TokenSaverConfig.Type;
 
+/** The packs a thread turns on first: Lite replies and quiet tools. */
 export const DEFAULT_TOKEN_SAVER_CONFIG: TokenSaverConfig = {
   concise: "lite",
   leanCode: false,

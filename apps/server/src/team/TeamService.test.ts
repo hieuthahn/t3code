@@ -16,6 +16,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as TestClock from "effect/testing/TestClock";
 
 import type { McpInvocationScope } from "../mcp/McpInvocationContext.ts";
@@ -61,6 +62,8 @@ interface Fixture {
   readonly sent: Array<string>;
   readonly interrupted: Array<ThreadId>;
   readonly stopped: Array<ThreadId>;
+  /** Each proposed task's key and the worker number the card shows. */
+  readonly proposed: Array<{ readonly key: string; readonly worker: number | undefined }>;
   /** What the user picks on the card; null leaves it unanswered. */
   approve: ReadonlyArray<string> | null;
 }
@@ -85,6 +88,7 @@ const makeFixture = (setup: TeamSetup = team()): Fixture => ({
   sent: [],
   interrupted: [],
   stopped: [],
+  proposed: [],
   approve: null,
 });
 
@@ -146,6 +150,9 @@ const dependenciesFor = (fixture: Fixture) =>
       askChildPlan: (_scope, input) =>
         Effect.sync(() => {
           const keys = input.tasks.map((task) => task.key);
+          fixture.proposed.push(
+            ...input.tasks.map((task) => ({ key: task.key, worker: task.worker })),
+          );
           const approve = fixture.approve;
           return {
             status: approve === null ? "timed_out" : "partially_approved",
@@ -172,7 +179,7 @@ const work = (
 
 const withTeam = <A, E>(
   fixture: Fixture,
-  body: (service: TeamService.TeamService["Service"]) => Effect.Effect<A, E>,
+  body: (service: TeamService.TeamService["Service"]) => Effect.Effect<A, E, SqlClient.SqlClient>,
 ) =>
   Effect.gen(function* () {
     return yield* body(yield* TeamService.TeamService);
@@ -214,10 +221,14 @@ it.effect("asks the user outside autonomous mode and queues only what they appro
     const fixture = makeFixture(team({ autonomous: false }));
     fixture.approve = ["api"];
     const result = yield* withTeam(fixture, (service) =>
-      assign(service, [work("api"), work("ui")]),
+      assign(service, [work("api"), work("ui", { worker: 2 })]),
     );
     assert.equal(result.status, "queued");
     assert.deepEqual(result.declinedKeys, ["ui"]);
+    assert.deepEqual(fixture.proposed, [
+      { key: "api", worker: 1 },
+      { key: "ui", worker: 2 },
+    ]);
     assert.deepEqual(
       fixture.delegated.map((call) => keyOf(call.clientRequestId)),
       ["api"],
@@ -293,12 +304,54 @@ it.effect("continues the plan on the first stall and pauses with a report on the
         yield* service.tick;
         assert.lengthOf(fixture.sent, 1);
         assert.include(fixture.sent[0]!, "Continuing the plan");
+        assert.include(fixture.sent[0]!, "no assignment is waiting to start");
+        assert.notInclude(fixture.sent[0]!, "merge");
         setArchitect(fixture, { latestRunId: RunId.make("run:architect-2") });
         yield* service.tick;
         const view = yield* service.view(architectId);
         assert.equal(view?.status, "paused");
         assert.include(view?.report ?? "", "stopped twice");
         assert.lengthOf(fixture.sent, 1);
+      }),
+    );
+  }),
+);
+
+it.effect("names the merges awaiting the user when it continues the plan", () =>
+  Effect.gen(function* () {
+    const fixture = makeFixture();
+    yield* withTeam(fixture, (service) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        for (const [item, status] of [
+          ["one", "awaiting_user"],
+          ["two", "awaiting_user"],
+          ["landed", "merged"],
+        ]) {
+          yield* sql`INSERT INTO merge_queue_items ${sql.insert({
+            item_id: `merge-queue:${item}`,
+            project_id: projectId,
+            trunk_ref: "main",
+            owner_thread_id: architectId,
+            owner_checkout: "/repo",
+            child_thread_id: `thread:${item}`,
+            child_title: item,
+            child_branch: `t3/${item}`,
+            child_worktree: `/worktrees/${item}`,
+            head_sha_at_enqueue: "abc123",
+            status,
+            enqueued_at: "2026-10-24T00:00:00.000Z",
+            updated_at: "2026-10-24T00:00:00.000Z",
+          })}`;
+        }
+        yield* assign(service, [work("api")]);
+        fixture.tasks.set("api", { status: "completed", result: "Built it." });
+        setArchitect(fixture, { activeRunId: null });
+        yield* service.tick;
+        yield* service.tick;
+        assert.lengthOf(fixture.sent, 1);
+        assert.include(fixture.sent[0]!, "2 merges wait for the user");
+        assert.include(fixture.sent[0]!, "merge queue");
       }),
     );
   }),

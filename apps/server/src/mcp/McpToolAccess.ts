@@ -21,6 +21,7 @@ import {
   type DispatchModeRefusal,
 } from "../orchestration-v2/DispatchModeLimit.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
+import { teamMessage } from "../team/teamMessages.ts";
 import { assertNotLinked, assertSameLink, callerLinkOrigin } from "./linkOrigin.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import { resolveInteractionMode, resolveRuntimeMode } from "./delegatedTaskModes.ts";
@@ -249,6 +250,12 @@ export const startsThreads = <P, A, E, R>(
   linked: "stamped" | { readonly refused: string },
 ) => {
   const started = Effect.fn("McpToolAccess.started")(function* (caller: Caller, params: P) {
+    if (caller.caller?.team !== undefined) {
+      return yield* new OrchestratorMcpFailure({
+        code: "invalid_request",
+        message: teamMessage.assignThroughTeam,
+      });
+    }
     const requested = modes(params);
     return {
       runtimeMode: yield* resolveRuntimeMode(caller.limits.runtimeMode, requested.runtimeMode),

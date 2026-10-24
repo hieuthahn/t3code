@@ -25,6 +25,9 @@ export function describeWait(reason: TeamWaitReason): string {
 }
 
 export const teamMessage = {
+  /** Why an architect's own delegation or thread launch is refused. */
+  assignThroughTeam:
+    "This thread runs a team. Give work to its workers with team_assign, which keeps the team's limits.",
   /** Why a worker that ended while its team sat interrupted failed. */
   stoppedByRestart: "The app restarted while this worker ran.",
   /** The worker's brief, with the report size its architect reads. */

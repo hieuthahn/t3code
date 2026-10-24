@@ -129,6 +129,7 @@ import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
 import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
 import { resolveTeamTarget } from "../team/resolveTeamTarget.ts";
+import { teamMessage } from "../team/teamMessages.ts";
 
 const DEFAULT_WAIT_TIMEOUT_MS = 10 * 60 * 1_000;
 const MAX_WAIT_TIMEOUT_MS = 60 * 60 * 1_000;
@@ -667,9 +668,6 @@ function canExposeTaskRunResult(run: OrchestrationV2Run | undefined): run is Orc
 function stablePart(value: string): string {
   return encodeURIComponent(value);
 }
-
-const TEAM_DELEGATION_REFUSAL =
-  "This thread runs a team. Give work to its workers with team_assign, which keeps the team's limits.";
 
 export type ChildPlanLaunch =
   | { readonly key: string; readonly taskId: NodeId; readonly childThreadId: ThreadId | null }
@@ -2108,7 +2106,7 @@ const make = Effect.gen(function* () {
     }
     const { scope, parent } = yield* loadThreadCaller(callerScope, "delegate_task");
     if (caller === "agent" && parent.thread.team !== undefined) {
-      return yield* failure("invalid_request", TEAM_DELEGATION_REFUSAL);
+      return yield* failure("invalid_request", teamMessage.assignThroughTeam);
     }
     if (
       input.target?.projectId !== undefined &&
@@ -2457,7 +2455,7 @@ const make = Effect.gen(function* () {
     proposeTasks: Effect.fn("OrchestratorMcpService.proposeTasks")(function* (callerScope, input) {
       const { parent } = yield* loadThreadCaller(callerScope, "propose_tasks");
       if (parent.thread.team !== undefined) {
-        return yield* failure("invalid_request", TEAM_DELEGATION_REFUSAL);
+        return yield* failure("invalid_request", teamMessage.assignThroughTeam);
       }
       const plan = yield* askChildPlan(callerScope, input);
       const launches = yield* Effect.forEach(plan.children, (child) =>
@@ -2968,6 +2966,9 @@ const make = Effect.gen(function* () {
     createThreads: Effect.fn("OrchestratorMcpService.createThreads")(
       function* (callerScope, input) {
         const { scope, parent } = yield* loadThreadCaller(callerScope, "create_threads");
+        if (parent.thread.team !== undefined) {
+          return yield* failure("invalid_request", teamMessage.assignThroughTeam);
+        }
         const parentRun = ThreadManagementService.latestActiveRun(parent);
         if (
           parentRun === undefined ||

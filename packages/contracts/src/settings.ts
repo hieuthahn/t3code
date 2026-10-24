@@ -1722,6 +1722,7 @@ export const ServerSettingsPatch = Schema.Struct({
           concise: Schema.optionalKey(TokenSaverConciseLevel),
           leanCode: Schema.optionalKey(Schema.Boolean),
           quietTools: Schema.optionalKey(Schema.Boolean),
+          rtk: Schema.optionalKey(Schema.Boolean),
         }),
       ),
     }),

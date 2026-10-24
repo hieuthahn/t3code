@@ -48,7 +48,7 @@ function compare(groups: ReadonlyArray<TokenSaverUsageGroup>): TokenSaverCompari
 /** Averages each side only once it has the minimum sample, so a handful of turns shows no number. */
 export function summarizeTokenSaverUsage(
   groups: ReadonlyArray<TokenSaverUsageGroup>,
-): TokenSaverStats {
+): Omit<TokenSaverStats, "rtkAvailable"> {
   return {
     thread: compare(groups.filter((group) => group.inThread)),
     overall: compare(groups),

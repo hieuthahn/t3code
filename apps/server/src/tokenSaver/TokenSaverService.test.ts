@@ -1,4 +1,6 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { RunAttemptId, ThreadId } from "@t3tools/contracts";
+import { CommandAvailability } from "@t3tools/shared/shell";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -11,10 +13,14 @@ import * as TokenSaver from "./TokenSaverService.ts";
 const THREAD = ThreadId.make("thread-token-saver");
 const OTHER = ThreadId.make("thread-token-saver-other");
 
-const layer = (enabled: boolean) =>
+const layer = (enabled: boolean, rtk = false) =>
   TokenSaver.layer.pipe(
     Layer.provideMerge(SqlitePersistence.layerMemory),
     Layer.provide(ServerSettings.layerTest({ tokenSaver: { enabled } })),
+    Layer.provide(NodeServices.layer),
+    Layer.provide(
+      Layer.succeed(CommandAvailability, (command) => Effect.succeed(rtk && command === "rtk")),
+    ),
   );
 
 const insertTurn = Effect.fn(function* (input: {
@@ -52,18 +58,30 @@ describe("TokenSaverService", () => {
       assert.equal(fromDefaults.profileKey, "concise-lite+quiet-tools");
       assert.include(fromDefaults.instructions ?? "", "### Quiet tools");
       const overridden = yield* service.resolveTurn({
-        tokenSaver: { concise: "ultra", leanCode: true, quietTools: false },
+        tokenSaver: { concise: "ultra", leanCode: true, quietTools: false, rtk: false },
       });
       assert.equal(overridden.profileKey, "concise-ultra+lean-code");
       assert.notInclude(overridden.instructions ?? "", "### Quiet tools");
     }).pipe(Effect.provide(layer(true))),
   );
 
+  it.effect.each([false, true])("sends the rtk pack only from a host with rtk (%s)", (rtk) =>
+    Effect.gen(function* () {
+      const service = yield* TokenSaver.TokenSaverService;
+      const turn = yield* service.resolveTurn({
+        tokenSaver: { concise: "off", leanCode: false, quietTools: true, rtk: true },
+      });
+      assert.equal(turn.profileKey, rtk ? "quiet-tools+rtk" : "quiet-tools");
+      assert.equal((turn.instructions ?? "").includes("### RTK compression"), rtk);
+      assert.equal((yield* service.stats(THREAD)).rtkAvailable, rtk);
+    }).pipe(Effect.provide(layer(true, rtk))),
+  );
+
   it.effect("injects nothing while Token Saver is off in settings", () =>
     Effect.gen(function* () {
       const service = yield* TokenSaver.TokenSaverService;
       const turn = yield* service.resolveTurn({
-        tokenSaver: { concise: "full", leanCode: true, quietTools: true },
+        tokenSaver: { concise: "full", leanCode: true, quietTools: true, rtk: true },
       });
       assert.deepEqual(turn, { profileKey: "off", instructions: undefined });
     }).pipe(Effect.provide(layer(false))),

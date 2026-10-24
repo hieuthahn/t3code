@@ -35,6 +35,8 @@ import { useComposerMenuProps } from "./composerEventScope";
 /** Drivers whose adapter receives the rules; matches the server's TOKEN_SAVER_DRIVERS. */
 const SUPPORTED_DRIVERS: ReadonlySet<string> = new Set(["claudeAgent", "codex"]);
 
+export const supportsTokenSaver = (driver: ProviderDriverKind) => SUPPORTED_DRIVERS.has(driver);
+
 const CONCISE_LEVELS = [
   { level: "lite", label: "Lite" },
   { level: "full", label: "Full" },
@@ -152,11 +154,15 @@ function StatsTable(props: { readonly stats: TokenSaverStats }) {
   );
 }
 
-/** The thread's Token Saver packs, their estimated and measured saving; absent until enabled in settings. */
+/** The thread's Token Saver packs and their estimated and measured saving. */
 export function ComposerTokenSaverControl(props: {
   readonly threadRef: ScopedThreadRef;
   readonly driver: ProviderDriverKind;
   readonly size?: ComposerControlSize;
+  /** Set while the footer hides this button, to open it from the overflow menu instead. */
+  readonly open?: boolean;
+  readonly onOpenChange?: (open: boolean) => void;
+  readonly anchor?: Element | null;
 }) {
   const { environmentId, threadId } = props.threadRef;
   const size = props.size ?? "sm";
@@ -175,8 +181,8 @@ export function ComposerTokenSaverControl(props: {
   const [stats, setStats] = useState<TokenSaverStats | null>(null);
   const [statsError, setStatsError] = useState(false);
 
-  if (!settings.enabled || thread === null || !SUPPORTED_DRIVERS.has(props.driver)) return null;
-  const defaults = defaultsDraft ?? settings.defaults;
+  if (thread === null || !supportsTokenSaver(props.driver)) return null;
+  const defaults = defaultsDraft ?? settings.newThreads;
   const config = draft ?? thread.tokenSaver ?? defaults;
   const rtkAvailable = stats?.rtkAvailable ?? false;
   const effective = rtkAvailable ? config : { ...config, rtk: false };
@@ -192,6 +198,15 @@ export function ComposerTokenSaverControl(props: {
     setDraft(next);
     void updateMetadata({ environmentId, input: { threadId, tokenSaver: next } });
   };
+  const loadMeasurements = async () => {
+    const result = await loadStats({ environmentId, input: { threadId } });
+    if (result._tag === "Success") {
+      setStats(result.value);
+      setStatsError(false);
+    } else {
+      setStatsError(true);
+    }
+  };
   const togglePack = (pack: TokenSaverPack, on: boolean) =>
     save(
       pack === "concise"
@@ -204,16 +219,7 @@ export function ComposerTokenSaverControl(props: {
   const saveDefaults = (next: TokenSaverConfig) => {
     if (thread.tokenSaver === undefined || thread.tokenSaver === null) save(config);
     setDefaultsDraft(next);
-    updateSettings({ tokenSaver: { defaults: next } });
-  };
-  const refreshStats = async () => {
-    const result = await loadStats({ environmentId, input: { threadId } });
-    if (result._tag === "Success") {
-      setStats(result.value);
-      setStatsError(false);
-    } else {
-      setStatsError(true);
-    }
+    updateSettings({ tokenSaver: { newThreads: next } });
   };
 
   const rtkReason = statsError
@@ -224,11 +230,15 @@ export function ComposerTokenSaverControl(props: {
 
   return (
     <Popover
-      onOpenChange={(open) => {
-        if (!open) return;
+      {...(props.open === undefined ? {} : { open: props.open })}
+      onOpenChange={(open) => props.onOpenChange?.(open)}
+      onOpenChangeComplete={(open) => {
+        if (open) {
+          void loadMeasurements();
+          return;
+        }
         setDraft(null);
         setDefaultsDraft(null);
-        void refreshStats();
       }}
     >
       <PopoverTrigger
@@ -250,7 +260,13 @@ export function ComposerTokenSaverControl(props: {
           </span>
         ) : null}
       </PopoverTrigger>
-      <PopoverPopup {...floatingLayerProps} side="top" align="start" className="w-80">
+      <PopoverPopup
+        {...floatingLayerProps}
+        {...(props.anchor ? { anchor: props.anchor } : {})}
+        side="top"
+        align="start"
+        className="w-80"
+      >
         <div className="grid gap-3">
           <div className="flex items-start justify-between gap-3">
             <PopoverTitle>Token saver</PopoverTitle>

@@ -16,7 +16,6 @@ import { render } from "../../../test/render";
 import { ComposerTokenSaverControl } from "./ComposerTokenSaverControl";
 
 const state = vi.hoisted(() => ({
-  enabled: true,
   defaults: null as TokenSaverConfig | null,
   override: null as TokenSaverConfig | null,
   stats: null as TokenSaverStats | null,
@@ -28,7 +27,7 @@ vi.mock("~/hooks/useSettings", () => ({
   useEnvironmentSettings: (
     _environmentId: unknown,
     select: (settings: { tokenSaver: unknown }) => unknown,
-  ) => select({ tokenSaver: { enabled: state.enabled, defaults: state.defaults } }),
+  ) => select({ tokenSaver: { newThreads: state.defaults } }),
   useUpdateEnvironmentSettings: () => (patch: unknown) => {
     state.settingsPatches.push(patch);
   },
@@ -57,12 +56,11 @@ const sample = (turns: number, averageOutputTokens: number | null) => ({
 });
 
 function setup(input: {
-  readonly enabled?: boolean;
+  readonly newThreads?: TokenSaverConfig;
   readonly override?: TokenSaverConfig | null;
   readonly rtkAvailable?: boolean;
 }) {
-  state.enabled = input.enabled ?? true;
-  state.defaults = DEFAULT_TOKEN_SAVER_CONFIG;
+  state.defaults = input.newThreads ?? DEFAULT_TOKEN_SAVER_CONFIG;
   state.override = input.override ?? null;
   state.updates = [];
   state.settingsPatches = [];
@@ -148,7 +146,7 @@ it("saves the thread's packs as the default for new threads", async () => {
   await expect.element(startLikeThis).not.toBeChecked();
   await userEvent.click(startLikeThis);
 
-  expect(state.settingsPatches).toEqual([{ tokenSaver: { defaults: own } }]);
+  expect(state.settingsPatches).toEqual([{ tokenSaver: { newThreads: own } }]);
   await expect.element(startLikeThis).toBeChecked();
 });
 
@@ -185,22 +183,53 @@ it("keeps a defaults-following thread's packs when new threads stop using them",
       input: { threadId: threadRef.threadId, tokenSaver: DEFAULT_TOKEN_SAVER_CONFIG },
     },
   ]);
-  expect(state.settingsPatches).toEqual([{ tokenSaver: { defaults: TOKEN_SAVER_OFF_CONFIG } }]);
+  expect(state.settingsPatches).toEqual([{ tokenSaver: { newThreads: TOKEN_SAVER_OFF_CONFIG } }]);
   await expect.element(page.getByRole("switch", { name: "Quiet tools" })).toBeChecked();
 });
 
-it("stays out of the composer until Token Saver is on, and for unsupported providers", async () => {
-  setup({ enabled: false });
-  await using screen = await render(
+it("is always in the composer with fresh settings, off until a pack turns on", async () => {
+  setup({ newThreads: TOKEN_SAVER_OFF_CONFIG });
+  await using _screen = await render(
     <ComposerTokenSaverControl
       threadRef={threadRef}
       driver={ProviderDriverKind.make("claudeAgent")}
     />,
   );
-  expect(screen.container.querySelector("button")).toBeNull();
+  await openPanel();
+  await expect.element(page.getByRole("status")).toHaveTextContent("Off");
+  await userEvent.click(page.getByRole("switch", { name: "Quiet tools" }));
+  await expect
+    .element(page.getByRole("status").getByText("−15% est.", { exact: true }))
+    .toBeVisible();
+});
 
+it("opens from the overflow menu while its own button is hidden", async () => {
   setup({});
+  const onOpenChange = vi.fn();
+  await using screen = await render(
+    <ComposerTokenSaverControl
+      threadRef={threadRef}
+      driver={ProviderDriverKind.make("claudeAgent")}
+      open={false}
+      onOpenChange={onOpenChange}
+    />,
+  );
   await screen.rerender(
+    <ComposerTokenSaverControl
+      threadRef={threadRef}
+      driver={ProviderDriverKind.make("claudeAgent")}
+      open
+      onOpenChange={onOpenChange}
+    />,
+  );
+  await expect.element(page.getByRole("switch", { name: "RTK compression" })).toBeEnabled();
+  await userEvent.keyboard("{Escape}");
+  expect(onOpenChange).toHaveBeenLastCalledWith(false);
+});
+
+it("stays out of the composer for unsupported providers", async () => {
+  setup({});
+  await using screen = await render(
     <ComposerTokenSaverControl
       threadRef={threadRef}
       driver={ProviderDriverKind.make("opencode")}

@@ -5,7 +5,9 @@ import {
   canAddTeamWorker,
   initialTeamSetup,
   leadGuidanceBytesLeft,
-  teamControlLabel,
+  teamControlName,
+  teamModelSuffix,
+  teamWithArchitect,
   upsertTeamProfile,
 } from "./teamSetupDraft";
 
@@ -56,10 +58,31 @@ describe("team setup helpers", () => {
     expect(leadGuidanceBytesLeft("ệ")).toBe(1996);
   });
 
-  it("labels the composer control with the team's size", () => {
-    expect(teamControlLabel(null)).toBe("Team");
-    expect(teamControlLabel({ ...saved, workers: [worker] })).toBe("Team · 1 worker");
-    expect(teamControlLabel({ ...saved, workers: [worker, worker] })).toBe("Team · 2 workers");
+  it("names the composer control after the team's size", () => {
+    expect(teamControlName(null)).toBe("Team");
+    expect(teamControlName({ ...saved, workers: [worker] })).toBe("Team, 1 worker");
+    expect(teamControlName({ ...saved, workers: [worker, worker] })).toBe("Team, 2 workers");
+  });
+
+  it("counts the worker models that differ from the selected one", () => {
+    const team = { ...saved, architect };
+    const other = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" };
+    expect(teamModelSuffix(null, architect)).toBeNull();
+    expect(teamModelSuffix({ ...team, workers: [architect] }, architect)).toBeNull();
+    expect(teamModelSuffix({ ...team, workers: [worker, worker] }, architect)).toBe("+1 model");
+    expect(teamModelSuffix({ ...team, workers: [worker, other, architect] }, architect)).toBe(
+      "+2 models",
+    );
+  });
+
+  it("moves the architect to the model picked in the composer", () => {
+    expect(
+      teamWithArchitect(saved, {
+        ...architect,
+        options: [{ id: "effort", value: "high" }],
+        accountChoice: "pinned",
+      }),
+    ).toEqual({ ...saved, architect: { ...architect, options: [{ id: "effort", value: "high" }] } });
   });
 
   it("replaces a saved profile by id and appends a new one", () => {

@@ -296,9 +296,7 @@ it.effect("starts nothing the user approved just as the team stopped", () =>
         const refused = yield* assign(service, [work("api")]).pipe(Effect.flip);
         assert.include(refused.message, "The user stopped the team.");
         assert.deepEqual(fixture.delegated, []);
-        assert.deepEqual(fixture.launches, [
-          { key: "api", failure: "The user stopped the team." },
-        ]);
+        assert.deepEqual(fixture.launches, [{ key: "api", failure: "The user stopped the team." }]);
         yield* service.tick;
         assert.deepEqual(fixture.delegated, []);
       }),

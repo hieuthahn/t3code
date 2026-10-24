@@ -213,15 +213,25 @@ export const layerWith = (options: { readonly tickEvery: Duration.Duration | nul
             const worker = input.assignments.find((assignment) => assignment.key === key)?.worker;
             return worker === undefined ? {} : { worker };
           };
+          const closeReason = store.latestRun(thread.threadId).pipe(
+            Effect.map((latest) =>
+              latest?.run_id === run.run_id && isOpen(latest)
+                ? undefined
+                : teamMessage.stoppedByUser,
+            ),
+            Effect.orElseSucceed(() => undefined),
+          );
           const decision =
             team.autonomous === true
               ? {
                   status: "approved" as const,
                   approvedKeys: incoming.map((item) => item.key),
                   declinedKeys: [],
+                  recordLaunches: () => Effect.void,
                 }
               : yield* orchestrator.askChildPlan(callerScope, {
                   reason: input.reason,
+                  closeReason,
                   clientRequestId: `team:${run.run_id}:round:${run.rounds + 1}`,
                   tasks: incoming.map((item) => ({
                     key: item.key,
@@ -237,28 +247,46 @@ export const layerWith = (options: { readonly tickEvery: Duration.Duration | nul
                   })),
                 });
           const declinedKeys = [...decision.declinedKeys];
-          if (decision.status === "timed_out" || decision.status === "cancelled") {
-            return { status: decision.status, started: [], waiting: [], failed: [], declinedKeys };
-          }
           const approved = incoming.filter((item) => decision.approvedKeys.includes(item.key));
-          if (approved.length === 0) {
-            return {
-              status: "declined" as const,
-              started: [],
-              waiting: [],
-              failed: [],
-              declinedKeys,
-            };
-          }
           return yield* lock
             .withPermits(1)(
               Effect.gen(function* () {
-                yield* store.queueAssignments(run, existing, approved);
-                yield* store.updateRun(run, { rounds: run.rounds + 1, stalls: 0 });
+                const fresh = yield* store.latestRun(thread.threadId);
+                if (fresh === null || fresh.run_id !== run.run_id || !isOpen(fresh)) {
+                  if (approved.length > 0) {
+                    yield* decision.recordLaunches(
+                      approved.map((item) => ({
+                        key: item.key,
+                        failure: teamMessage.stoppedByUser,
+                      })),
+                    );
+                  }
+                  return yield* failure("invalid_request", teamMessage.stoppedByUser);
+                }
+                if (decision.status === "timed_out" || decision.status === "cancelled") {
+                  return {
+                    status: decision.status,
+                    started: [],
+                    waiting: [],
+                    failed: [],
+                    declinedKeys,
+                  };
+                }
+                if (approved.length === 0) {
+                  return {
+                    status: "declined" as const,
+                    started: [],
+                    waiting: [],
+                    failed: [],
+                    declinedKeys,
+                  };
+                }
+                yield* store.queueAssignments(fresh, existing, approved);
+                yield* store.updateRun(fresh, { rounds: fresh.rounds + 1, stalls: 0 });
                 const current = yield* store.assignmentsOf(run.run_id);
-                const plan = planFor(run, team, current, true);
+                const plan = planFor(fresh, team, current, true);
                 const { started, failed } = yield* work.startAssignments(
-                  run,
+                  fresh,
                   team,
                   current,
                   plan.start,
@@ -277,7 +305,11 @@ export const layerWith = (options: { readonly tickEvery: Duration.Duration | nul
                 };
               }),
             )
-            .pipe(Effect.mapError(asMcpFailure));
+            .pipe(
+              Effect.mapError((error) =>
+                error._tag === "TeamError" ? asMcpFailure(error) : error,
+              ),
+            );
         },
       );
 
@@ -384,7 +416,7 @@ export const layerWith = (options: { readonly tickEvery: Duration.Duration | nul
             }
             yield* store.updateRun(run, {
               status: "stopped",
-              report: "The user stopped the team.",
+              report: teamMessage.stoppedByUser,
             });
           }),
         );
@@ -392,7 +424,7 @@ export const layerWith = (options: { readonly tickEvery: Duration.Duration | nul
           .stopDelegatedTasks({
             threadId: run.thread_id,
             commandId: CommandId.make(`team:${run.run_id}:stop`),
-            reason: "The user stopped the team.",
+            reason: teamMessage.stoppedByUser,
           })
           .pipe(
             Effect.mapError(

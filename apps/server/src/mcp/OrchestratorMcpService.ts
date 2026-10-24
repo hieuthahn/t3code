@@ -674,6 +674,8 @@ export interface ChildPlanInput extends OrchestratorMcpProposeTasksInput {
   readonly tasks: ReadonlyArray<
     OrchestratorMcpProposeTasksInput["tasks"][number] & { readonly worker?: number }
   >;
+  /** Read while the card waits; a reason closes the undecided card with it. */
+  readonly closeReason?: Effect.Effect<string | undefined>;
 }
 
 export type ChildPlanLaunch =
@@ -1979,7 +1981,7 @@ const make = Effect.gen(function* () {
     const key = yield* requestKey(input.clientRequestId);
     const planId = `child-plan:${stablePart(threadId)}:${stablePart(key)}`;
     const turnItemId = TurnItemId.make(`turn-item:${planId}`);
-    const record = (planStatus: "pending" | "expired" | "cancelled") =>
+    const record = (planStatus: "pending" | "expired" | "cancelled", closedReason?: string) =>
       threadManagement
         .dispatch({
           type: "child_plan.record",
@@ -1992,6 +1994,7 @@ const make = Effect.gen(function* () {
           reason: input.reason,
           children,
           planStatus,
+          ...(closedReason === undefined ? {} : { closedReason }),
         })
         .pipe(
           Effect.mapError((error) =>
@@ -2022,6 +2025,11 @@ const make = Effect.gen(function* () {
         if (card !== undefined && card.planStatus !== "pending") return card;
         if (current === undefined || ThreadManagementService.isTerminalRunStatus(current.status)) {
           yield* record("cancelled");
+          return undefined;
+        }
+        const closedReason = input.closeReason === undefined ? undefined : yield* input.closeReason;
+        if (closedReason !== undefined) {
+          yield* record("cancelled", closedReason);
           return undefined;
         }
         yield* Effect.sleep(Duration.millis(SECRET_REQUEST_POLL_INTERVAL_MS));

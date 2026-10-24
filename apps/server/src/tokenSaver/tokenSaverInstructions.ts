@@ -56,14 +56,13 @@ const RTK_RULES: ReadonlyArray<string> = [
 const section = (title: string, rules: ReadonlyArray<string>) =>
   [`### ${title}`, ...rules.map((rule) => `- ${rule}`)].join("\n");
 
-/** The config a turn runs with: nothing while the master switch is off, else the thread's own or the defaults. */
+/** The config a turn runs with: the thread's own packs, else the ones new threads start with. */
 export function effectiveTokenSaverConfig(
   settings: TokenSaverSettings,
   threadOverride: TokenSaverConfig | undefined,
   tools: { readonly rtk: boolean },
 ): TokenSaverConfig | undefined {
-  if (!settings.enabled) return undefined;
-  const chosen = threadOverride ?? settings.defaults;
+  const chosen = threadOverride ?? settings.newThreads;
   const config = chosen.rtk && !tools.rtk ? { ...chosen, rtk: false } : chosen;
   return isTokenSaverConfigActive(config) ? config : undefined;
 }

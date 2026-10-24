@@ -51,6 +51,7 @@ import {
 import { PullRequestMergeMethod } from "./pullRequest.ts";
 import {
   DEFAULT_TOKEN_SAVER_CONFIG,
+  TOKEN_SAVER_OFF_CONFIG,
   TokenSaverConfig,
   TokenSaverConciseLevel,
 } from "./tokenSaver.ts";
@@ -1011,12 +1012,50 @@ export const BackgroundActivitySettings = Schema.Struct({
 }).pipe(Schema.withDecodingDefault(Effect.succeed({})));
 export type BackgroundActivitySettings = typeof BackgroundActivitySettings.Type;
 
-export const TokenSaverSettings = Schema.Struct({
-  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  defaults: TokenSaverConfig.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_TOKEN_SAVER_CONFIG)),
+const LegacyTokenSaverDefaults = Schema.Struct({
+  concise: Schema.optionalKey(TokenSaverConciseLevel),
+  leanCode: Schema.optionalKey(Schema.Boolean),
+  quietTools: Schema.optionalKey(Schema.Boolean),
+});
+
+const TokenSaverSettingsStored = Schema.Struct({
+  newThreads: Schema.optionalKey(TokenSaverConfig),
+  enabled: Schema.optionalKey(Schema.Boolean),
+  defaults: Schema.optionalKey(LegacyTokenSaverDefaults),
+});
+
+/**
+ * Older servers gated every thread behind `enabled` and kept the packs in `defaults`; only a
+ * switched-on saver carries those packs over, so nothing starts saving that was off before.
+ */
+const TokenSaverSettingsCurrent = Schema.Struct({ newThreads: TokenSaverConfig });
+
+export const TokenSaverSettings = TokenSaverSettingsStored.pipe(
+  Schema.decodeTo<typeof TokenSaverSettingsCurrent, typeof TokenSaverSettingsStored>(
+    TokenSaverSettingsCurrent,
+    SchemaTransformation.transform<
+      typeof TokenSaverSettingsCurrent.Encoded,
+      typeof TokenSaverSettingsStored.Type
+    >({
+      decode: (stored) => ({
+        newThreads:
+          stored.newThreads ??
+          (stored.enabled === true
+            ? { ...DEFAULT_TOKEN_SAVER_CONFIG, ...stored.defaults }
+            : TOKEN_SAVER_OFF_CONFIG),
+      }),
+      encode: ({ newThreads }) => ({
+        newThreads: {
+          concise: newThreads.concise ?? "off",
+          leanCode: newThreads.leanCode ?? false,
+          quietTools: newThreads.quietTools ?? false,
+          rtk: newThreads.rtk ?? false,
+        },
+      }),
+    }),
   ),
-}).pipe(Schema.withDecodingDefault(Effect.succeed({})));
+  Schema.withDecodingDefault(Effect.succeed({})),
+);
 export type TokenSaverSettings = typeof TokenSaverSettings.Type;
 
 export const TeamSettings = Schema.Struct({
@@ -1328,7 +1367,7 @@ export const ServerSettings = Schema.Struct({
   promptSuggestions: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /** Whether a multi-step turn ends with a recap card under its last message. */
   turnRecaps: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  /** Response-style packs injected into the system prompt; a thread may override `defaults`. */
+  /** Response-style packs a thread runs until it picks its own in the composer's Saver popover. */
   tokenSaver: TokenSaverSettings,
   /** Saved Team mode setups; a thread keeps its own copy once it runs as a team. */
   team: TeamSettings,
@@ -1716,8 +1755,7 @@ export const ServerSettingsPatch = Schema.Struct({
   ),
   tokenSaver: Schema.optionalKey(
     Schema.Struct({
-      enabled: Schema.optionalKey(Schema.Boolean),
-      defaults: Schema.optionalKey(
+      newThreads: Schema.optionalKey(
         Schema.Struct({
           concise: Schema.optionalKey(TokenSaverConciseLevel),
           leanCode: Schema.optionalKey(Schema.Boolean),

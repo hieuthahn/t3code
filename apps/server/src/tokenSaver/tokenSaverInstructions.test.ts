@@ -74,16 +74,15 @@ describe("buildTokenSaverInstructions", () => {
 });
 
 describe("effectiveTokenSaverConfig", () => {
-  const enabled = { enabled: true, defaults: DEFAULT_TOKEN_SAVER_CONFIG };
+  const enabled = { newThreads: DEFAULT_TOKEN_SAVER_CONFIG };
 
-  it("injects nothing while the master switch is off, even for an override", () => {
-    expect(
-      effectiveTokenSaverConfig(
-        { ...enabled, enabled: false },
-        { concise: "ultra", leanCode: true, quietTools: true, rtk: true },
-        TOOLS,
-      ),
-    ).toBeUndefined();
+  it("injects nothing for a thread without packs while new threads start off", () => {
+    expect(effectiveTokenSaverConfig({ newThreads: OFF }, undefined, TOOLS)).toBeUndefined();
+  });
+
+  it("runs a thread's own packs even while new threads start off", () => {
+    const override: TokenSaverConfig = { ...OFF, concise: "ultra" };
+    expect(effectiveTokenSaverConfig({ newThreads: OFF }, override, TOOLS)).toEqual(override);
   });
 
   it("prefers the thread's override to the defaults", () => {

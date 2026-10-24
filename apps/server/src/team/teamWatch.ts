@@ -3,8 +3,9 @@ import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 
 import type * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+import { ACTIVE_STATUSES } from "../mergeQueue/mergeQueueRows.ts";
 import { teamMessage } from "./teamMessages.ts";
-import type { TeamRunRow } from "./teamRows.ts";
+import type { TeamMerge, TeamRunRow } from "./teamRows.ts";
 import type { TeamStore } from "./teamStore.ts";
 import { decideTeamTick } from "./teamSupervisor.ts";
 import { planFor, type TeamWork } from "./teamWork.ts";
@@ -17,8 +18,12 @@ export const makeTeamWatch = (input: {
   readonly tell: (projectId: ProjectId, threadId: ThreadId, text: string) => Effect.Effect<void>;
   /** The architect run a wake followed, by team run, so one idle stretch gets one wake. */
   readonly wokeAfter: Map<string, string | null>;
+  /** The merges each team run saw open and has not yet told its architect about. */
+  readonly awaitedMerges: Map<string, ReadonlySet<string>>;
 }) => {
-  const { store, work, threads, tell, wokeAfter } = input;
+  const { store, work, threads, tell, wokeAfter, awaitedMerges } = input;
+  const isOpen = (merge: TeamMerge) =>
+    (ACTIVE_STATUSES as ReadonlyArray<string>).includes(merge.status);
   /** When each watched thread last recorded an event, by its event sequence. */
   const seen = new Map<ThreadId, { readonly sequence: number; readonly at: number }>();
   const shellOf = (threadId: ThreadId) =>
@@ -87,6 +92,11 @@ export const makeTeamWatch = (input: {
     const startable = [...plan.waits].flatMap(([key, reason]) =>
       reason._tag === "next_turn" ? [key] : [],
     );
+    const merges = yield* store.mergesOf(run.thread_id);
+    const awaited = awaitedMerges.get(run.run_id) ?? new Set<string>();
+    const openIds = merges.filter(isOpen).map((merge) => merge.item_id);
+    const settled = merges.filter((merge) => awaited.has(merge.item_id) && !isOpen(merge));
+    awaitedMerges.set(run.run_id, new Set([...openIds, ...settled.map((merge) => merge.item_id)]));
     const actions = decideTeamTick({
       status: fresh.status,
       now: at,
@@ -103,6 +113,8 @@ export const makeTeamWatch = (input: {
       wokeForLatestRun:
         wokeAfter.has(run.run_id) && wokeAfter.get(run.run_id) === shell.latestRunId,
       openAssignments: current.filter((row) => row.status === "waiting").length,
+      openMerges: openIds.length,
+      settledMerges: settled.length,
       stalls: fresh.stalls,
       lastStallRunId: fresh.last_stall_run_id,
     });
@@ -110,15 +122,16 @@ export const makeTeamWatch = (input: {
       switch (action.type) {
         case "wake_architect":
           wokeAfter.set(run.run_id, shell.latestRunId);
-          yield* tell(shell.projectId, run.thread_id, teamMessage.startQueued(startable));
+          if (action.reason === "start_queued") {
+            yield* tell(shell.projectId, run.thread_id, teamMessage.startQueued(startable));
+            break;
+          }
+          awaitedMerges.set(run.run_id, new Set(openIds));
+          yield* tell(shell.projectId, run.thread_id, teamMessage.mergesSettled(settled));
           break;
         case "continue_plan":
           yield* store.updateRun(fresh, { stalls: action.stalls, last_stall_run_id: action.runId });
-          yield* tell(
-            shell.projectId,
-            run.thread_id,
-            teamMessage.continuePlan(yield* store.pendingMergesOf(run.thread_id)),
-          );
+          yield* tell(shell.projectId, run.thread_id, teamMessage.continuePlan);
           break;
         case "pause":
           yield* store.updateRun(fresh, {

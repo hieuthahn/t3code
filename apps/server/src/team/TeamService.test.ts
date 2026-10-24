@@ -305,7 +305,6 @@ it.effect("continues the plan on the first stall and pauses with a report on the
         assert.lengthOf(fixture.sent, 1);
         assert.include(fixture.sent[0]!, "Continuing the plan");
         assert.include(fixture.sent[0]!, "no assignment is waiting to start");
-        assert.notInclude(fixture.sent[0]!, "merge");
         setArchitect(fixture, { latestRunId: RunId.make("run:architect-2") });
         yield* service.tick;
         const view = yield* service.view(architectId);
@@ -317,41 +316,91 @@ it.effect("continues the plan on the first stall and pauses with a report on the
   }),
 );
 
-it.effect("names the merges awaiting the user when it continues the plan", () =>
+const insertMerge = (title: string, status: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`INSERT INTO merge_queue_items ${sql.insert({
+      item_id: `merge-queue:${title}`,
+      project_id: projectId,
+      trunk_ref: "main",
+      owner_thread_id: architectId,
+      owner_checkout: "/repo",
+      child_thread_id: `thread:${title}`,
+      child_title: title,
+      child_branch: `t3/${title}`,
+      child_worktree: `/worktrees/${title}`,
+      head_sha_at_enqueue: "abc123",
+      status,
+      enqueued_at: "2026-10-24T00:00:00.000Z",
+      updated_at: "2026-10-24T00:00:00.000Z",
+    })}`;
+  });
+
+const setMergeStatus = (title: string, status: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`UPDATE merge_queue_items SET status = ${status} WHERE item_id = ${`merge-queue:${title}`}`;
+  });
+
+/** The architect finished its round and idles while one of its merges waits for the user. */
+const idleWithMergeWaiting = (service: TeamService.TeamService["Service"], fixture: Fixture) =>
+  Effect.gen(function* () {
+    yield* insertMerge("Landed earlier", "merged");
+    yield* insertMerge("Add subtract", "awaiting_user");
+    yield* assign(service, [work("api")]);
+    fixture.tasks.set("api", { status: "completed", result: "Built it." });
+    setArchitect(fixture, { activeRunId: null });
+    yield* service.tick;
+    yield* service.tick;
+  });
+
+it.effect("holds the team without a stall while a merge waits for the user or lands", () =>
   Effect.gen(function* () {
     const fixture = makeFixture();
     yield* withTeam(fixture, (service) =>
       Effect.gen(function* () {
-        const sql = yield* SqlClient.SqlClient;
-        for (const [item, status] of [
-          ["one", "awaiting_user"],
-          ["two", "awaiting_user"],
-          ["landed", "merged"],
-        ]) {
-          yield* sql`INSERT INTO merge_queue_items ${sql.insert({
-            item_id: `merge-queue:${item}`,
-            project_id: projectId,
-            trunk_ref: "main",
-            owner_thread_id: architectId,
-            owner_checkout: "/repo",
-            child_thread_id: `thread:${item}`,
-            child_title: item,
-            child_branch: `t3/${item}`,
-            child_worktree: `/worktrees/${item}`,
-            head_sha_at_enqueue: "abc123",
-            status,
-            enqueued_at: "2026-10-24T00:00:00.000Z",
-            updated_at: "2026-10-24T00:00:00.000Z",
-          })}`;
-        }
-        yield* assign(service, [work("api")]);
-        fixture.tasks.set("api", { status: "completed", result: "Built it." });
-        setArchitect(fixture, { activeRunId: null });
+        yield* idleWithMergeWaiting(service, fixture);
+        yield* service.tick;
+        yield* setMergeStatus("Add subtract", "gating");
+        yield* service.tick;
+        yield* service.tick;
+        assert.deepEqual(fixture.sent, []);
+        assert.equal((yield* service.view(architectId))?.status, "running");
+      }),
+    );
+  }),
+);
+
+it.effect("wakes the architect once with the outcome when the waiting merge lands", () =>
+  Effect.gen(function* () {
+    const fixture = makeFixture();
+    yield* withTeam(fixture, (service) =>
+      Effect.gen(function* () {
+        yield* idleWithMergeWaiting(service, fixture);
+        yield* setMergeStatus("Add subtract", "merged");
         yield* service.tick;
         yield* service.tick;
         assert.lengthOf(fixture.sent, 1);
-        assert.include(fixture.sent[0]!, "2 merges wait for the user");
-        assert.include(fixture.sent[0]!, "merge queue");
+        assert.include(fixture.sent[0]!, "Add subtract merged");
+        assert.notInclude(fixture.sent[0]!, "Landed earlier");
+        assert.equal((yield* service.view(architectId))?.status, "running");
+      }),
+    );
+  }),
+);
+
+it.effect("wakes the architect once with the outcome when the user removes the merge", () =>
+  Effect.gen(function* () {
+    const fixture = makeFixture();
+    yield* withTeam(fixture, (service) =>
+      Effect.gen(function* () {
+        yield* idleWithMergeWaiting(service, fixture);
+        yield* setMergeStatus("Add subtract", "cancelled");
+        yield* service.tick;
+        yield* service.tick;
+        assert.lengthOf(fixture.sent, 1);
+        assert.include(fixture.sent[0]!, "Add subtract removed by the user");
+        assert.equal((yield* service.view(architectId))?.status, "running");
       }),
     );
   }),

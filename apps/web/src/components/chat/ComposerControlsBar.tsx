@@ -6,7 +6,7 @@ import { CircleAlertIcon } from "lucide-react";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerControl, ComposerControlSeparator } from "./ComposerControl";
 import { ComposerTeamControl } from "./ComposerTeamControl";
-import { ComposerTokenSaverControl } from "./ComposerTokenSaverControl";
+import { ComposerTokenSaverControl, supportsTokenSaver } from "./ComposerTokenSaverControl";
 import {
   ComposerFooterModeControls,
   ComposerModelPicker,
@@ -21,6 +21,8 @@ import {
   type RuntimeMode,
   type ServerProvider,
 } from "@t3tools/contracts";
+import { useState } from "react";
+
 import { cn } from "~/lib/utils";
 import {
   renderProviderTraitsMenuContent,
@@ -130,6 +132,13 @@ export function ComposerControlsBar(props: {
     modelPickerIconClassName,
     getModelDisabledReason,
   } = props;
+  const [tokenSaverOpen, setTokenSaverOpen] = useState(false);
+  const [overflowAnchor, setOverflowAnchor] = useState<HTMLDivElement | null>(null);
+  // The mode block, which holds the Saver button, is the first to hide when the footer is tight.
+  const tokenSaverInOverflow =
+    props.routeKind === "server" &&
+    supportsTokenSaver(props.selectedProvider) &&
+    props.restingHiddenBlockCount > 0;
   const providerTraitsMenuContent = renderProviderTraitsMenuContent({
     provider: selectedProvider,
     instanceId: selectedInstanceId,
@@ -197,6 +206,9 @@ export function ComposerControlsBar(props: {
                 threadRef={routeThreadRef}
                 driver={selectedProvider}
                 size={composerControlsCollapsed ? "xs" : "sm"}
+                open={tokenSaverOpen}
+                onOpenChange={setTokenSaverOpen}
+                anchor={tokenSaverInOverflow ? overflowAnchor : null}
               />
               <ComposerTeamControl
                 threadRef={routeThreadRef}
@@ -216,6 +228,7 @@ export function ComposerControlsBar(props: {
   const hiddenRestingBlockIds = restingBlockDefs
     .slice(restingBlockDefs.length - restingHiddenBlockCount)
     .map((def) => def.id);
+
   // Its own element, so typing (which rebuilds the controls around it) leaves it cached.
   const composerModelPicker = (
     <ComposerModelPicker
@@ -324,6 +337,7 @@ export function ComposerControlsBar(props: {
           );
         })}
         <div
+          ref={setOverflowAnchor}
           data-resting-controls-overflow
           aria-hidden={hiddenRestingBlockIds.length === 0 || undefined}
           inert={hiddenRestingBlockIds.length === 0 || undefined}
@@ -344,6 +358,7 @@ export function ComposerControlsBar(props: {
             }
             onToggleInteractionMode={toggleInteractionMode}
             onRuntimeModeChange={handleRuntimeModeChange}
+            {...(tokenSaverInOverflow ? { onOpenTokenSaver: () => setTokenSaverOpen(true) } : {})}
           />
         </div>
       </>

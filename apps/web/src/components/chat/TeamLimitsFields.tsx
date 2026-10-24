@@ -1,6 +1,6 @@
 import { TEAM_LIMIT_BOUNDS, type TeamLimits, type TeamUsage } from "@t3tools/contracts";
 
-import { Switch } from "../ui/switch";
+import { Checkbox } from "../ui/checkbox";
 import {
   NumberField,
   NumberFieldDecrement,
@@ -70,25 +70,34 @@ export function TeamLimitsFields(props: {
         disabled={props.disabled}
         onChange={(maxAssignments) => set({ maxAssignments })}
       />
-      <label className="flex items-center justify-between gap-3 text-sm">
-        Unlimited workers at once
-        <Switch
+      <div className="grid grid-cols-[1fr_auto_8rem] items-center gap-2 text-sm">
+        <span>At once</span>
+        <label className="flex items-center gap-1.5 text-xs">
+          <Checkbox
+            checked={limits.maxParallel === "unlimited"}
+            disabled={props.disabled}
+            onCheckedChange={(checked) => set({ maxParallel: checked ? "unlimited" : 2 })}
+          />
+          Unlimited
+        </label>
+        <NumberField
           size="sm"
-          checked={limits.maxParallel === "unlimited"}
-          disabled={props.disabled}
-          onCheckedChange={(checked) => set({ maxParallel: checked ? "unlimited" : 2 })}
-        />
-      </label>
-      {limits.maxParallel === "unlimited" ? null : (
-        <LimitField
-          label="Workers at once"
-          value={limits.maxParallel}
+          value={limits.maxParallel === "unlimited" ? null : limits.maxParallel}
           min={1}
           max={50}
-          disabled={props.disabled}
-          onChange={(maxParallel) => set({ maxParallel })}
-        />
-      )}
+          format={{ useGrouping: false }}
+          disabled={props.disabled || limits.maxParallel === "unlimited"}
+          onValueChange={(next) => {
+            if (next !== null) set({ maxParallel: next });
+          }}
+        >
+          <NumberFieldGroup>
+            <NumberFieldDecrement />
+            <NumberFieldInput aria-label="At once" />
+            <NumberFieldIncrement />
+          </NumberFieldGroup>
+        </NumberField>
+      </div>
       <LimitField
         label="Report size (bytes)"
         value={limits.summaryLimitBytes}

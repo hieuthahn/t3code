@@ -22,6 +22,8 @@ const tick = (overrides: Partial<TeamTick> = {}): TeamTick => ({
   openAssignments: 0,
   stalls: 0,
   lastStallRunId: null,
+  openMerges: 0,
+  settledMerges: 0,
   ...overrides,
 });
 
@@ -63,6 +65,20 @@ describe("decideTeamTick", () => {
 
   it("waits for the woken architect instead of counting a stall", () => {
     expect(decideTeamTick(tick({ startableAssignments: 2, wokeForLatestRun: true }))).toEqual([]);
+    expect(decideTeamTick(tick({ wokeForLatestRun: true }))).toEqual([]);
+    expect(decideTeamTick(tick({ stalls: 1, wokeForLatestRun: true }))).toEqual([]);
+  });
+
+  it("holds without a stall while a merge waits for the user or lands", () => {
+    expect(decideTeamTick(tick({ openMerges: 1 }))).toEqual([]);
+    expect(decideTeamTick(tick({ openMerges: 1, stalls: 1, lastStallRunId: "run-1" }))).toEqual([]);
+  });
+
+  it("wakes the architect when its waiting merges settle", () => {
+    expect(decideTeamTick(tick({ settledMerges: 2 }))).toEqual([
+      { type: "wake_architect", reason: "merges_settled" },
+    ]);
+    expect(decideTeamTick(tick({ settledMerges: 1, openMerges: 1 }))).toEqual([]);
   });
 
   it("stops a turn silent for 20 minutes unless it waits on the user", () => {

@@ -27,3 +27,20 @@ it("refuses a t3_thread_update whose fields do not fit its action", () => {
     true,
   );
 });
+
+it("tells the architect how team_assign numbers workers and scopes writes", () => {
+  const schema = Tool.getJsonSchema(OrchestratorToolkit.tools.team_assign) as {
+    readonly properties: {
+      readonly assignments: {
+        readonly items: {
+          readonly properties: Readonly<Record<string, { readonly description?: string }>>;
+        };
+      };
+    };
+  };
+  const fields = schema.properties.assignments.items.properties;
+  expect(fields.worker?.description).toContain("Workers list");
+  expect(fields.files?.description).toContain("one at a time");
+  expect(fields.dependsOn?.description).toContain("listed earlier");
+  expect(OrchestratorToolkit.tools.team_finish.description).toContain("team");
+});

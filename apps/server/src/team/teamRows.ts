@@ -1,4 +1,5 @@
 import {
+  type MergeQueueItemStatus,
   EnvironmentId,
   NodeId,
   ProviderInstanceId,
@@ -157,3 +158,10 @@ export const runView = (input: {
   assignments: input.assignments,
   updatedAt: input.run.updated_at,
 });
+
+/** A merge the architect enqueued, as the team reads it from the merge queue. */
+export interface TeamMerge {
+  readonly item_id: string;
+  readonly child_title: string;
+  readonly status: MergeQueueItemStatus;
+}

@@ -18,13 +18,17 @@ export interface TeamTick<Id extends string = string> {
   /** A wake already went out after the architect's latest run. */
   readonly wokeForLatestRun: boolean;
   readonly openAssignments: number;
+  /** Merges the architect enqueued that still wait for the user or the queue. */
+  readonly openMerges: number;
+  /** Merges the architect waited on that landed, failed or were removed since it last heard. */
+  readonly settledMerges: number;
   readonly stalls: number;
   /** The architect run the last stall was counted for, so one run never counts twice. */
   readonly lastStallRunId: string | null;
 }
 
 export type TeamAction<Id extends string = string> =
-  | { readonly type: "wake_architect"; readonly reason: "start_queued" }
+  | { readonly type: "wake_architect"; readonly reason: "start_queued" | "merges_settled" }
   | { readonly type: "continue_plan"; readonly stalls: number; readonly runId: string | null }
   | { readonly type: "pause"; readonly report: string; readonly runId: string | null }
   | { readonly type: "interrupt"; readonly threadId: Id };
@@ -49,7 +53,12 @@ export function decideTeamTick<Id extends string>(
       ? interrupts
       : [...interrupts, { type: "wake_architect", reason: "start_queued" }];
   }
-  if (tick.runningAssignments > 0) return interrupts;
+  if (tick.runningAssignments > 0 || tick.openMerges > 0 || tick.wokeForLatestRun) {
+    return interrupts;
+  }
+  if (tick.settledMerges > 0) {
+    return [...interrupts, { type: "wake_architect", reason: "merges_settled" }];
+  }
   if (architect.latestRunId === tick.lastStallRunId) return interrupts;
   if (tick.stalls === 0) {
     return [...interrupts, { type: "continue_plan", stalls: 1, runId: architect.latestRunId }];

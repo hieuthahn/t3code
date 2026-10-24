@@ -321,25 +321,32 @@ it.effect("leaves a thread outside a team free to pick any model", () =>
   }),
 );
 
-it.effect("points a team's architect from delegate_task and propose_tasks to team_assign", () =>
-  Effect.gen(function* () {
-    const dispatched: Array<OrchestrationV2ServerCommand> = [];
-    const layer = makeLayer({ approve: ["api"], dispatched, team });
-    const delegated = yield* call((service) =>
-      service.delegateTask(scope, { task: "Retry sends", title: "Retry sends" }),
-    ).pipe(Effect.flip, Effect.provide(layer));
-    const proposed = yield* call((service) =>
-      service.proposeTasks(scope, {
-        reason: "The server changes alone.",
-        tasks: [{ key: "api", title: "Retry sends", task: "Do the api part" }],
-      }),
-    ).pipe(Effect.flip, Effect.provide(layer));
-    for (const refused of [delegated, proposed]) {
-      assert.equal(refused.code, "invalid_request");
-      assert.include(refused.message, "team_assign");
-    }
-    assert.deepEqual(dispatched, []);
-  }),
+it.effect(
+  "points a team's architect from delegate_task, propose_tasks and create_threads to team_assign",
+  () =>
+    Effect.gen(function* () {
+      const dispatched: Array<OrchestrationV2ServerCommand> = [];
+      const layer = makeLayer({ approve: ["api"], dispatched, team });
+      const delegated = yield* call((service) =>
+        service.delegateTask(scope, { task: "Retry sends", title: "Retry sends" }),
+      ).pipe(Effect.flip, Effect.provide(layer));
+      const proposed = yield* call((service) =>
+        service.proposeTasks(scope, {
+          reason: "The server changes alone.",
+          tasks: [{ key: "api", title: "Retry sends", task: "Do the api part" }],
+        }),
+      ).pipe(Effect.flip, Effect.provide(layer));
+      const created = yield* call((service) =>
+        service.createThreads(scope, {
+          threads: [{ title: "Retry sends", prompt: "Do the api part" }],
+        }),
+      ).pipe(Effect.flip, Effect.provide(layer));
+      for (const refused of [delegated, proposed, created]) {
+        assert.equal(refused.code, "invalid_request");
+        assert.include(refused.message, "team_assign");
+      }
+      assert.deepEqual(dispatched, []);
+    }),
 );
 
 it.effect("runs a team's worker with the architect's runtime mode at most", () =>

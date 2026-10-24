@@ -59,6 +59,20 @@ function timelineRow(item: ChildPlanItem) {
 }
 
 describe("ChildPlanCard", () => {
+  it("names each team worker beside its model", async () => {
+    const teamRound = {
+      ...pending,
+      children: [
+        { ...proposal("api", "Retry sends"), worker: 1 },
+        { ...proposal("docs", "Document retry"), worker: 2 },
+      ],
+    } as unknown as ChildPlanItem;
+    await using screen = await render(timelineRow(teamRound));
+
+    await expect.element(screen.getByText("Worker 1 · gpt-5.4 · own worktree")).toBeVisible();
+    await expect.element(screen.getByText("Worker 2 · gpt-5.4 · shared folder")).toBeVisible();
+  });
+
   it("starts only the child sessions left ticked, at the revision shown", async () => {
     state.decide.mockReset().mockResolvedValue(AsyncResult.success({ sequence: 1 }));
     await using screen = await render(timelineRow(pending));

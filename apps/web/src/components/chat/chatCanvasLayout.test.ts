@@ -4,6 +4,7 @@ import { resizePreviewMiniPlayer } from "../preview/previewMiniPlayerLayout";
 import {
   resolveThreadDetailsCardDensity,
   resolveThreadDetailsCardLayout,
+  threadDetailsPanels,
 } from "./threadDetailsCardLayout";
 
 const preview: ChatCanvasPreview = {
@@ -282,5 +283,33 @@ describe("workspace card beside chat", () => {
       expect(chat.width).toBeGreaterThanOrEqual(640);
       expect(card.x - chat.left - chat.width).toBeGreaterThanOrEqual(32);
     }
+  });
+});
+
+describe("threadDetailsPanels", () => {
+  it("keeps the merge queue and team panels when the card is too short for the rest", () => {
+    for (const density of ["compact", "essential"] as const) {
+      expect(threadDetailsPanels(density, false)).toEqual({
+        automations: false,
+        mergeQueue: true,
+        team: true,
+        relationships: false,
+      });
+    }
+    expect(threadDetailsPanels("full", false)).toEqual({
+      automations: true,
+      mergeQueue: true,
+      team: true,
+      relationships: true,
+    });
+  });
+
+  it("shows none of them on a draft", () => {
+    expect(threadDetailsPanels("full", true)).toEqual({
+      automations: false,
+      mergeQueue: false,
+      team: false,
+      relationships: false,
+    });
   });
 });

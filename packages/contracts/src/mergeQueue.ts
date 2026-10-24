@@ -28,6 +28,7 @@ export const MergeQueueFailureStage = Schema.Literals([
   "gate",
   "merge",
   "interrupted",
+  "error",
 ]);
 export type MergeQueueFailureStage = typeof MergeQueueFailureStage.Type;
 
@@ -90,6 +91,32 @@ export const MergeQueueApproveInput = Schema.Struct({
   headSha: TrimmedNonEmptyString,
 });
 export type MergeQueueApproveInput = typeof MergeQueueApproveInput.Type;
+
+export const MergeQueueDiffInput = Schema.Struct({
+  itemId: MergeQueueItemId,
+  /** The commit the panel shows, so a re-queued child never shows an older diff. */
+  headSha: TrimmedNonEmptyString,
+});
+export type MergeQueueDiffInput = typeof MergeQueueDiffInput.Type;
+
+export const MergeQueueDiffFile = Schema.Struct({
+  path: Schema.String,
+  /** Null for a binary file, which git counts without lines. */
+  additions: Schema.NullOr(NonNegativeInt),
+  deletions: Schema.NullOr(NonNegativeInt),
+});
+export type MergeQueueDiffFile = typeof MergeQueueDiffFile.Type;
+
+/** What the child adds at the commit awaiting approval, measured from where it left the trunk. */
+export const MergeQueueDiff = Schema.Struct({
+  itemId: MergeQueueItemId,
+  baseSha: Schema.String,
+  headSha: Schema.String,
+  files: Schema.Array(MergeQueueDiffFile),
+  patch: Schema.String,
+  truncated: Schema.Boolean,
+});
+export type MergeQueueDiff = typeof MergeQueueDiff.Type;
 
 export const MergeQueueCancelInput = Schema.Struct({ itemId: MergeQueueItemId });
 export type MergeQueueCancelInput = typeof MergeQueueCancelInput.Type;

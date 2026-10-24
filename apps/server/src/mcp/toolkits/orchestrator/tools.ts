@@ -230,7 +230,7 @@ const ProposeTasksTool = Tool.make("propose_tasks", {
 
 const MergeEnqueueTool = Tool.make("merge_enqueue", {
   description:
-    "Queue a finished child (started by delegate_task with its own worktree) to land on this thread's branch. The user approves the exact commit on the parent's merge queue panel; then the app merges this branch into the child, runs the project's merge gate scripts there, and fast-forwards this branch only if every gate passes. Items land one at a time. A failed step leaves this branch alone and sends the child a message saying why, with the gate output. Never merge a child's branch yourself while it is queued.",
+    "Queue a finished child (started by delegate_task with its own worktree) to land on this thread's branch. The project needs at least one merge gate script, and the child must not be running when it lands. The user approves the exact commit on the parent's merge queue panel; then the app merges this branch into the child, runs the project's merge gate scripts there, and fast-forwards this branch only if every gate passes. Items land one at a time. A failed step leaves this branch alone and sends the child a message saying why, with the gate output. Never merge a child's branch yourself while it is queued.",
   parameters: OrchestratorMcpMergeEnqueueInput,
   success: OrchestratorMcpMergeEnqueueResult,
   failure: OrchestratorMcpFailure,

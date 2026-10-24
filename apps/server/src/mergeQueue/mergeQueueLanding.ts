@@ -1,8 +1,10 @@
-import type {
-  MergeQueueError,
+import {
   MergeQueueFailureStage,
-  MergeQueueGateRun,
-  ProjectScript,
+  type MergeQueueError,
+  type MergeQueueGateRun,
+  type ProjectId,
+  type ProjectScript,
+  type ThreadId,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -24,7 +26,7 @@ export class GitStepFailure extends Schema.TaggedError<GitStepFailure>()("GitSte
 }) {}
 
 export class StageFailure extends Schema.TaggedError<StageFailure>()("StageFailure", {
-  stage: Schema.Literals(["head_moved", "update", "gate", "merge", "interrupted"]),
+  stage: MergeQueueFailureStage,
   message: Schema.String,
 }) {}
 
@@ -48,10 +50,46 @@ export const makeMergeQueueGit = (driver: GitVcsDriver.GitVcsDriver["Service"]) 
             ),
       ),
     );
-  return { git, gitOutput };
+  /** Run git keeping at most `maxOutputBytes` of stdout; the result says whether it was cut. */
+  const gitCapped = (cwd: string, args: ReadonlyArray<string>, maxOutputBytes: number) =>
+    driver.execute({
+      operation: "MergeQueue.git",
+      cwd,
+      args,
+      allowNonZeroExit: true,
+      timeoutMs: 120_000,
+      maxOutputBytes,
+    });
+  return { git, gitOutput, gitCapped };
 };
 
 export type MergeQueueGit = ReturnType<typeof makeMergeQueueGit>;
+
+/** The project's scripts marked as merge gates, with the environment's saved settings applied. */
+export const resolveMergeGates = Effect.fn("MergeQueue.resolveMergeGates")(function* (
+  projects: ProjectService.ProjectService["Service"],
+  settings: ServerSettings.ServerSettingsService["Service"],
+  projectId: ProjectId,
+) {
+  const project = yield* projects.getById(projectId);
+  const savedSettings = yield* settings.getSettings;
+  return Option.match(project, {
+    onNone: (): ReadonlyArray<ProjectScript> => [],
+    onSome: (value) =>
+      resolveProjectScripts(savedSettings, value).filter(
+        (script) => script.runAsMergeGate === true,
+      ),
+  });
+});
+
+/** Find the worktree, if any, that has `branch` checked out, from `git worktree list --porcelain`. */
+export const worktreeHolding = (porcelain: string, branch: string) =>
+  porcelain
+    .split("\n\n")
+    .map((block) => block.split("\n"))
+    .find((lines) => lines.includes(`branch refs/heads/${branch}`))
+    ?.find((line) => line.startsWith("worktree "))
+    ?.slice("worktree ".length);
 
 /** Build the steps that land one approved item, failing with the stage that stopped it. */
 export const makeMergeQueueLanding = (deps: {
@@ -63,9 +101,12 @@ export const makeMergeQueueLanding = (deps: {
     row: MergeQueueRow,
     fields: Record<string, string | null>,
   ) => Effect.Effect<void, MergeQueueError>;
+  readonly childIsRunning: (threadId: ThreadId) => Effect.Effect<boolean, MergeQueueError>;
+  /** Take a queued item for landing; false when it left the queue, say because it was cancelled. */
+  readonly claim: (row: MergeQueueRow) => Effect.Effect<boolean, MergeQueueError>;
 }) => {
   const { git, gitOutput } = deps.git;
-  const { spawner, projects, settings, update } = deps;
+  const { spawner, projects, settings, update, childIsRunning, claim } = deps;
 
   const runGate = Effect.fn("MergeQueue.runGate")(function* (script: ProjectScript, cwd: string) {
     const startedAt = yield* Clock.currentTimeMillis;
@@ -117,7 +158,7 @@ export const makeMergeQueueLanding = (deps: {
       effect: Effect.Effect<A, E>,
     ) => effect.pipe(Effect.mapError((cause) => stage(name, cause.message)));
 
-    yield* update(queued, { status: "updating" });
+    if (!(yield* claim(queued))) return;
     const head = yield* lift(
       "head_moved",
       gitOutput(queued.child_worktree, ["rev-parse", `refs/heads/${queued.child_branch}`]),
@@ -148,6 +189,19 @@ export const makeMergeQueueLanding = (deps: {
         "The child's worktree has uncommitted changes. Commit or discard them, then queue it again.",
       );
     }
+    if (yield* lift("update", childIsRunning(queued.child_thread_id))) {
+      return yield* stage(
+        "update",
+        `"${queued.child_title}" is still running, so the queue left its worktree alone. Queue it again once it stops.`,
+      );
+    }
+    const gates = yield* lift("gate", resolveMergeGates(projects, settings, queued.project_id));
+    if (gates.length === 0) {
+      return yield* stage(
+        "gate",
+        "This project has no merge gate any more, so the queue will not land the child unchecked. Mark a project script as a merge gate, then queue it again.",
+      );
+    }
     const trunkBefore = yield* lift(
       "update",
       gitOutput(queued.owner_checkout, ["rev-parse", `refs/heads/${queued.trunk_ref}`]),
@@ -171,15 +225,6 @@ export const makeMergeQueueLanding = (deps: {
     );
 
     yield* update(queued, { status: "gating" });
-    const project = yield* lift("gate", projects.getById(queued.project_id));
-    const savedSettings = yield* lift("gate", settings.getSettings);
-    const gates = Option.match(project, {
-      onNone: () => [],
-      onSome: (value) =>
-        resolveProjectScripts(savedSettings, value).filter(
-          (script) => script.runAsMergeGate === true,
-        ),
-    });
     const runs: Array<MergeQueueGateRun> = [];
     for (const script of gates) {
       const run = yield* runGate(script, queued.child_worktree);
@@ -231,6 +276,16 @@ export const makeMergeQueueLanding = (deps: {
       }
       yield* lift("merge", gitOutput(queued.owner_checkout, ["merge", "--ff-only", landed]));
     } else {
+      const holder = worktreeHolding(
+        yield* lift("merge", gitOutput(queued.owner_checkout, ["worktree", "list", "--porcelain"])),
+        queued.trunk_ref,
+      );
+      if (holder !== undefined) {
+        return yield* stage(
+          "merge",
+          `${queued.trunk_ref} is checked out in ${holder}, so moving it would change that worktree under it. Switch that worktree to another branch, then queue the child again.`,
+        );
+      }
       yield* lift(
         "merge",
         gitOutput(queued.owner_checkout, [

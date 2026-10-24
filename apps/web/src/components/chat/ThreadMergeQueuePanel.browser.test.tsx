@@ -36,6 +36,13 @@ vi.mock(import("../../state/query"), async (importOriginal) => ({
   useEnvironmentQuery: (() => ({ data: state.view, error: null })) as never,
 }));
 
+// The diff loads through its own query; the panel only decides where it shows.
+vi.mock("./MergeQueueItemDiff", () => ({
+  MergeQueueItemDiff: (props: { readonly itemId: string }) => (
+    <div data-merge-queue-diff={props.itemId} />
+  ),
+}));
+
 import { act, render as renderUi } from "../../../test/render";
 import { ThreadMergeQueuePanel } from "./ThreadMergeQueuePanel";
 
@@ -140,4 +147,24 @@ it("warns when the trunk changed outside the queue", async () => {
     "main changed outside the queue",
   );
   expect(fixture.byLabel("Remove API endpoints from the merge queue")).toBeNull();
+});
+
+it("shows the changes of an item waiting for approval, and only of that one", async () => {
+  await using fixture = await setup({
+    ownerThreadId,
+    trunks: [],
+    items: [
+      item({}),
+      item({
+        id: MergeQueueItemId.make("merge-queue:ui"),
+        childTitle: "UI",
+        status: "merged",
+        mergedSha: "e11",
+      }),
+    ],
+  });
+  const diffs = [...fixture.container.querySelectorAll("[data-merge-queue-diff]")].map((node) =>
+    node.getAttribute("data-merge-queue-diff"),
+  );
+  expect(diffs).toEqual(["merge-queue:api"]);
 });

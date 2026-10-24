@@ -5,12 +5,16 @@ import {
   MessageId,
   type MergeQueueApproveInput,
   type MergeQueueCancelInput,
+  type MergeQueueDiff,
+  type MergeQueueDiffInput,
   type MergeQueueItem,
   type MergeQueueTrunk,
   type MergeQueueView,
   type OrchestrationV2RuntimeRequestDecider,
+  type ProjectId,
   type ThreadId,
 } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -32,7 +36,8 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import {
   makeMergeQueueGit,
   makeMergeQueueLanding,
-  type StageFailure,
+  resolveMergeGates,
+  StageFailure,
 } from "./mergeQueueLanding.ts";
 import {
   ACTIVE_STATUSES,
@@ -43,8 +48,30 @@ import {
   itemFromRow,
   type MergeQueueRow,
 } from "./mergeQueueRows.ts";
+import { makeItemTransition } from "./mergeQueueTransition.ts";
 
 export type { MergeQueueItem };
+
+const PATCH_LIMIT_BYTES = 512 * 1024;
+
+/** Read `git diff --numstat`, where a binary file counts "-" for both sides. */
+const parseNumstat = (output: string) =>
+  output
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const [additions = "-", deletions = "-", ...path] = line.split("\t");
+      return {
+        path: path.join("\t"),
+        additions: additions === "-" ? null : Number(additions),
+        deletions: deletions === "-" ? null : Number(deletions),
+      };
+    });
+
+const squashedMessage = (cause: Cause.Cause<unknown>) => {
+  const error = Cause.squash(cause);
+  return error instanceof Error ? error.message : String(error);
+};
 
 export class MergeQueueService extends Context.Service<
   MergeQueueService,
@@ -59,6 +86,8 @@ export class MergeQueueService extends Context.Service<
       decidedBy: OrchestrationV2RuntimeRequestDecider,
     ) => Effect.Effect<void, MergeQueueError>;
     readonly cancel: (input: MergeQueueCancelInput) => Effect.Effect<void, MergeQueueError>;
+    /** The changes the child adds at the commit awaiting approval, so the user reads them first. */
+    readonly diff: (input: MergeQueueDiffInput) => Effect.Effect<MergeQueueDiff, MergeQueueError>;
     readonly view: (ownerThreadId: ThreadId) => Effect.Effect<MergeQueueView, MergeQueueError>;
     readonly subscribe: (ownerThreadId: ThreadId) => Stream.Stream<MergeQueueView, MergeQueueError>;
     /** Land every approved item, one at a time, and return once none is left. */
@@ -87,7 +116,7 @@ export const layerWith = (options: { readonly drainOnApprove: boolean }) =>
         new MergeQueueError({ message, ...(itemId === undefined ? {} : { itemId }), cause });
       const now = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 
-      const { git, gitOutput } = mergeQueueGit;
+      const { git, gitOutput, gitCapped } = mergeQueueGit;
       const readRows = (query: Effect.Effect<ReadonlyArray<unknown>, SqlError>) =>
         query.pipe(
           Effect.flatMap(decodeRows),
@@ -114,10 +143,38 @@ export const layerWith = (options: { readonly drainOnApprove: boolean }) =>
         yield* PubSub.publish(changes, row.owner_thread_id);
       });
 
+      const transition = makeItemTransition(sql);
+      const moveItem = Effect.fn("MergeQueue.moveItem")(function* (
+        row: MergeQueueRow,
+        from: ReadonlyArray<MergeQueueRow["status"]>,
+        fields: Record<string, string | null>,
+      ) {
+        const moved = yield* transition(row.item_id, from, fields, yield* now).pipe(
+          Effect.mapError(queueError("Could not update the merge queue.", row.item_id)),
+        );
+        if (moved) yield* PubSub.publish(changes, row.owner_thread_id);
+        return moved;
+      });
+
       const readShell = (threadId: ThreadId) =>
         projections
           .getThreadShell(threadId)
           .pipe(Effect.mapError(queueError("Could not read the thread for the merge queue.")));
+      const requireMergeGates = Effect.fn("MergeQueue.requireMergeGates")(function* (
+        projectId: ProjectId,
+        itemId?: MergeQueueItemId,
+      ) {
+        const gates = yield* resolveMergeGates(projects, settings, projectId).pipe(
+          Effect.mapError(queueError("Could not read the project's merge gates.", itemId)),
+        );
+        if (gates.length === 0) {
+          return yield* new MergeQueueError({
+            message:
+              "This project has no merge gate, so the queue cannot check the child before landing it. Mark a project script as a merge gate in the project's settings first.",
+            ...(itemId === undefined ? {} : { itemId }),
+          });
+        }
+      });
 
       const enqueue: MergeQueueService["Service"]["enqueue"] = Effect.fn("MergeQueue.enqueue")(
         function* (input) {
@@ -142,6 +199,7 @@ export const layerWith = (options: { readonly drainOnApprove: boolean }) =>
               message: "The parent thread or its project is gone.",
             });
           }
+          yield* requireMergeGates(child.projectId);
           const ownerCheckout = owner.worktreePath ?? project.value.workspaceRoot;
           const trunkRef =
             owner.branch ??
@@ -235,6 +293,11 @@ export const layerWith = (options: { readonly drainOnApprove: boolean }) =>
         projects,
         settings,
         update,
+        childIsRunning: (threadId) =>
+          readShell(threadId).pipe(
+            Effect.map((shell) => shell !== null && shell.activeRunId !== null),
+          ),
+        claim: (row) => moveItem(row, ["queued"], { status: "updating" }),
       });
 
       const failItem = Effect.fn("MergeQueue.failItem")(function* (
@@ -245,13 +308,32 @@ export const layerWith = (options: { readonly drainOnApprove: boolean }) =>
           status: "failed",
           failure_json: encodeFailure({ stage: failure.stage, message: failure.message }),
         });
-        if (failure.stage !== "interrupted") {
+        if (failure.stage !== "interrupted" && failure.stage !== "error") {
           yield* tellChild(
             yield* readItem(row.item_id),
             `The merge queue did not land ${row.child_branch} on ${row.trunk_ref}. ${failure.message}`,
           );
         }
       });
+
+      /** Land one item; any failure but an interruption fails that item so the rest still land. */
+      const landOne = (row: MergeQueueRow) =>
+        land(row).pipe(
+          Effect.catchTags({ StageFailure: (failure) => Effect.succeed(failure) }),
+          Effect.catchCause((cause) =>
+            Cause.hasInterruptsOnly(cause)
+              ? Effect.failCause(cause)
+              : Effect.succeed(
+                  new StageFailure({
+                    stage: "error",
+                    message: `The merge queue hit an unexpected error: ${squashedMessage(cause)}`,
+                  }),
+                ),
+          ),
+          Effect.flatMap((failure) =>
+            failure === undefined ? Effect.void : failItem(row, failure),
+          ),
+        );
 
       const nextQueued = readRows(
         sql`SELECT * FROM merge_queue_items WHERE status = 'queued' ORDER BY updated_at, enqueued_at LIMIT 1`,
@@ -262,9 +344,7 @@ export const layerWith = (options: { readonly drainOnApprove: boolean }) =>
             const rows = yield* nextQueued;
             const row = rows[0];
             if (row === undefined) return;
-            yield* land(row).pipe(
-              Effect.catchTags({ StageFailure: (failure) => failItem(row, failure) }),
-            );
+            yield* landOne(row);
           }
         }).pipe(
           Effect.catchCause((cause) => Effect.logError("The merge queue stopped", { cause })),
@@ -286,7 +366,17 @@ export const layerWith = (options: { readonly drainOnApprove: boolean }) =>
               itemId: row.item_id,
             });
           }
-          yield* update(row, { status: "queued", approved_by_json: encodeDecider(decidedBy) });
+          yield* requireMergeGates(row.project_id, row.item_id);
+          const queued = yield* moveItem(row, ["awaiting_user"], {
+            status: "queued",
+            approved_by_json: encodeDecider(decidedBy),
+          });
+          if (!queued) {
+            return yield* new MergeQueueError({
+              message: "This item is not waiting for approval.",
+              itemId: row.item_id,
+            });
+          }
           if (options.drainOnApprove) {
             yield* Effect.forkIn(drain, scope);
           }
@@ -296,15 +386,60 @@ export const layerWith = (options: { readonly drainOnApprove: boolean }) =>
       const cancel: MergeQueueService["Service"]["cancel"] = Effect.fn("MergeQueue.cancel")(
         function* (input) {
           const row = yield* readItem(input.itemId);
-          if (!["awaiting_user", "queued", "failed"].includes(row.status)) {
+          if (
+            !(yield* moveItem(row, ["awaiting_user", "queued", "failed"], { status: "cancelled" }))
+          ) {
             return yield* new MergeQueueError({
               message: "This item already ran.",
               itemId: row.item_id,
             });
           }
-          yield* update(row, { status: "cancelled" });
         },
       );
+
+      const diff: MergeQueueService["Service"]["diff"] = Effect.fn("MergeQueue.diff")(function* ({
+        itemId,
+        headSha,
+      }) {
+        const row = yield* readItem(itemId);
+        if (row.head_sha_at_enqueue !== headSha) {
+          return yield* new MergeQueueError({
+            message: "The child was queued again at a newer commit. Review that one instead.",
+            itemId,
+          });
+        }
+        const fail = queueError("Could not read the child's changes.", itemId);
+        const base = yield* gitOutput(row.child_worktree, [
+          "merge-base",
+          `refs/heads/${row.trunk_ref}`,
+          row.head_sha_at_enqueue,
+        ]).pipe(Effect.mapError(fail));
+        const numstat = yield* gitOutput(row.child_worktree, [
+          "diff",
+          "--numstat",
+          base,
+          row.head_sha_at_enqueue,
+        ]).pipe(Effect.mapError(fail));
+        const patch = yield* gitCapped(
+          row.child_worktree,
+          ["diff", "--no-color", "--no-ext-diff", base, row.head_sha_at_enqueue],
+          PATCH_LIMIT_BYTES,
+        ).pipe(Effect.mapError(fail));
+        if (patch.exitCode !== 0) {
+          return yield* new MergeQueueError({
+            message: `Could not read the child's changes: ${patch.stderr.trim()}`,
+            itemId,
+          });
+        }
+        return {
+          itemId,
+          baseSha: base,
+          headSha: row.head_sha_at_enqueue,
+          files: parseNumstat(numstat),
+          patch: patch.stdout,
+          truncated: patch.stdoutTruncated,
+        };
+      });
 
       const view: MergeQueueService["Service"]["view"] = Effect.fn("MergeQueue.view")(
         function* (ownerThreadId) {
@@ -368,7 +503,7 @@ export const layerWith = (options: { readonly drainOnApprove: boolean }) =>
       }
       yield* Effect.forkIn(drain, scope);
 
-      return MergeQueueService.of({ enqueue, approve, cancel, view, subscribe, drain });
+      return MergeQueueService.of({ enqueue, approve, cancel, diff, view, subscribe, drain });
     }),
   );
 

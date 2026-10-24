@@ -1209,92 +1209,83 @@ export function GeneralSettingsPanel() {
         <SettingsRow
           serverScoped
           {...searchableSetting("token-saver")}
-          description="Add response-style rules to the system prompt of Claude and Codex threads so agents spend fewer tokens. Each thread can change its packs from the composer, which also shows measured tokens per turn."
+          description="Response-style packs a Claude or Codex thread runs until you change them from the Saver button in its composer. Security warnings, steps, questions and anything written to files, commits or PRs stay in full sentences."
+          settingKeys={["tokenSaver"]}
+          control={
+            <Select
+              value={settings.tokenSaver.newThreads.concise}
+              onValueChange={(value) => {
+                if (value === "off" || value === "lite" || value === "full" || value === "ultra")
+                  updateSettings({ tokenSaver: { newThreads: { concise: value } } });
+              }}
+            >
+              <SelectTrigger
+                size="sm"
+                className="w-full sm:w-44"
+                aria-label="Concise replies for new threads"
+              >
+                <SelectValue>
+                  {TOKEN_SAVER_CONCISE_LABELS[settings.tokenSaver.newThreads.concise]}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {(["off", "lite", "full", "ultra"] as const).map((level) => (
+                  <SelectItem hideIndicator key={level} value={level}>
+                    {TOKEN_SAVER_CONCISE_LABELS[level]}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          }
+        />
+        <SettingsRow
+          serverScoped
+          title="Lean code for new threads"
+          description="Least code that works, reuse what exists, no speculative extras."
           settingKeys={["tokenSaver"]}
           control={
             <ScopedSwitch
               settingKeys={["tokenSaver"]}
-              checked={settings.tokenSaver.enabled}
+              checked={settings.tokenSaver.newThreads.leanCode}
               onCheckedChange={(checked) =>
-                updateSettings({ tokenSaver: { enabled: Boolean(checked) } })
+                updateSettings({ tokenSaver: { newThreads: { leanCode: Boolean(checked) } } })
               }
-              aria-label="Token Saver"
+              aria-label="Lean code for new threads"
             />
           }
         />
-        {settings.tokenSaver.enabled ? (
-          <>
-            <SettingsRow
-              serverScoped
-              title="Default concise replies"
-              description="Lite drops preambles and recaps; Full and Ultra are terser. Security warnings, steps, questions and anything written to files, commits or PRs stay in full sentences."
+        <SettingsRow
+          serverScoped
+          title="Quiet tools for new threads"
+          description="Targeted searches, only the needed line ranges, no re-reading files."
+          settingKeys={["tokenSaver"]}
+          control={
+            <ScopedSwitch
               settingKeys={["tokenSaver"]}
-              control={
-                <Select
-                  value={settings.tokenSaver.defaults.concise}
-                  onValueChange={(value) => {
-                    if (
-                      value === "off" ||
-                      value === "lite" ||
-                      value === "full" ||
-                      value === "ultra"
-                    )
-                      updateSettings({ tokenSaver: { defaults: { concise: value } } });
-                  }}
-                >
-                  <SelectTrigger
-                    size="sm"
-                    className="w-full sm:w-44"
-                    aria-label="Default concise replies"
-                  >
-                    <SelectValue>
-                      {TOKEN_SAVER_CONCISE_LABELS[settings.tokenSaver.defaults.concise]}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectPopup align="end" alignItemWithTrigger={false}>
-                    {(["off", "lite", "full", "ultra"] as const).map((level) => (
-                      <SelectItem hideIndicator key={level} value={level}>
-                        {TOKEN_SAVER_CONCISE_LABELS[level]}
-                      </SelectItem>
-                    ))}
-                  </SelectPopup>
-                </Select>
+              checked={settings.tokenSaver.newThreads.quietTools}
+              onCheckedChange={(checked) =>
+                updateSettings({ tokenSaver: { newThreads: { quietTools: Boolean(checked) } } })
               }
+              aria-label="Quiet tools for new threads"
             />
-            <SettingsRow
-              serverScoped
-              title="Default lean code"
-              description="Least code that works, reuse what exists, no speculative extras."
+          }
+        />
+        <SettingsRow
+          serverScoped
+          title="RTK compression for new threads"
+          description="Runs shell commands through rtk when this server has it installed."
+          settingKeys={["tokenSaver"]}
+          control={
+            <ScopedSwitch
               settingKeys={["tokenSaver"]}
-              control={
-                <ScopedSwitch
-                  settingKeys={["tokenSaver"]}
-                  checked={settings.tokenSaver.defaults.leanCode}
-                  onCheckedChange={(checked) =>
-                    updateSettings({ tokenSaver: { defaults: { leanCode: Boolean(checked) } } })
-                  }
-                  aria-label="Default lean code"
-                />
+              checked={settings.tokenSaver.newThreads.rtk}
+              onCheckedChange={(checked) =>
+                updateSettings({ tokenSaver: { newThreads: { rtk: Boolean(checked) } } })
               }
+              aria-label="RTK compression for new threads"
             />
-            <SettingsRow
-              serverScoped
-              title="Default quiet tools"
-              description="Targeted searches, only the needed line ranges, no re-reading files."
-              settingKeys={["tokenSaver"]}
-              control={
-                <ScopedSwitch
-                  settingKeys={["tokenSaver"]}
-                  checked={settings.tokenSaver.defaults.quietTools}
-                  onCheckedChange={(checked) =>
-                    updateSettings({ tokenSaver: { defaults: { quietTools: Boolean(checked) } } })
-                  }
-                  aria-label="Default quiet tools"
-                />
-              }
-            />
-          </>
-        ) : null}
+          }
+        />
         <SettingsRow
           serverScoped
           {...searchableSetting("snooze-limited-threads")}

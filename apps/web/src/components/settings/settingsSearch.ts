@@ -366,7 +366,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "token-saver",
     title: "Token Saver",
     to: "/settings/general",
-    searchTerms: ["token saver concise terse lean code quiet tools cost tokens system prompt"],
+    searchTerms: [
+      "token saver concise terse lean code quiet tools rtk new threads cost tokens system prompt",
+    ],
   },
   {
     id: "prompt-suggestions",

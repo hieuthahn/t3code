@@ -6,10 +6,13 @@ import {
   TokenSaverStatsError,
 } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import { CommandAvailability } from "@t3tools/shared/shell";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerSettings from "../serverSettings.ts";
@@ -49,6 +52,13 @@ const OFF: TokenSaverTurn = { profileKey: "off", instructions: undefined };
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
+  const isCommandAvailable = yield* CommandAvailability;
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const rtkAvailable = isCommandAvailable("rtk").pipe(
+    Effect.provideService(FileSystem.FileSystem, fileSystem),
+    Effect.provideService(Path.Path, path),
+  );
 
   const resolveTurn = Effect.fn("TokenSaverService.resolveTurn")(function* (
     thread: Pick<OrchestrationV2AppThread, "tokenSaver">,
@@ -61,7 +71,9 @@ const make = Effect.gen(function* () {
       ),
     );
     if (settings === undefined) return OFF;
-    const config = effectiveTokenSaverConfig(settings.tokenSaver, thread.tokenSaver);
+    const config = effectiveTokenSaverConfig(settings.tokenSaver, thread.tokenSaver, {
+      rtk: yield* rtkAvailable,
+    });
     return {
       profileKey: tokenSaverProfileKey(config),
       instructions: buildTokenSaverInstructions(config),
@@ -113,7 +125,7 @@ const make = Effect.gen(function* () {
           new TokenSaverStatsError({ detail: `Could not read token usage: ${String(cause)}` }),
       ),
     );
-    return summarizeTokenSaverUsage(
+    const summary = summarizeTokenSaverUsage(
       rows.map((row) => ({
         saverOn: row.saver_on === 1,
         inThread: row.in_thread === 1,
@@ -124,6 +136,7 @@ const make = Effect.gen(function* () {
         cachedInputTokens: row.cached_input_tokens ?? 0,
       })),
     );
+    return { ...summary, rtkAvailable: yield* rtkAvailable };
   });
 
   return TokenSaverService.of({ resolveTurn, recordAttempt, stats });

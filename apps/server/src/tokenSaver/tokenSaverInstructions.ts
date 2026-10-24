@@ -47,6 +47,12 @@ const QUIET_TOOLS_RULES: ReadonlyArray<string> = [
   "Prefer one well-aimed command to several exploratory ones, and keep command output short.",
 ];
 
+const RTK_RULES: ReadonlyArray<string> = [
+  "rtk is installed and shrinks command output before you read it.",
+  "Prefix shell commands with rtk, for example rtk git status, rtk git diff, rtk grep <pattern> or rtk test <test command>.",
+  "If rtk rejects a command, run the command without it.",
+];
+
 const section = (title: string, rules: ReadonlyArray<string>) =>
   [`### ${title}`, ...rules.map((rule) => `- ${rule}`)].join("\n");
 
@@ -54,9 +60,11 @@ const section = (title: string, rules: ReadonlyArray<string>) =>
 export function effectiveTokenSaverConfig(
   settings: TokenSaverSettings,
   threadOverride: TokenSaverConfig | undefined,
+  tools: { readonly rtk: boolean },
 ): TokenSaverConfig | undefined {
   if (!settings.enabled) return undefined;
-  const config = threadOverride ?? settings.defaults;
+  const chosen = threadOverride ?? settings.defaults;
+  const config = chosen.rtk && !tools.rtk ? { ...chosen, rtk: false } : chosen;
   return isTokenSaverConfigActive(config) ? config : undefined;
 }
 
@@ -67,6 +75,7 @@ export function tokenSaverProfileKey(config: TokenSaverConfig | undefined): stri
     ...(config.concise === "off" ? [] : [`concise-${config.concise}`]),
     ...(config.leanCode ? ["lean-code"] : []),
     ...(config.quietTools ? ["quiet-tools"] : []),
+    ...(config.rtk ? ["rtk"] : []),
   ].join("+");
 }
 
@@ -81,6 +90,7 @@ export function buildTokenSaverInstructions(
       : [section("Concise replies", CONCISE_RULES[config.concise])]),
     ...(config.leanCode ? [section("Lean code", LEAN_CODE_RULES)] : []),
     ...(config.quietTools ? [section("Quiet tools", QUIET_TOOLS_RULES)] : []),
+    ...(config.rtk ? [section("RTK compression", RTK_RULES)] : []),
     `### Exception\n${FIXED_EXCEPTION}`,
   ].join("\n\n");
 }

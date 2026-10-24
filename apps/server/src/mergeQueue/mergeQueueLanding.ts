@@ -66,22 +66,21 @@ export const makeMergeQueueGit = (driver: GitVcsDriver.GitVcsDriver["Service"]) 
 export type MergeQueueGit = ReturnType<typeof makeMergeQueueGit>;
 
 /** The project's scripts marked as merge gates, with the environment's saved settings applied. */
-export const resolveMergeGates = (
+export const resolveMergeGates = Effect.fn("MergeQueue.resolveMergeGates")(function* (
   projects: ProjectService.ProjectService["Service"],
   settings: ServerSettings.ServerSettingsService["Service"],
   projectId: ProjectId,
-) =>
-  Effect.gen(function* () {
-    const project = yield* projects.getById(projectId);
-    const savedSettings = yield* settings.getSettings;
-    return Option.match(project, {
-      onNone: (): ReadonlyArray<ProjectScript> => [],
-      onSome: (value) =>
-        resolveProjectScripts(savedSettings, value).filter(
-          (script) => script.runAsMergeGate === true,
-        ),
-    });
+) {
+  const project = yield* projects.getById(projectId);
+  const savedSettings = yield* settings.getSettings;
+  return Option.match(project, {
+    onNone: (): ReadonlyArray<ProjectScript> => [],
+    onSome: (value) =>
+      resolveProjectScripts(savedSettings, value).filter(
+        (script) => script.runAsMergeGate === true,
+      ),
   });
+});
 
 /** Find the worktree, if any, that has `branch` checked out, from `git worktree list --porcelain`. */
 export const worktreeHolding = (porcelain: string, branch: string) =>

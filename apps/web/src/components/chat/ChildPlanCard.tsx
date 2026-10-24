@@ -142,6 +142,7 @@ function PendingChildPlanForm(props: {
               <span className="flex min-w-0 flex-col gap-0.5">
                 <span className="text-sm text-foreground">{child.title}</span>
                 <span className="text-xs text-muted-foreground">
+                  {child.worker === undefined ? "" : `Worker ${child.worker} · `}
                   {child.modelSelection.model} ·{" "}
                   {child.isolation === "worktree" ? "own worktree" : "shared folder"}
                 </span>

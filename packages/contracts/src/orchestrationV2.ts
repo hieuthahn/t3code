@@ -1616,6 +1616,8 @@ export const OrchestrationV2ChildProposal = Schema.Struct({
   title: TrimmedNonEmptyString,
   brief: TrimmedNonEmptyString,
   role: Schema.optional(TrimmedNonEmptyString),
+  /** The team worker's number when a team's architect proposed it. */
+  worker: Schema.optional(PositiveInt),
   isolation: Schema.Literals(["shared", "worktree"]),
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,

@@ -208,6 +208,10 @@ export const layerWith = (options: { readonly tickEvery: Duration.Duration | nul
               },
             ];
           });
+          const workerOf = (key: string) => {
+            const worker = input.assignments.find((assignment) => assignment.key === key)?.worker;
+            return worker === undefined ? {} : { worker };
+          };
           const decision =
             team.autonomous === true
               ? {
@@ -220,6 +224,7 @@ export const layerWith = (options: { readonly tickEvery: Duration.Duration | nul
                   clientRequestId: `team:${run.run_id}:round:${run.rounds + 1}`,
                   tasks: incoming.map((item) => ({
                     key: item.key,
+                    ...workerOf(item.key),
                     title: item.title,
                     task: item.task,
                     isolation: item.isolation,

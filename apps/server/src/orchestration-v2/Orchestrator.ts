@@ -8217,6 +8217,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       revision: existing === undefined ? 1 : changed ? existing.revision + 1 : existing.revision,
       planStatus: command.planStatus,
       ...(command.reason === undefined ? {} : { reason: command.reason }),
+      ...(pending || command.closedReason === undefined
+        ? {}
+        : { closedReason: command.closedReason }),
       children,
       planDecision: null,
     });

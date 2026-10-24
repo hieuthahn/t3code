@@ -36,12 +36,28 @@ export const canAddTeamWorker = (setup: TeamSetup) => setup.workers.length < TEA
 export const leadGuidanceBytesLeft = (guidance: string) =>
   TEAM_LEAD_GUIDANCE_MAX_BYTES - 1 - utf8ByteLength(guidance);
 
-/** The label the composer shows: how many workers a running team has. */
-export function teamControlLabel(team: TeamSetup | null): string {
-  if (team === null) return "Team";
-  const count = team.workers.length;
-  return `Team · ${count} ${count === 1 ? "worker" : "workers"}`;
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
+
+/** The composer control's accessible name: how many workers a running team has. */
+export function teamControlName(team: TeamSetup | null): string {
+  return team === null ? "Team" : `Team, ${plural(team.workers.length, "worker")}`;
 }
+
+/** What the model picker adds after the architect: the worker models other than the one shown. */
+export function teamModelSuffix(team: TeamSetup | null, shown: ModelSelection): string | null {
+  if (team === null) return null;
+  const others = new Set(
+    team.workers
+      .filter((worker) => worker.instanceId !== shown.instanceId || worker.model !== shown.model)
+      .map((worker) => `${worker.instanceId}\u0000${worker.model}`),
+  );
+  return others.size === 0 ? null : `+${plural(others.size, "model")}`;
+}
+
+export const teamWithArchitect = (team: TeamSetup, selection: ModelSelection): TeamSetup => ({
+  ...team,
+  architect: teamMemberFromSelection(selection),
+});
 
 export function upsertTeamProfile(
   profiles: ReadonlyArray<TeamProfile>,

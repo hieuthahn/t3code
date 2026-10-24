@@ -1654,6 +1654,8 @@ const OrchestrationV2ChildPlanRequestFields = {
   revision: PositiveInt,
   planStatus: OrchestrationV2ChildPlanStatus,
   reason: Schema.optional(Schema.String),
+  /** Why the card closed before the user decided, such as its team stopping. */
+  closedReason: Schema.optional(Schema.String),
   children: Schema.Array(OrchestrationV2ChildProposal),
   planDecision: Schema.NullOr(OrchestrationV2ChildPlanDecision),
   launches: Schema.optional(Schema.Array(OrchestrationV2ChildPlanLaunch)),
@@ -3663,6 +3665,7 @@ const OrchestrationV2InternalCommand = Schema.Union([
     reason: Schema.optional(Schema.String),
     children: Schema.Array(OrchestrationV2ChildProposal),
     planStatus: Schema.Literals(["pending", "expired", "cancelled"]),
+    closedReason: Schema.optional(Schema.String),
   }),
   /** Records which approved children started, and why any did not. */
   Schema.Struct({

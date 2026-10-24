@@ -428,3 +428,38 @@ describe("server model preferences", () => {
     expect(decodeServerSettingsPatch(input)).toEqual(input);
   });
 });
+
+describe("Token Saver settings", () => {
+  const newThreads = (tokenSaver: unknown) =>
+    decodeServerSettings({ tokenSaver }).tokenSaver.newThreads;
+  const off = { concise: "off", leanCode: false, quietTools: false, rtk: false };
+
+  it("starts new threads with every pack off", () => {
+    expect(decodeServerSettings({}).tokenSaver.newThreads).toEqual(off);
+  });
+
+  it("carries the old master switch's defaults over only where it was on", () => {
+    expect(newThreads({ enabled: true })).toEqual({ ...off, concise: "lite", quietTools: true });
+    expect(newThreads({ enabled: true, defaults: { leanCode: true } })).toEqual({
+      ...off,
+      concise: "lite",
+      leanCode: true,
+      quietTools: true,
+    });
+    expect(newThreads({ defaults: { concise: "ultra" } })).toEqual(off);
+  });
+
+  it("reads a sparse saved config with the missing packs off", () => {
+    expect(newThreads({ newThreads: { concise: "full" } })).toEqual({ ...off, concise: "full" });
+    const settings = decodeServerSettings({ tokenSaver: { newThreads: { rtk: true } } });
+    expect(encodeServerSettings(settings).tokenSaver).toEqual({
+      newThreads: { ...off, rtk: true },
+    });
+  });
+
+  it("patches the packs new threads start with", () => {
+    expect(
+      decodeServerSettingsPatch({ tokenSaver: { newThreads: { leanCode: true } } }).tokenSaver,
+    ).toEqual({ newThreads: { leanCode: true } });
+  });
+});

@@ -1025,8 +1025,8 @@ const TokenSaverSettingsStored = Schema.Struct({
 });
 
 /**
- * Older servers gated every thread behind `enabled` and kept the packs in `defaults`; only a
- * switched-on saver carries those packs over, so nothing starts saving that was off before.
+ * Older servers kept the packs in `defaults`, sparse against Lite with quiet tools, behind an
+ * `enabled` switch; saved packs carry over, and a switched-on saver keeps the packs it ran.
  */
 const TokenSaverSettingsCurrent = Schema.Struct({ newThreads: TokenSaverConfig });
 
@@ -1040,7 +1040,7 @@ export const TokenSaverSettings = TokenSaverSettingsStored.pipe(
       decode: (stored) => ({
         newThreads:
           stored.newThreads ??
-          (stored.enabled === true
+          (stored.defaults !== undefined || stored.enabled === true
             ? { ...DEFAULT_TOKEN_SAVER_CONFIG, ...stored.defaults }
             : TOKEN_SAVER_OFF_CONFIG),
       }),

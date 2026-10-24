@@ -78,6 +78,7 @@ export const layerWith = (options: { readonly tickEvery: Duration.Duration | nul
       const store = makeTeamStore(sql, changes);
       const work = makeTeamWork({ store, threads, orchestrator });
       const wokeAfter = new Map<string, string | null>();
+      const awaitedMerges = new Map<string, ReadonlySet<string>>();
       const newId = crypto.randomUUIDv4().pipe(Effect.orDie);
       const shellOf = (threadId: ThreadId) =>
         threads.getThreadShell(threadId).pipe(Effect.orElseSucceed(() => null));
@@ -101,7 +102,7 @@ export const layerWith = (options: { readonly tickEvery: Duration.Duration | nul
           Effect.logWarning("Could not message the architect", { cause }),
         ),
       );
-      const watchRun = makeTeamWatch({ store, work, threads, tell, wokeAfter });
+      const watchRun = makeTeamWatch({ store, work, threads, tell, wokeAfter, awaitedMerges });
 
       const view: TeamService["Service"]["view"] = Effect.fn("Team.view")(function* (threadId) {
         const run = yield* store.latestRun(threadId);

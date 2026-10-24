@@ -1,6 +1,14 @@
 import type { TeamWaitReason } from "@t3tools/contracts";
 
+import type { TeamMerge } from "./teamRows.ts";
+
 const listKeys = (keys: ReadonlyArray<string>) => keys.join(", ");
+
+const mergeOutcome = (merge: TeamMerge) => {
+  if (merge.status === "merged") return `${merge.child_title} merged`;
+  if (merge.status === "cancelled") return `${merge.child_title} removed by the user`;
+  return `${merge.child_title} failed to land and its child was told why`;
+};
 
 /** One sentence on what a waiting assignment needs, for the architect and the panel. */
 export function describeWait(reason: TeamWaitReason): string {
@@ -35,10 +43,10 @@ export const teamMessage = {
     `${task}\n\nEnd with a final report under ${summaryLimitBytes} bytes: what you changed, each check you ran with its result, and what is left open.`,
   startQueued: (keys: ReadonlyArray<string>) =>
     `Team: ${listKeys(keys)} can start now and start during your turn. Reply briefly and end the turn when nothing else needs you.`,
-  continuePlan: (pendingMerges: number) =>
-    pendingMerges === 0
-      ? "Continuing the plan: no worker is running and no assignment is waiting to start. Assign the next round with team_assign, or call team_finish if the work is done."
-      : `Continuing the plan: no worker is running and no assignment is waiting to start. ${pendingMerges === 1 ? "1 merge waits" : `${pendingMerges} merges wait`} for the user to approve on the merge queue panel; do not merge them yourself. Assign the next round with team_assign if more work is needed, or call team_finish.`,
+  continuePlan:
+    "Continuing the plan: no worker is running and no assignment is waiting to start. Assign the next round with team_assign, or call team_finish if the work is done.",
+  mergesSettled: (merges: ReadonlyArray<TeamMerge>) =>
+    `Team: ${merges.map(mergeOutcome).join("; ")}. Assign the next round with team_assign, or call team_finish if the work is done.`,
   resumed: "The user resumed the team. Continue the plan from where it stopped.",
   restarted: (interrupted: ReadonlyArray<string>) =>
     interrupted.length === 0

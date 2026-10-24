@@ -6,6 +6,7 @@ import type * as SqlClient from "effect/sql/SqlClient";
 import type { SqlError } from "effect/sql/SqlError";
 
 import {
+  type TeamMerge,
   decodeAssignmentRows,
   decodeRunRows,
   encodeCallerScope,
@@ -55,10 +56,9 @@ export const makeTeamStore = (sql: SqlClient.SqlClient, changes: PubSub.PubSub<T
   const runsWithStatus = (status: TeamRunRow["status"]) =>
     read(sql`SELECT * FROM team_runs WHERE status = ${status}`, decodeRunRows);
 
-  const pendingMergesOf = (threadId: ThreadId) =>
-    sql<{ readonly count: number }>`SELECT COUNT(*) AS count FROM merge_queue_items
-      WHERE owner_thread_id = ${threadId} AND status = 'awaiting_user'`.pipe(
-      Effect.map((rows) => rows[0]?.count ?? 0),
+  const mergesOf = (threadId: ThreadId) =>
+    sql<TeamMerge>`SELECT item_id, child_title, status FROM merge_queue_items
+      WHERE owner_thread_id = ${threadId}`.pipe(
       Effect.mapError(teamError("Could not read the merge queue.")),
     );
 
@@ -163,7 +163,7 @@ export const makeTeamStore = (sql: SqlClient.SqlClient, changes: PubSub.PubSub<T
     latestRun,
     runsWithStatus,
     assignmentsOf,
-    pendingMergesOf,
+    mergesOf,
     insertRun,
     queueAssignments,
     updateRun,

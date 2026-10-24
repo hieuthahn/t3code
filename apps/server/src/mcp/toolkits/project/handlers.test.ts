@@ -1,5 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import {
+  DEFAULT_TEAM_LIMITS,
   EnvironmentId,
   ProjectId,
   ProviderInstanceId,
@@ -7,6 +8,8 @@ import {
   type ModelSelection,
   type RuntimeMode,
   type OrchestrationV2ThreadShell,
+  type TeamSetup,
+  ThreadId,
 } from "@t3tools/contracts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -39,6 +42,8 @@ const clientLaunchHarness = (input: {
   readonly launched: Array<ThreadLaunch.ThreadLaunchInput>;
   readonly workspaceRoot?: string;
   readonly checkWorktreeBase?: ThreadLaunch.ThreadLaunchService["Service"]["checkWorktreeBase"];
+  /** Calls from a live agent thread running this team instead of from a client. */
+  readonly callerTeam?: TeamSetup;
 }) => {
   const projectId = ProjectId.make("project:client-target");
   const modelSelection = {
@@ -49,6 +54,22 @@ const clientLaunchHarness = (input: {
   const projectDefaults: { model: ModelSelection | null } = {
     model: input.overrideModel === undefined ? modelSelection : null,
   };
+  const callerThreadId = ThreadId.make("thread:architect");
+  const callerShell =
+    input.callerTeam === undefined
+      ? null
+      : ({
+          id: callerThreadId,
+          projectId,
+          modelSelection,
+          team: input.callerTeam,
+          providerInstanceId: modelSelection.instanceId,
+          activeRunId: "run:architect",
+          archivedAt: null,
+          deletedAt: null,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+        } as unknown as OrchestrationV2ThreadShell);
   const layerDependencies = Layer.mergeAll(
     ServerSettings.layerTest({
       ...(input.defaultRuntimeMode === undefined
@@ -67,18 +88,29 @@ const clientLaunchHarness = (input: {
     Layer.succeed(McpInvocationContext.McpInvocationContext, {
       environmentId: EnvironmentId.make("environment"),
       requestNamespace: "client:session-1",
-      thread: undefined,
-      client: {
-        sessionId: "session-1",
-        label: "Claude Code",
-        access: input.runtimeModeCeiling,
-      },
+      thread:
+        callerShell === null
+          ? undefined
+          : {
+              threadId: callerThreadId,
+              providerSessionId: "architect-session",
+              providerInstanceId: modelSelection.instanceId,
+            },
+      client:
+        callerShell === null
+          ? {
+              sessionId: "session-1",
+              label: "Claude Code",
+              access: input.runtimeModeCeiling,
+            }
+          : undefined,
       issuedAt: 0,
       capabilities: new Set(["orchestration" as const]),
     }),
     Layer.mock(ThreadManagement.ThreadManagementService)({
       // A thread exists once a launch started it.
       getThreadShell: (threadId) => {
+        if (callerShell !== null && threadId === callerThreadId) return Effect.succeed(callerShell);
         const launch = input.launched.find((candidate) => candidate.threadId === threadId);
         return Effect.succeed(
           launch === undefined
@@ -217,6 +249,39 @@ it.effect(
       });
       expect(fromSettings.launched[0]?.modelSelection).toEqual(overrideModel);
     }),
+);
+
+it.effect("a team's architect is pointed from t3_thread_launch to team_assign", () =>
+  Effect.gen(function* () {
+    const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];
+    const { projectId, modelSelection, dependencies } = clientLaunchHarness({
+      runtimeModeCeiling: "full-access",
+      launched,
+      callerTeam: {
+        architect: { instanceId: ProviderInstanceId.make("claudeAgent"), model: "claude-opus" },
+        workers: [{ instanceId: ProviderInstanceId.make("claudeAgent"), model: "claude-haiku" }],
+        limits: DEFAULT_TEAM_LIMITS,
+      },
+    });
+    const toolkit = yield* ProjectToolkit.pipe(
+      Effect.provide(
+        McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(Layer.provide(dependencies)),
+      ),
+    );
+    const result = yield* toolkit
+      .handle("t3_thread_launch", {
+        title: "Add subtract",
+        projectId,
+        message: "Add subtract to math.js",
+        modelSelection,
+      })
+      .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
+    expect(result.at(-1)?.result).toMatchObject({
+      code: "invalid_request",
+      message: expect.stringContaining("team_assign"),
+    });
+    expect(launched).toHaveLength(0);
+  }),
 );
 
 it.effect("a launch retried with the same clientRequestId replays the first one", () =>

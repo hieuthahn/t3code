@@ -55,6 +55,13 @@ export const makeTeamStore = (sql: SqlClient.SqlClient, changes: PubSub.PubSub<T
   const runsWithStatus = (status: TeamRunRow["status"]) =>
     read(sql`SELECT * FROM team_runs WHERE status = ${status}`, decodeRunRows);
 
+  const pendingMergesOf = (threadId: ThreadId) =>
+    sql<{ readonly count: number }>`SELECT COUNT(*) AS count FROM merge_queue_items
+      WHERE owner_thread_id = ${threadId} AND status = 'awaiting_user'`.pipe(
+      Effect.map((rows) => rows[0]?.count ?? 0),
+      Effect.mapError(teamError("Could not read the merge queue.")),
+    );
+
   const assignmentsOf = (runId: string) =>
     read(
       sql`SELECT * FROM team_assignments WHERE run_id = ${runId} ORDER BY ordinal`,
@@ -156,6 +163,7 @@ export const makeTeamStore = (sql: SqlClient.SqlClient, changes: PubSub.PubSub<T
     latestRun,
     runsWithStatus,
     assignmentsOf,
+    pendingMergesOf,
     insertRun,
     queueAssignments,
     updateRun,

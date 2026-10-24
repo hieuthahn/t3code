@@ -438,7 +438,7 @@ describe("Token Saver settings", () => {
     expect(decodeServerSettings({}).tokenSaver.newThreads).toEqual(off);
   });
 
-  it("carries the old master switch's defaults over only where it was on", () => {
+  it("keeps the packs an older server saved, dropping its master switch", () => {
     expect(newThreads({ enabled: true })).toEqual({ ...off, concise: "lite", quietTools: true });
     expect(newThreads({ enabled: true, defaults: { leanCode: true } })).toEqual({
       ...off,
@@ -446,7 +446,12 @@ describe("Token Saver settings", () => {
       leanCode: true,
       quietTools: true,
     });
-    expect(newThreads({ defaults: { concise: "ultra" } })).toEqual(off);
+    expect(newThreads({ enabled: false, defaults: { concise: "ultra" } })).toEqual({
+      ...off,
+      concise: "ultra",
+      quietTools: true,
+    });
+    expect(newThreads({ enabled: false })).toEqual(off);
   });
 
   it("reads a sparse saved config with the missing packs off", () => {

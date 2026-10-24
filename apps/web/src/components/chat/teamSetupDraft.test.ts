@@ -58,7 +58,8 @@ describe("team setup helpers", () => {
 
   it("labels the composer control with the team's size", () => {
     expect(teamControlLabel(null)).toBe("Team");
-    expect(teamControlLabel({ ...saved, workers: [worker, worker] })).toBe("Team · 2");
+    expect(teamControlLabel({ ...saved, workers: [worker] })).toBe("Team · 1 worker");
+    expect(teamControlLabel({ ...saved, workers: [worker, worker] })).toBe("Team · 2 workers");
   });
 
   it("replaces a saved profile by id and appends a new one", () => {

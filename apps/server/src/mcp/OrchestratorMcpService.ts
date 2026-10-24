@@ -213,7 +213,7 @@ export interface OrchestratorMcpServiceShape {
   /** propose_tasks without the launches, for a team that queues what the user approves. */
   readonly askChildPlan: (
     scope: McpInvocationScope,
-    input: OrchestratorMcpProposeTasksInput,
+    input: ChildPlanInput,
   ) => Effect.Effect<ChildPlanAnswer, OrchestratorMcpFailure>;
   /** Record a delegated child's report on its own task, beside what git shows in its checkout. */
   readonly reportTask: (
@@ -667,6 +667,13 @@ function canExposeTaskRunResult(run: OrchestrationV2Run | undefined): run is Orc
 
 function stablePart(value: string): string {
   return encodeURIComponent(value);
+}
+
+/** A team's proposal also names the worker each task goes to, which an agent cannot set. */
+export interface ChildPlanInput extends OrchestratorMcpProposeTasksInput {
+  readonly tasks: ReadonlyArray<
+    OrchestratorMcpProposeTasksInput["tasks"][number] & { readonly worker?: number }
+  >;
 }
 
 export type ChildPlanLaunch =
@@ -1913,7 +1920,7 @@ const make = Effect.gen(function* () {
   /** Show child sessions on a card and wait for the user's pick; it starts none of them. */
   const askChildPlan = Effect.fn("OrchestratorMcpService.askChildPlan")(function* (
     callerScope: McpInvocationScope,
-    input: OrchestratorMcpProposeTasksInput,
+    input: ChildPlanInput,
   ) {
     const { scope, parent } = yield* loadThreadCaller(callerScope, "propose_tasks");
     const threadId = scope.thread.threadId;
@@ -1954,6 +1961,7 @@ const make = Effect.gen(function* () {
           title: task.title,
           brief: task.task,
           ...(task.role === undefined ? {} : { role: task.role }),
+          ...(task.worker === undefined ? {} : { worker: task.worker }),
           isolation: task.isolation ?? "shared",
           modelSelection: target.modelSelection,
           runtimeMode: yield* resolveRuntimeMode(

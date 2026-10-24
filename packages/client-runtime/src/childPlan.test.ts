@@ -96,6 +96,12 @@ describe("childPlanDisplay", () => {
       kind: "closed",
       label: "Closed before a decision",
     });
+    expect(
+      childPlanDisplay(
+        plan({ planStatus: "cancelled", closedReason: "The user stopped the team." }),
+        "local",
+      ),
+    ).toEqual({ kind: "closed", label: "The user stopped the team." });
   });
 });
 

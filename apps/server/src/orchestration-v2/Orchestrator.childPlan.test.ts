@@ -90,6 +90,7 @@ const startParent = Effect.gen(function* () {
     id: string,
     planStatus: "pending" | "expired" | "cancelled",
     children = [proposal("api", "Retry sends"), proposal("ui", "Show retry state")],
+    closedReason?: string,
   ) =>
     orchestrator.dispatch({
       type: "child_plan.record",
@@ -102,6 +103,7 @@ const startParent = Effect.gen(function* () {
       reason: "Two independent halves",
       children,
       planStatus,
+      ...(closedReason === undefined ? {} : { closedReason }),
     });
   const decide = (
     id: string,
@@ -245,6 +247,20 @@ it.effect("expires a proposal nobody answered", () =>
     const expired = yield* card;
     assert.equal(expired?.planStatus, "expired");
     assert.equal(expired?.status, "cancelled");
+    const late = yield* decide("plan-decide-late", 1, ["api"]).pipe(Effect.result);
+    assert.isTrue(Result.isFailure(late));
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("closes a proposal with the reason it closed", () =>
+  Effect.gen(function* () {
+    const { record, decide, card } = yield* startParent;
+    yield* record("plan-record-1", "pending");
+    yield* record("plan-record-closed", "cancelled", undefined, "The user stopped the team.");
+
+    const closed = yield* card;
+    assert.equal(closed?.planStatus, "cancelled");
+    assert.equal(closed?.closedReason, "The user stopped the team.");
     const late = yield* decide("plan-decide-late", 1, ["api"]).pipe(Effect.result);
     assert.isTrue(Result.isFailure(late));
   }).pipe(Effect.provide(layerTest)),

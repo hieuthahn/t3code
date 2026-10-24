@@ -66,6 +66,13 @@ interface Fixture {
   readonly proposed: Array<{ readonly key: string; readonly worker: number | undefined }>;
   /** What the user picks on the card; null leaves it unanswered. */
   approve: ReadonlyArray<string> | null;
+  /** What the user does on the team while the card shows. */
+  duringCard: Effect.Effect<void> | null;
+  /** The user picked before the card's caller could close it. */
+  approvedBeforeClose: boolean;
+  /** Why the card closed before a decision, if it did. */
+  closedWith: string | undefined;
+  readonly launches: Array<OrchestratorMcpService.ChildPlanLaunch>;
 }
 
 const makeFixture = (setup: TeamSetup = team()): Fixture => ({
@@ -90,6 +97,10 @@ const makeFixture = (setup: TeamSetup = team()): Fixture => ({
   stopped: [],
   proposed: [],
   approve: null,
+  duringCard: null,
+  approvedBeforeClose: false,
+  closedWith: undefined,
+  launches: [],
 });
 
 const keyOf = (clientRequestId: string) => clientRequestId.split(":").at(-2)!;
@@ -148,19 +159,31 @@ const dependenciesFor = (fixture: Fixture) =>
           return { taskId: NodeId.make(`node:${key}`), childThreadId } as never;
         }),
       askChildPlan: (_scope, input) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           const keys = input.tasks.map((task) => task.key);
           fixture.proposed.push(
             ...input.tasks.map((task) => ({ key: task.key, worker: task.worker })),
           );
-          const approve = fixture.approve;
+          if (fixture.duringCard !== null) yield* fixture.duringCard;
+          if (!fixture.approvedBeforeClose && input.closeReason !== undefined) {
+            fixture.closedWith = yield* input.closeReason;
+          }
+          const approve = fixture.closedWith === undefined ? fixture.approve : null;
           return {
-            status: approve === null ? "timed_out" : "partially_approved",
+            status:
+              fixture.closedWith !== undefined
+                ? "cancelled"
+                : approve === null
+                  ? "timed_out"
+                  : "partially_approved",
             requestKey: "request",
             approvedKeys: keys.filter((key) => approve?.includes(key) ?? false),
             declinedKeys: keys.filter((key) => !(approve?.includes(key) ?? true)),
             children: [],
-            recordLaunches: () => Effect.void,
+            recordLaunches: (launches) =>
+              Effect.sync(() => {
+                fixture.launches.push(...launches);
+              }),
           };
         }),
     }),
@@ -242,6 +265,70 @@ it.effect("starts nothing when the user does not answer the card", () =>
     const result = yield* withTeam(fixture, (service) => assign(service, [work("api")]));
     assert.equal(result.status, "timed_out");
     assert.deepEqual(fixture.delegated, []);
+  }),
+);
+
+it.effect("closes the waiting card and starts nothing when the user stops the team", () =>
+  Effect.gen(function* () {
+    const fixture = makeFixture(team({ autonomous: false }));
+    fixture.approve = ["api"];
+    yield* withTeam(fixture, (service) =>
+      Effect.gen(function* () {
+        fixture.duringCard = service.stop({ threadId: architectId }).pipe(Effect.orDie);
+        const refused = yield* assign(service, [work("api")]).pipe(Effect.flip);
+        assert.include(refused.message, "The user stopped the team.");
+        assert.equal(fixture.closedWith, "The user stopped the team.");
+        assert.deepEqual(fixture.delegated, []);
+        assert.equal((yield* service.view(architectId))?.status, "stopped");
+      }),
+    );
+  }),
+);
+
+it.effect("starts nothing the user approved just as the team stopped", () =>
+  Effect.gen(function* () {
+    const fixture = makeFixture(team({ autonomous: false }));
+    fixture.approve = ["api"];
+    fixture.approvedBeforeClose = true;
+    yield* withTeam(fixture, (service) =>
+      Effect.gen(function* () {
+        fixture.duringCard = service.stop({ threadId: architectId }).pipe(Effect.orDie);
+        const refused = yield* assign(service, [work("api")]).pipe(Effect.flip);
+        assert.include(refused.message, "The user stopped the team.");
+        assert.deepEqual(fixture.delegated, []);
+        assert.deepEqual(fixture.launches, [
+          { key: "api", failure: "The user stopped the team." },
+        ]);
+        yield* service.tick;
+        assert.deepEqual(fixture.delegated, []);
+      }),
+    );
+  }),
+);
+
+it.effect("holds what the user approves while the team is paused until it resumes", () =>
+  Effect.gen(function* () {
+    const fixture = makeFixture(team({ autonomous: false }));
+    fixture.approve = ["api"];
+    yield* withTeam(fixture, (service) =>
+      Effect.gen(function* () {
+        fixture.duringCard = service.pause({ threadId: architectId }).pipe(Effect.orDie);
+        const result = yield* assign(service, [work("api")]);
+        assert.equal(result.status, "queued");
+        assert.deepEqual(result.started, []);
+        assert.deepEqual(result.waiting, [
+          { key: "api", reason: "Waits for the user to resume the team." },
+        ]);
+        yield* service.tick;
+        assert.deepEqual(fixture.delegated, []);
+        yield* service.resume({ threadId: architectId });
+        yield* service.tick;
+        assert.deepEqual(
+          fixture.delegated.map((call) => keyOf(call.clientRequestId)),
+          ["api"],
+        );
+      }),
+    );
   }),
 );
 

@@ -9,18 +9,26 @@ import {
   type ThreadAccountChoice,
   ProviderInstanceId,
   type ServerProvider,
+  type TeamSetup,
   type ThreadId,
   ProviderInteractionMode,
   RuntimeMode,
 } from "@t3tools/contracts";
 import { deriveThreadRuntime } from "@t3tools/client-runtime/state/thread-execution";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { type SetStateAction } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { threadEnvironment } from "~/state/threads";
+import { useOrchestrationCommand } from "~/state/use-orchestration-command";
 import { toastManager } from "../ui/toast";
 import { resolveAppModelSelectionForInstance } from "../../modelSelection";
 import { resolveNewDraftStartFromOrigin } from "../../lib/chatThreadActions";
 import { type DraftThreadEnvMode, useComposerDraftStore } from "../../composerDraftStore";
+import { teamWithArchitect } from "./teamSetupDraft";
 import {
   getStartedThreadModelChangeBlockReason,
   deriveLockedProvider,
@@ -141,6 +149,25 @@ export function useComposerSelection(input: ComposerSelectionInput) {
       : null,
   );
 
+  const updateMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata);
+  const moveTeamArchitect = async (
+    thread: EnvironmentThreadShell,
+    team: TeamSetup,
+    selection: ModelSelection,
+  ) => {
+    const result = await updateMetadata({
+      environmentId: thread.environmentId,
+      input: { threadId: thread.id, team: teamWithArchitect(team, selection) },
+    });
+    if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
+    const error = squashAtomCommandFailure(result);
+    toastManager.add({
+      type: "error",
+      title: "Could not move the team's architect",
+      description: error instanceof Error ? error.message : String(error),
+    });
+  };
+
   const onProviderModelSelect = (
     instanceId: ProviderInstanceId,
     model: string,
@@ -218,6 +245,9 @@ export function useComposerSelection(input: ComposerSelectionInput) {
       { explicit: true, replaceOptions: true },
     );
     setStickyComposerModelSelection(stickyModelSelection);
+    if (activeThread.team != null) {
+      void moveTeamArchitect(activeThread, activeThread.team, nextModelSelection);
+    }
     if (options?.focusComposer !== false) scheduleComposerFocus();
   };
   const onProviderModelSelectStable = useStableCallback(onProviderModelSelect);

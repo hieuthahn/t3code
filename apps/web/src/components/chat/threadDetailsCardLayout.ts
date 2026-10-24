@@ -14,6 +14,19 @@ export function resolveThreadDetailsCardDensity(
   return "essential";
 }
 
+/** The merge queue and team panels hold actions waiting on the user, so they stay at any density. */
+export function threadDetailsPanels(
+  density: ReturnType<typeof resolveThreadDetailsCardDensity>,
+  isDraft: boolean,
+) {
+  return {
+    automations: density === "full" && !isDraft,
+    mergeQueue: !isDraft,
+    team: !isDraft,
+    relationships: density === "full" && !isDraft,
+  };
+}
+
 export function resolveThreadDetailsCardLayout({
   container,
   lane,

@@ -114,7 +114,11 @@ export const makeTeamWatch = (input: {
           break;
         case "continue_plan":
           yield* store.updateRun(fresh, { stalls: action.stalls, last_stall_run_id: action.runId });
-          yield* tell(shell.projectId, run.thread_id, teamMessage.continuePlan);
+          yield* tell(
+            shell.projectId,
+            run.thread_id,
+            teamMessage.continuePlan(yield* store.pendingMergesOf(run.thread_id)),
+          );
           break;
         case "pause":
           yield* store.updateRun(fresh, {

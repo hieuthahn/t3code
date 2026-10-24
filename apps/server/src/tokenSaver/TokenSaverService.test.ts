@@ -1,5 +1,11 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { RunAttemptId, ThreadId } from "@t3tools/contracts";
+import {
+  DEFAULT_TOKEN_SAVER_CONFIG,
+  RunAttemptId,
+  ThreadId,
+  TOKEN_SAVER_OFF_CONFIG,
+  type TokenSaverConfig,
+} from "@t3tools/contracts";
 import { CommandAvailability } from "@t3tools/shared/shell";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -13,10 +19,10 @@ import * as TokenSaver from "./TokenSaverService.ts";
 const THREAD = ThreadId.make("thread-token-saver");
 const OTHER = ThreadId.make("thread-token-saver-other");
 
-const layer = (enabled: boolean, rtk = false) =>
+const layer = (newThreads: TokenSaverConfig, rtk = false) =>
   TokenSaver.layer.pipe(
     Layer.provideMerge(SqlitePersistence.layerMemory),
-    Layer.provide(ServerSettings.layerTest({ tokenSaver: { enabled } })),
+    Layer.provide(ServerSettings.layerTest({ tokenSaver: { newThreads } })),
     Layer.provide(NodeServices.layer),
     Layer.provide(
       Layer.succeed(CommandAvailability, (command) => Effect.succeed(rtk && command === "rtk")),
@@ -51,7 +57,7 @@ const complete = (outputTokens: number, inputTokens = 1000) => ({
 });
 
 describe("TokenSaverService", () => {
-  it.effect("follows the thread's override, else the defaults, only while enabled", () =>
+  it.effect("follows the thread's override, else the packs new threads start with", () =>
     Effect.gen(function* () {
       const service = yield* TokenSaver.TokenSaverService;
       const fromDefaults = yield* service.resolveTurn({});
@@ -62,7 +68,7 @@ describe("TokenSaverService", () => {
       });
       assert.equal(overridden.profileKey, "concise-ultra+lean-code");
       assert.notInclude(overridden.instructions ?? "", "### Quiet tools");
-    }).pipe(Effect.provide(layer(true))),
+    }).pipe(Effect.provide(layer(DEFAULT_TOKEN_SAVER_CONFIG))),
   );
 
   it.effect.each([false, true])("sends the rtk pack only from a host with rtk (%s)", (rtk) =>
@@ -74,17 +80,21 @@ describe("TokenSaverService", () => {
       assert.equal(turn.profileKey, rtk ? "quiet-tools+rtk" : "quiet-tools");
       assert.equal((turn.instructions ?? "").includes("### RTK compression"), rtk);
       assert.equal((yield* service.stats(THREAD)).rtkAvailable, rtk);
-    }).pipe(Effect.provide(layer(true, rtk))),
+    }).pipe(Effect.provide(layer(DEFAULT_TOKEN_SAVER_CONFIG, rtk))),
   );
 
-  it.effect("injects nothing while Token Saver is off in settings", () =>
+  it.effect("injects only a thread's own packs while new threads start off", () =>
     Effect.gen(function* () {
       const service = yield* TokenSaver.TokenSaverService;
-      const turn = yield* service.resolveTurn({
-        tokenSaver: { concise: "full", leanCode: true, quietTools: true, rtk: true },
+      assert.deepEqual(yield* service.resolveTurn({}), {
+        profileKey: "off",
+        instructions: undefined,
       });
-      assert.deepEqual(turn, { profileKey: "off", instructions: undefined });
-    }).pipe(Effect.provide(layer(false))),
+      const own = yield* service.resolveTurn({
+        tokenSaver: { concise: "full", leanCode: false, quietTools: false, rtk: false },
+      });
+      assert.equal(own.profileKey, "concise-full");
+    }).pipe(Effect.provide(layer(TOKEN_SAVER_OFF_CONFIG))),
   );
 
   it.effect("compares complete turns tagged on with every other turn", () =>
@@ -135,6 +145,6 @@ describe("TokenSaverService", () => {
       assert.equal(stats.overall.off.turns, 5);
       assert.equal(stats.overall.off.averageOutputTokens, 300);
       assert.equal(stats.overall.on.averageInputTokens, 1000);
-    }).pipe(Effect.provide(layer(true))),
+    }).pipe(Effect.provide(layer(DEFAULT_TOKEN_SAVER_CONFIG))),
   );
 });

@@ -9,6 +9,10 @@ import {
   type TeamSetup,
   teamLimitChangeProblems,
 } from "@t3tools/contracts";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import { ChevronRightIcon, PlusIcon, UsersIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -67,6 +71,9 @@ export function ComposerTeamControl(props: {
   const canWriteSettings = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
   const [draft, setDraft] = useState<TeamSetup | null>(null);
   const [profileId, setProfileId] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
   const runQuery = useEnvironmentQuery(
     thread?.team === undefined
       ? null
@@ -91,8 +98,10 @@ export function ComposerTeamControl(props: {
       : NO_USAGE;
   const limitProblems = team === null ? [] : teamLimitChangeProblems(setup.limits, used);
 
-  const apply = (next: TeamSetup | null) => {
-    void updateMetadata({
+  const apply = async (next: TeamSetup | null) => {
+    setApplying(true);
+    setApplyError(null);
+    const result = await updateMetadata({
       environmentId,
       input: {
         threadId,
@@ -100,15 +109,28 @@ export function ComposerTeamControl(props: {
         ...(next === null ? {} : { modelSelection: next.architect }),
       },
     });
+    setApplying(false);
+    if (result._tag === "Failure") {
+      if (isAtomCommandInterrupted(result)) return;
+      const error = squashAtomCommandFailure(result);
+      setApplyError(error instanceof Error ? error.message : String(error));
+      return;
+    }
     if (next !== null && canWriteSettings) updateSettings({ team: { defaultSetup: next } });
+    setOpen(false);
   };
   const saveProfiles = (profiles: ReadonlyArray<TeamProfile>) =>
     updateSettings({ team: { profiles: [...profiles] } });
 
   return (
     <Popover
-      onOpenChange={(open) => {
-        if (open) setDraft(null);
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) {
+          setDraft(null);
+          setApplyError(null);
+        }
       }}
     >
       <PopoverTrigger render={<ComposerControl size={size} type="button" aria-label="Team" />}>
@@ -119,7 +141,7 @@ export function ComposerTeamControl(props: {
       </PopoverTrigger>
       <PopoverPopup {...floatingLayerProps} side="top" align="start" className="w-96">
         <div className="grid gap-3">
-          <PopoverTitle>Team</PopoverTitle>
+          <PopoverTitle>Architect & workers</PopoverTitle>
 
           <TeamProfileBar
             profiles={settings.profiles}
@@ -282,6 +304,12 @@ export function ComposerTeamControl(props: {
             </CollapsiblePanel>
           </Collapsible>
 
+          {applyError === null ? null : (
+            <p role="alert" className="text-xs text-destructive">
+              Could not apply the team: {applyError}
+            </p>
+          )}
+
           {limitProblems.length === 0 ? null : (
             <p role="alert" className="text-xs text-destructive">
               {limitProblems.join(" ")}
@@ -304,16 +332,16 @@ export function ComposerTeamControl(props: {
                 <Button
                   size="sm"
                   variant="ghost"
-                  disabled={!canOperate}
-                  onClick={() => apply(null)}
+                  disabled={!canOperate || applying}
+                  onClick={() => void apply(null)}
                 >
                   Single agent
                 </Button>
               )}
               <Button
                 size="sm"
-                disabled={!canOperate || limitProblems.length > 0}
-                onClick={() => apply(setup)}
+                disabled={!canOperate || applying || limitProblems.length > 0}
+                onClick={() => void apply(setup)}
               >
                 {team === null ? "Start team" : "Apply"}
               </Button>

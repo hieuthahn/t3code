@@ -35,8 +35,10 @@ export const teamMessage = {
     `${task}\n\nEnd with a final report under ${summaryLimitBytes} bytes: what you changed, each check you ran with its result, and what is left open.`,
   startQueued: (keys: ReadonlyArray<string>) =>
     `Team: ${listKeys(keys)} can start now and start during your turn. Reply briefly and end the turn when nothing else needs you.`,
-  continuePlan:
-    "Continuing the plan: no worker is running and nothing is queued. Assign the next round with team_assign, or call team_finish if the work is done.",
+  continuePlan: (pendingMerges: number) =>
+    pendingMerges === 0
+      ? "Continuing the plan: no worker is running and no assignment is waiting to start. Assign the next round with team_assign, or call team_finish if the work is done."
+      : `Continuing the plan: no worker is running and no assignment is waiting to start. ${pendingMerges === 1 ? "1 merge waits" : `${pendingMerges} merges wait`} for the user to approve on the merge queue panel; do not merge them yourself. Assign the next round with team_assign if more work is needed, or call team_finish.`,
   resumed: "The user resumed the team. Continue the plan from where it stopped.",
   restarted: (interrupted: ReadonlyArray<string>) =>
     interrupted.length === 0

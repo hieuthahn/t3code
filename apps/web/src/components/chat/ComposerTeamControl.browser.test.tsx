@@ -24,6 +24,7 @@ const state = vi.hoisted(() => ({
   metadata: [] as unknown[],
   settings: [] as unknown[],
   run: null as TeamRunView | null,
+  metadataFailure: null as string | null,
 }));
 
 vi.mock("~/hooks/useSettings", () => ({
@@ -49,7 +50,9 @@ vi.mock("~/state/session", async (importOriginal) => ({
 vi.mock("~/state/use-orchestration-command", () => ({
   useOrchestrationCommand: () => async (value: unknown) => {
     state.metadata.push(value);
-    return { _tag: "Success", value: null };
+    if (state.metadataFailure === null) return { _tag: "Success", value: null };
+    const Cause = await import("effect/Cause");
+    return { _tag: "Failure", cause: Cause.fail(new Error(state.metadataFailure)) };
   },
 }));
 vi.mock("~/state/query", async (importOriginal) => ({
@@ -90,6 +93,7 @@ function setup(overrides: Partial<typeof state> = {}) {
     metadata: [],
     settings: [],
     run: null,
+    metadataFailure: null,
     ...overrides,
   });
 }
@@ -130,7 +134,9 @@ it("starts a team from the thread's model and saves it as the default", async ()
 it("adds and removes workers up to six", async () => {
   setup({ team: { architect, workers: [worker], limits: DEFAULT_TEAM_LIMITS } });
   await using _screen = await renderControl();
-  await expect.element(page.getByRole("button", { name: "Team" })).toHaveTextContent("Team · 1");
+  await expect
+    .element(page.getByRole("button", { name: "Team" }))
+    .toHaveTextContent("Team · 1 worker");
   await userEvent.click(page.getByRole("button", { name: "Team" }));
   const add = page.getByRole("button", { name: "Add worker" });
   for (let count = 1; count < 6; count += 1) await userEvent.click(add);
@@ -235,4 +241,46 @@ it("refuses limits below what the running team already used", async () => {
     .element(page.getByRole("alert"))
     .toHaveTextContent("maxAssignments cannot go below the 5 assignments already made.");
   await expect.element(page.getByRole("button", { name: "Apply" })).toBeDisabled();
+});
+
+it("names the popover after the architect and its workers", async () => {
+  setup();
+  await using _screen = await renderControl();
+  await userEvent.click(page.getByRole("button", { name: "Team" }));
+  await expect.element(page.getByText("Architect & workers")).toBeVisible();
+});
+
+it("offers to save the setup when no profile is saved yet", async () => {
+  setup();
+  await using _screen = await renderControl();
+  await userEvent.click(page.getByRole("button", { name: "Team" }));
+  await userEvent.click(page.getByRole("combobox", { name: "Team profile" }));
+  await expect.element(page.getByRole("option", { name: "No saved profiles" })).toBeVisible();
+  await userEvent.click(page.getByRole("option", { name: "Save current setup as…" }));
+  await userEvent.fill(page.getByRole("textbox", { name: "Team profile name" }), "Pair");
+  await userEvent.click(page.getByRole("button", { name: "Save" }));
+  const saved = state.settings[0] as { team: { profiles: TeamProfile[] } };
+  expect(saved.team.profiles.map((profile) => profile.name)).toEqual(["Pair"]);
+});
+
+it("closes the popover once Apply lands", async () => {
+  setup({ team: { architect, workers: [worker], limits: DEFAULT_TEAM_LIMITS } });
+  await using _screen = await renderControl();
+  await userEvent.click(page.getByRole("button", { name: "Team" }));
+  await userEvent.click(page.getByRole("button", { name: "Apply" }));
+  await expect.element(page.getByRole("button", { name: "Apply" })).not.toBeInTheDocument();
+});
+
+it("keeps the popover open and shows why Apply failed", async () => {
+  setup({
+    team: { architect, workers: [worker], limits: DEFAULT_TEAM_LIMITS },
+    metadataFailure: "The thread is busy.",
+  });
+  await using _screen = await renderControl();
+  await userEvent.click(page.getByRole("button", { name: "Team" }));
+  await userEvent.click(page.getByRole("button", { name: "Apply" }));
+  await expect
+    .element(page.getByRole("alert"))
+    .toHaveTextContent("Could not apply the team: The thread is busy.");
+  await expect.element(page.getByRole("button", { name: "Apply" })).toBeVisible();
 });

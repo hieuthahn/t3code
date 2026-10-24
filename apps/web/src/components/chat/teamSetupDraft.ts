@@ -54,6 +54,11 @@ export function teamModelSuffix(team: TeamSetup | null, shown: ModelSelection): 
   return others.size === 0 ? null : `+${plural(others.size, "model")}`;
 }
 
+export const teamWithArchitect = (team: TeamSetup, selection: ModelSelection): TeamSetup => ({
+  ...team,
+  architect: teamMemberFromSelection(selection),
+});
+
 export function upsertTeamProfile(
   profiles: ReadonlyArray<TeamProfile>,
   profile: TeamProfile,

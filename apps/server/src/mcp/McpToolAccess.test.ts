@@ -332,7 +332,12 @@ it.effect.each([
   ["sends_to_main_chat", sideChat, { threadId: fullAccessThreadId }, "ran"],
   ["sends_to_main_chat", sideChat, { threadId: supervisedThreadId }, "ran"],
   ["sends_to_main_chat", sideChat, { threadId: planThreadId }, "ran"],
-  ["sends_to_main_chat", supervised, { threadId: fullAccessThreadId }, "runtime_mode_escalation_denied"],
+  [
+    "sends_to_main_chat",
+    supervised,
+    { threadId: fullAccessThreadId },
+    "runtime_mode_escalation_denied",
+  ],
   [
     "sends_to_main_chat",
     otherSideChat,

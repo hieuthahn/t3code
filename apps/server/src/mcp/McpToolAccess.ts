@@ -202,8 +202,7 @@ export const writesThreads = <P, A, E, R>(
           options?.sideChatMain === "allowed" &&
           targets.length > 0 &&
           targets.every(
-            (threadId) =>
-              threadId !== undefined && isSideChatMainThread(caller.caller, threadId),
+            (threadId) => threadId !== undefined && isSideChatMainThread(caller.caller, threadId),
           );
         for (const threadId of targets) {
           if (threadId === undefined || threadId === caller.scope.thread?.threadId) continue;

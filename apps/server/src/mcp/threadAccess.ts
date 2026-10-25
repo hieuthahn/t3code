@@ -112,8 +112,7 @@ export const loadCaller = Effect.fn("mcp.loadCaller")(function* () {
 export const isSideChatMainThread = (
   caller: Pick<OrchestrationV2ThreadShell, "lineage"> | undefined,
   targetThreadId: ThreadId,
-) =>
-  caller?.lineage.sideQuestion === true && caller.lineage.parentThreadId === targetThreadId;
+) => caller?.lineage.sideQuestion === true && caller.lineage.parentThreadId === targetThreadId;
 
 export const assertTargetWithinLimits = (
   limits: CallerLimits,

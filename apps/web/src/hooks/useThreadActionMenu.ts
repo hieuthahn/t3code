@@ -210,7 +210,10 @@ export function useThreadActionMenu(input: {
           return;
         }
         case "side-chat":
-          await openSideChat({ environmentId: threadRef.environmentId, threadId: threadRef.threadId });
+          await openSideChat({
+            environmentId: threadRef.environmentId,
+            threadId: threadRef.threadId,
+          });
           return;
         case "settle":
           await reportFailure("Failed to settle thread", () => settleThread(threadRef));

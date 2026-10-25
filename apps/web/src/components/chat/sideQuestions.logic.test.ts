@@ -66,9 +66,7 @@ describe("nextSideChatTitle", () => {
   it("numbers a side chat after the lowest number its main chat has free", () => {
     expect(nextSideChatTitle([])).toBe("Side chat");
     expect(nextSideChatTitle(["Side chat"])).toBe("Side chat 2");
-    expect(nextSideChatTitle(["Side chat", "Side chat 3", "why is it flaky?"])).toBe(
-      "Side chat 2",
-    );
+    expect(nextSideChatTitle(["Side chat", "Side chat 3", "why is it flaky?"])).toBe("Side chat 2");
     expect(nextSideChatTitle(["Side chat 2"])).toBe("Side chat");
   });
 });

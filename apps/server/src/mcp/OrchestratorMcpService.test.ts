@@ -2632,9 +2632,9 @@ describe("OrchestratorMcpService side chat", () => {
   };
   const send = (threadId: ThreadId) =>
     Effect.gen(function* () {
-      const sent = yield* Ref.make<ReadonlyArray<{ threadId: ThreadId; senderThreadId?: ThreadId }>>(
-        [],
-      );
+      const sent = yield* Ref.make<
+        ReadonlyArray<{ threadId: ThreadId; senderThreadId?: ThreadId }>
+      >([]);
       const shells = new Map([main, stranger, sideChat].map((shell) => [shell.id, shell] as const));
       const outcome = yield* OrchestratorMcpService.OrchestratorMcpService.pipe(
         Effect.flatMap((mcp) =>
@@ -2651,9 +2651,7 @@ describe("OrchestratorMcpService side chat", () => {
                   getThreadRecords: (id) =>
                     Effect.succeed(idleThreadProjection(shells.get(id) ?? sideChat)),
                   getProjectThreadRecords: (input) =>
-                    Effect.succeed(
-                      idleThreadProjection(shells.get(input.threadId) ?? sideChat),
-                    ),
+                    Effect.succeed(idleThreadProjection(shells.get(input.threadId) ?? sideChat)),
                   sendToThread: (input) =>
                     Ref.update(sent, (calls) => [
                       ...calls,

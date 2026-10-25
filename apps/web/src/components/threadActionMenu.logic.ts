@@ -3,6 +3,7 @@ import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled"
 
 export type ThreadActionMenuId =
   | "new-thread-on-branch"
+  | "side-chat"
   | "filter-by-project"
   | "project-settings"
   | "pin"
@@ -78,6 +79,8 @@ export interface ThreadActionMenuState {
   readonly isRegeneratingTitle: boolean;
   /** Archive rejects a thread with an attached provider, so disable it here rather than let the action fail. */
   readonly isRunning: boolean;
+  /** A side chat reads the main chat, so it needs a turn to read. */
+  readonly canOpenSideChat: boolean;
   readonly supports: {
     readonly settlement: boolean;
     readonly autoSettleOptOut: boolean;
@@ -113,6 +116,9 @@ export function buildThreadActionMenuItems(
             icon: "message-square-plus",
           },
         ]
+      : []),
+    ...(state.canOpenSideChat
+      ? [{ id: "side-chat" as const, label: "Open side chat", icon: "message-circle-question" }]
       : []),
     ...(state.supports.pinning
       ? [

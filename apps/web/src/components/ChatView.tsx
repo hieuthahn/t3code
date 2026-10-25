@@ -274,6 +274,7 @@ import {
 } from "./composerFooterLayout";
 import { ChatHeader } from "./chat/ChatHeader";
 import { SideQuestionTabs } from "./chat/SideQuestionTabs";
+import { SIDE_CHAT_PLACEHOLDER } from "./chat/sideQuestions.logic";
 import { useRemoteOpenState } from "~/remoteOpen";
 import { shouldShowOpenInPicker } from "./chat/OpenInPicker.logic";
 import { useOpenFavoriteEditorShortcut } from "./chat/OpenInPickerShortcut";
@@ -3531,6 +3532,9 @@ export default function ChatView(props: ChatViewProps) {
                 onManualNavigation={cancelTimelineLiveFollowForUserNavigationStable}
                 cancelPositionRestoreRef={cancelPositionRestoreRef}
                 hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
+                {...(activeThreadShell?.lineage.sideQuestion === true
+                  ? { emptyPlaceholder: SIDE_CHAT_PLACEHOLDER }
+                  : {})}
                 emptyPlaceholderInset={composerReservedHeight}
                 topFadeEnabled={!hasTimelineTopBanner}
                 {...(paintOnlyDisplayedTimeline || threadHistoryControls === undefined

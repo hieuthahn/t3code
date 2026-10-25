@@ -108,6 +108,13 @@ export const loadCaller = Effect.fn("mcp.loadCaller")(function* () {
   } satisfies Caller;
 });
 
+/** A side chat may message the main chat it was opened from, whatever modes that chat runs in. */
+export const isSideChatMainThread = (
+  caller: Pick<OrchestrationV2ThreadShell, "lineage"> | undefined,
+  targetThreadId: ThreadId,
+) =>
+  caller?.lineage.sideQuestion === true && caller.lineage.parentThreadId === targetThreadId;
+
 export const assertTargetWithinLimits = (
   limits: CallerLimits,
   target: { readonly runtimeMode: RuntimeMode; readonly interactionMode: ProviderInteractionMode },

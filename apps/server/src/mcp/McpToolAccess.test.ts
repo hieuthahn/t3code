@@ -39,7 +39,22 @@ const backgroundShell = (threadId: ThreadId, providerInstanceId: ProviderInstanc
   ],
 });
 
+const sideChatThreadId = ThreadId.make("thread:side-chat");
+const otherSideChatThreadId = ThreadId.make("thread:other-side-chat");
+
+const sideChatShell = (threadId: ThreadId, mainThreadId: ThreadId) => ({
+  ...liveThreadShell(threadId, { runtimeMode: "approval-required" }),
+  lineage: {
+    rootThreadId: mainThreadId,
+    parentThreadId: mainThreadId,
+    relationshipToParent: "fork" as const,
+    sideQuestion: true as const,
+  },
+});
+
 const shells = new Map([
+  [sideChatThreadId, sideChatShell(sideChatThreadId, fullAccessThreadId)],
+  [otherSideChatThreadId, sideChatShell(otherSideChatThreadId, supervisedThreadId)],
   [supervisedThreadId, liveThreadShell(supervisedThreadId, { runtimeMode: "approval-required" })],
   [
     planThreadId,
@@ -121,6 +136,10 @@ const ProbeToolkit = Toolkit.make(
     ...probe,
     parameters: Schema.Struct({ threadId: Schema.optional(ThreadId) }),
   }),
+  Tool.make("sends_to_main_chat", {
+    ...probe,
+    parameters: Schema.Struct({ threadId: Schema.optional(ThreadId) }),
+  }),
   Tool.make("starts_threads", {
     ...probe,
     parameters: Schema.Struct({
@@ -140,6 +159,11 @@ const probeHandlers: McpToolAccess.Handlers<typeof ProbeToolkit.tools> = {
   writes_threads: McpToolAccess.writesThreads(
     (input) => [input.threadId],
     () => ran,
+  ),
+  sends_to_main_chat: McpToolAccess.writesThreads(
+    (input) => [input.threadId],
+    () => ran,
+    { sideChatMain: "allowed" },
   ),
   starts_threads: McpToolAccess.startsThreads(
     (input) => input,
@@ -184,6 +208,7 @@ export const refusedAtCompileTime = () => {
       writes: unchecked,
       writes_with_capability: unchecked,
       writes_threads: unchecked,
+      sends_to_main_chat: unchecked,
       starts_threads: unchecked,
       writes_environment: unchecked,
     }),
@@ -218,6 +243,8 @@ const call = (
   );
 
 const supervised = threadCaller(supervisedThreadId);
+const sideChat = threadCaller(sideChatThreadId);
+const otherSideChat = threadCaller(otherSideChatThreadId);
 const plan = threadCaller(planThreadId);
 const fullAccess = threadCaller(fullAccessThreadId);
 const ended = threadCaller(endedThreadId);
@@ -300,6 +327,18 @@ it.effect.each([
     "runtime_mode_escalation_denied",
   ],
   ["writes_threads", supervised, { threadId: "thread:missing" }, "ran"],
+  ["writes_threads", sideChat, { threadId: fullAccessThreadId }, "runtime_mode_escalation_denied"],
+
+  ["sends_to_main_chat", sideChat, { threadId: fullAccessThreadId }, "ran"],
+  ["sends_to_main_chat", sideChat, { threadId: supervisedThreadId }, "ran"],
+  ["sends_to_main_chat", sideChat, { threadId: planThreadId }, "ran"],
+  ["sends_to_main_chat", supervised, { threadId: fullAccessThreadId }, "runtime_mode_escalation_denied"],
+  [
+    "sends_to_main_chat",
+    otherSideChat,
+    { threadId: fullAccessThreadId },
+    "runtime_mode_escalation_denied",
+  ],
 
   ["starts_threads", supervised, {}, "approval-required/default"],
   ["starts_threads", supervised, { runtimeMode: "full-access" }, "runtime_mode_escalation_denied"],

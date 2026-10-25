@@ -2602,3 +2602,110 @@ describe("OrchestratorMcpService thread lookup", () => {
     }),
   );
 });
+
+describe("OrchestratorMcpService side chat", () => {
+  const mainThreadId = ThreadId.make("thread:side-chat-main");
+  const strangerThreadId = ThreadId.make("thread:side-chat-stranger");
+  const sideChatThreadId = ThreadId.make("thread:side-chat");
+  const main = liveThreadShell(mainThreadId, { runtimeMode: "full-access" });
+  const stranger = liveThreadShell(strangerThreadId, { runtimeMode: "full-access" });
+  const sideChat = {
+    ...liveThreadShell(sideChatThreadId, { runtimeMode: "approval-required" }),
+    lineage: {
+      rootThreadId: mainThreadId,
+      parentThreadId: mainThreadId,
+      relationshipToParent: "fork" as const,
+      sideQuestion: true as const,
+    },
+  };
+  const scope: McpInvocationScope = {
+    environmentId: EnvironmentId.make("environment:side-chat"),
+    requestNamespace: "provider-session:side-chat",
+    thread: {
+      threadId: sideChatThreadId,
+      providerSessionId: "provider-session:side-chat",
+      providerInstanceId: sideChat.providerInstanceId,
+    },
+    client: undefined,
+    capabilities: new Set(["orchestration"]),
+    issuedAt: 1,
+  };
+  const send = (threadId: ThreadId) =>
+    Effect.gen(function* () {
+      const sent = yield* Ref.make<ReadonlyArray<{ threadId: ThreadId; senderThreadId?: ThreadId }>>(
+        [],
+      );
+      const shells = new Map([main, stranger, sideChat].map((shell) => [shell.id, shell] as const));
+      const outcome = yield* OrchestratorMcpService.OrchestratorMcpService.pipe(
+        Effect.flatMap((mcp) =>
+          mcp.sendToThread(scope, { threadId, message: "Add last month's numbers" }),
+        ),
+        Effect.result,
+        Effect.provide(
+          layerOrchestratorService.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                NodeServices.layer,
+                Layer.mock(ThreadManagementService.ThreadManagementService)({
+                  getThreadShell: (id) => Effect.succeed(shells.get(id) ?? null),
+                  getThreadRecords: (id) =>
+                    Effect.succeed(idleThreadProjection(shells.get(id) ?? sideChat)),
+                  getProjectThreadRecords: (input) =>
+                    Effect.succeed(
+                      idleThreadProjection(shells.get(input.threadId) ?? sideChat),
+                    ),
+                  sendToThread: (input) =>
+                    Ref.update(sent, (calls) => [
+                      ...calls,
+                      {
+                        threadId: input.threadId,
+                        ...(input.senderThreadId === undefined
+                          ? {}
+                          : { senderThreadId: input.senderThreadId }),
+                      },
+                    ]).pipe(
+                      Effect.as({
+                        run: { id: RunId.make("run:side-chat-send"), status: "queued" },
+                        delivery: "queued",
+                      } as never),
+                    ),
+                }),
+                ServerSettings.layerTest(),
+                Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
+                Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({
+                  list: () => Effect.succeed([]),
+                }),
+                Layer.mock(ProjectService.ProjectService)({
+                  getById: () => Effect.succeed(Option.none()),
+                }),
+                Layer.mock(SecretRequests.SecretRequests)({}),
+                Layer.mock(RemoteDelegation.RemoteDelegation)({}),
+                Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+              ),
+            ),
+          ),
+        ),
+      );
+      return { outcome, sent: yield* Ref.get(sent) };
+    });
+
+  it.effect("sends to its main chat above its own runtime mode, naming itself as the sender", () =>
+    Effect.gen(function* () {
+      const { outcome, sent } = yield* send(mainThreadId);
+      assert.equal(outcome._tag, "Success");
+      assert.deepEqual(sent, [{ threadId: mainThreadId, senderThreadId: sideChatThreadId }]);
+    }),
+  );
+
+  it.effect("still refuses a broader thread that is not its main chat", () =>
+    Effect.gen(function* () {
+      const { outcome, sent } = yield* send(strangerThreadId);
+      assert.equal(outcome._tag, "Failure");
+      assert.equal(
+        outcome._tag === "Failure" ? (outcome.failure as { code: string }).code : "",
+        "runtime_mode_escalation_denied",
+      );
+      assert.deepEqual(sent, []);
+    }),
+  );
+});

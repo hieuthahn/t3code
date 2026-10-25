@@ -31,14 +31,26 @@ export function initialTeamSetup(input: {
   return { architect, workers: [architect], limits: DEFAULT_TEAM_LIMITS };
 }
 
+/** A team, a single agent (null), or "auto" for the effort judge to choose on the first send. */
+export type DraftTeamChoice = TeamSetup | null | "auto";
+
 /** A draft's team: its own choice, else the team new threads start with. */
 export function draftTeam(
-  choice: TeamSetup | null | undefined,
-  settings: { readonly newThreads: boolean; readonly defaultSetup: TeamSetup | null },
-): TeamSetup | null {
+  choice: DraftTeamChoice | undefined,
+  settings: {
+    readonly newThreads: boolean;
+    readonly autoNewThreads: boolean;
+    readonly defaultSetup: TeamSetup | null;
+  },
+): DraftTeamChoice {
   if (choice !== undefined) return choice;
+  if (settings.autoNewThreads && settings.defaultSetup !== null) return "auto";
   return settings.newThreads ? settings.defaultSetup : null;
 }
+
+/** The setup a choice runs, or null for a single agent or an undecided "auto". */
+export const decidedTeam = (choice: DraftTeamChoice): TeamSetup | null =>
+  choice === "auto" ? null : choice;
 
 export const canAddTeamWorker = (setup: TeamSetup) => setup.workers.length < TEAM_MAX_WORKERS;
 
@@ -48,7 +60,8 @@ export const leadGuidanceBytesLeft = (guidance: string) =>
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
 /** The composer control's accessible name: how many workers a running team has. */
-export function teamControlName(team: TeamSetup | null): string {
+export function teamControlName(team: DraftTeamChoice): string {
+  if (team === "auto") return "Team, auto";
   return team === null ? "Team" : `Team, ${plural(team.workers.length, "worker")}`;
 }
 

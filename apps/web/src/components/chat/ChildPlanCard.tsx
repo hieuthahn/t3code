@@ -72,6 +72,7 @@ function PendingChildPlanForm(props: {
   readonly item: ChildPlanItem;
 }) {
   const { item } = props;
+  const offer = item.children.length === 1;
   const headingId = useId();
   const errorId = useId();
   const decide = useOrchestrationCommand(threadEnvironment.decideChildPlan, {
@@ -123,7 +124,7 @@ function PendingChildPlanForm(props: {
           className="flex items-center gap-1.5 text-sm font-medium text-foreground"
         >
           <NetworkIcon className="size-3.5 shrink-0 text-icon-muted" aria-hidden />
-          Start child sessions?
+          {offer ? "Start this in a separate thread?" : "Start child sessions?"}
         </h3>
         {item.reason?.trim() ? (
           <p className="text-sm text-muted-foreground">{item.reason}</p>
@@ -165,7 +166,7 @@ function PendingChildPlanForm(props: {
           disabled={submitting}
           onClick={() => void send([])}
         >
-          Decline all
+          {offer ? "Do it here" : "Decline all"}
         </Button>
         <Button
           type="button"
@@ -173,7 +174,7 @@ function PendingChildPlanForm(props: {
           disabled={submitting || picked.length === 0}
           onClick={() => void send(picked)}
         >
-          Start {childSessionCount(picked.length)}
+          {offer ? "Start" : `Start ${childSessionCount(picked.length)}`}
         </Button>
       </div>
     </section>

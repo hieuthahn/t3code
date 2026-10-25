@@ -43,3 +43,15 @@ export const exceededDispatchModeLimit = (
     : interactionModeRank[modes.interactionMode] > interactionModeRank[limit.interactionMode]
       ? "interaction"
       : undefined;
+
+/** Returns the higher runtime mode and the higher interaction mode of the two. */
+export const joinDispatchModes = (left: DispatchModes, right: DispatchModes): DispatchModes => ({
+  runtimeMode:
+    runtimeModeRank[right.runtimeMode] > runtimeModeRank[left.runtimeMode]
+      ? right.runtimeMode
+      : left.runtimeMode,
+  interactionMode:
+    interactionModeRank[right.interactionMode] > interactionModeRank[left.interactionMode]
+      ? right.interactionMode
+      : left.interactionMode,
+});

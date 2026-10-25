@@ -4,6 +4,7 @@ import { userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../../test/render";
 import type { ChatComposerHandle } from "./ChatComposer";
+import { SplitPaneFocusContext } from "./splitPaneFocusContext";
 import { useChatShortcuts } from "./useChatShortcuts";
 
 const shortcutContext = {
@@ -93,4 +94,29 @@ it("still types other letters into the composer while the launcher is open", asy
 
   expect(composerKeys).toEqual(["a"]);
   expect(received).toEqual([]);
+});
+
+function Pane(props: { focused: boolean; composerKeys: string[] }) {
+  return (
+    <SplitPaneFocusContext value={props.focused}>
+      <Chat composerKeys={props.composerKeys} />
+    </SplitPaneFocusContext>
+  );
+}
+
+it("sends type-to-focus to the focused pane when two panes are mounted", async () => {
+  const first: string[] = [];
+  const second: string[] = [];
+  await using _screen = await render(
+    <>
+      <Pane focused={false} composerKeys={first} />
+      <Pane focused composerKeys={second} />
+    </>,
+    options,
+  );
+
+  await userEvent.keyboard("a");
+
+  expect(first).toEqual([]);
+  expect(second).toEqual(["a"]);
 });

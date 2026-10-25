@@ -223,6 +223,7 @@ import {
   type SidebarProjectSnapshot,
 } from "../sidebarProjectGrouping";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
+import { useSplitViewActions } from "../hooks/useSplitView";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 const SIDEBAR_SORT_LABELS: Record<SidebarProjectSortOrder, string> = {
   updated_at: "Last user message",
@@ -1239,6 +1240,7 @@ function useProjectThreadPanel(input: {
 }
 
 const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjectItemProps) {
+  const { openInSplitView } = useSplitViewActions();
   const {
     project,
     isThreadListExpanded,
@@ -2155,6 +2157,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           ...(thread.branch
             ? [{ id: "new-thread-on-branch", label: `New thread on ${thread.branch}` }]
             : []),
+          { id: "open-in-split", label: "Open in split view" },
           { id: "rename", label: "Rename thread", disabled: !canOperateThread },
           { id: "mark-unread", label: "Mark unread" },
           { id: "copy-path", label: "Copy Path" },
@@ -2177,6 +2180,12 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           to: "/projects/$projectKey",
           params: { projectKey: project.projectKey },
         });
+        return;
+      }
+
+      if (clicked === "open-in-split") {
+        if (isMobile) setOpenMobile(false);
+        openInSplitView([threadRef]);
         return;
       }
 

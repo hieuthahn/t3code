@@ -138,6 +138,236 @@ it.effect("a side question forks a thread whose turn is still running without to
   }).pipe(Effect.provide(forkCases[0]!.layer)),
 );
 
+it.effect(
+  "a side chat forked mid-turn reads the turn in progress and the main chat's later runs, and the main thread gains nothing",
+  () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const eventSink = yield* EventSink.EventSinkV2;
+      const now = yield* DateTime.now;
+      const { driver, instanceId, modelSelection } = forkCases[0]!;
+      const sourceThreadId = ThreadId.make("side-chat-source");
+      const targetThreadId = ThreadId.make("side-chat-target");
+      const providerThreadId = ProviderThreadId.make("side-chat-native-thread");
+      const settledRunId = RunId.make("side-chat-settled-run");
+      const runningRunId = RunId.make("side-chat-running-run");
+      const texts = new Map([
+        [settledRunId, "SETTLED_TURN_MARKER"],
+        [runningRunId, "IN_PROGRESS_TURN_MARKER"],
+      ]);
+
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("side-chat-create"),
+        threadId: sourceThreadId,
+        projectId: ProjectId.make("side-chat-project"),
+        title: "Weekly client report",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        createdBy: "user",
+        creationSource: "web",
+      });
+      yield* eventSink.write({
+        events: [
+          {
+            id: EventId.make("side-chat-provider-thread"),
+            type: "provider-thread.updated",
+            threadId: sourceThreadId,
+            occurredAt: now,
+            payload: {
+              id: providerThreadId,
+              driver,
+              providerInstanceId: instanceId,
+              providerSessionId: null,
+              appThreadId: sourceThreadId,
+              ownerNodeId: null,
+              nativeThreadRef: { driver, nativeId: "native-side-chat", strength: "strong" },
+              nativeConversationHeadRef: null,
+              status: "idle",
+              firstRunOrdinal: 1,
+              lastRunOrdinal: 2,
+              handoffIds: [],
+              forkedFrom: null,
+              createdAt: now,
+              updatedAt: now,
+            },
+          },
+          ...(
+            [
+              [settledRunId, 1, "completed"],
+              [runningRunId, 2, "running"],
+            ] as const
+          ).flatMap(([runId, ordinal, status]) => {
+            const messageId = MessageId.make(`${runId}:message`);
+            return [
+              {
+                id: EventId.make(`${runId}:created`),
+                type: "run.created" as const,
+                threadId: sourceThreadId,
+                runId,
+                occurredAt: now,
+                payload: {
+                  id: runId,
+                  threadId: sourceThreadId,
+                  ordinal,
+                  providerInstanceId: instanceId,
+                  modelSelection,
+                  providerThreadId,
+                  userMessageId: messageId,
+                  rootNodeId: null,
+                  activeAttemptId: null,
+                  status,
+                  queuePosition: null,
+                  requestedAt: now,
+                  startedAt: now,
+                  completedAt: status === "completed" ? now : null,
+                  checkpointId: null,
+                  contextHandoffId: null,
+                },
+              },
+              {
+                id: EventId.make(`${runId}:item`),
+                type: "turn-item.updated" as const,
+                threadId: sourceThreadId,
+                runId,
+                occurredAt: now,
+                payload: {
+                  id: TurnItemId.make(`${runId}:item`),
+                  threadId: sourceThreadId,
+                  runId,
+                  nodeId: null,
+                  providerThreadId,
+                  providerTurnId: null,
+                  nativeItemRef: null,
+                  parentItemId: null,
+                  ordinal,
+                  status: status === "completed" ? ("completed" as const) : ("running" as const),
+                  title: null,
+                  startedAt: now,
+                  completedAt: status === "completed" ? now : null,
+                  updatedAt: now,
+                  type: "user_message" as const,
+                  createdBy: "user" as const,
+                  creationSource: "web" as const,
+                  inputIntent: "turn_start" as const,
+                  messageId,
+                  text: texts.get(runId) ?? "",
+                  attachments: [],
+                },
+              },
+            ];
+          }),
+        ],
+      });
+      const sourceBefore = yield* orchestrator.getThreadProjection(sourceThreadId);
+
+      yield* orchestrator.dispatch({
+        type: "thread.fork",
+        commandId: CommandId.make("side-chat-fork"),
+        sourceThreadId,
+        targetThreadId,
+        sourcePoint: { type: "run", runId: runningRunId },
+        title: "Side chat",
+        sideQuestion: true,
+        createdBy: "user",
+        creationSource: "web",
+      });
+      yield* eventSink.write({
+        events: [
+          {
+            id: EventId.make("side-chat-later-run"),
+            type: "run.created",
+            threadId: sourceThreadId,
+            runId: RunId.make("side-chat-later-run"),
+            occurredAt: now,
+            payload: {
+              id: RunId.make("side-chat-later-run"),
+              threadId: sourceThreadId,
+              ordinal: 3,
+              providerInstanceId: instanceId,
+              modelSelection,
+              providerThreadId,
+              userMessageId: MessageId.make("side-chat-later-message"),
+              rootNodeId: null,
+              activeAttemptId: null,
+              status: "completed",
+              queuePosition: null,
+              requestedAt: now,
+              startedAt: now,
+              completedAt: now,
+              checkpointId: null,
+              contextHandoffId: null,
+            },
+          },
+          {
+            id: EventId.make("side-chat-later-item"),
+            type: "turn-item.updated",
+            threadId: sourceThreadId,
+            runId: RunId.make("side-chat-later-run"),
+            occurredAt: now,
+            payload: {
+              id: TurnItemId.make("side-chat-later-item"),
+              threadId: sourceThreadId,
+              runId: RunId.make("side-chat-later-run"),
+              nodeId: null,
+              providerThreadId,
+              providerTurnId: null,
+              nativeItemRef: null,
+              parentItemId: null,
+              ordinal: 3,
+              status: "completed",
+              title: null,
+              startedAt: now,
+              completedAt: now,
+              updatedAt: now,
+              type: "user_message",
+              createdBy: "user",
+              creationSource: "web",
+              inputIntent: "turn_start",
+              messageId: MessageId.make("side-chat-later-message"),
+              text: "LATER_MAIN_RUN_MARKER",
+              attachments: [],
+            },
+          },
+        ],
+      });
+      const sourceAfterMainMoved = yield* orchestrator.getThreadProjection(sourceThreadId);
+      const sourceShellBefore = yield* orchestrator.getThreadShell(sourceThreadId);
+
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make("side-chat-ask"),
+        threadId: targetThreadId,
+        messageId: MessageId.make("side-chat-ask"),
+        text: "Review the work so far",
+        attachments: [],
+        modelSelection,
+        dispatchMode: { type: "start_immediately" },
+        createdBy: "user",
+        creationSource: "web",
+      });
+
+      const target = yield* orchestrator.getThreadProjection(targetThreadId);
+      assert.equal(target.contextTransfers[0]?.resolution?.strategy, "portable_context");
+      const handoff = target.contextHandoffs[0]!;
+      const history = handoff.history?.messages.map((message) => message.text).join("\n") ?? "";
+      const handoffText = `${handoff.summaryText}\n${history}\n${handoff.history?.coverage ?? ""}`;
+      assert.include(handoffText, "SETTLED_TURN_MARKER");
+      assert.include(handoffText, "IN_PROGRESS_TURN_MARKER");
+      assert.include(handoffText, "LATER_MAIN_RUN_MARKER");
+      assert.include(handoff.history?.coverage ?? "", `threadId:"${sourceThreadId}"`);
+      assert.include(handoff.history?.coverage ?? "", "t3_thread_send");
+      const sourceAfter = yield* orchestrator.getThreadProjection(sourceThreadId);
+      assert.deepEqual(sourceAfter.runs, sourceAfterMainMoved.runs);
+      assert.deepEqual(sourceAfter.turnItems, sourceAfterMainMoved.turnItems);
+      assert.deepEqual(yield* orchestrator.getThreadShell(sourceThreadId), sourceShellBefore);
+      assert.equal(sourceAfter.runs.length, sourceBefore.runs.length + 1);
+    }).pipe(Effect.provide(forkCases[0]!.layer)),
+);
+
 it.effect("a persisted fork leaves PR watching with its parent until explicitly opted in", () =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;

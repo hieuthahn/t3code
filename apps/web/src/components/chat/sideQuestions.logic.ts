@@ -22,25 +22,32 @@ export function sideQuestionTitle(question: string): string {
     : `${line.slice(0, SIDE_QUESTION_TITLE_LENGTH - 1).trimEnd()}…`;
 }
 
-/** The newest run the server accepts as a fork source; a running turn is skipped, never touched. */
-export function latestForkableRunId(
+/** The newest run a side chat reads from; the server also reads any turn still in progress. */
+export function latestSideChatSourceRunId(
   runs: ReadonlyArray<Pick<OrchestrationV2Run, "id" | "ordinal" | "status">>,
 ): RunId | null {
   let latest: Pick<OrchestrationV2Run, "id" | "ordinal"> | null = null;
   for (const run of runs) {
-    if (
-      (run.status === "completed" ||
-        run.status === "waiting" ||
-        run.status === "failed" ||
-        run.status === "interrupted" ||
-        run.status === "cancelled") &&
-      (latest === null || run.ordinal > latest.ordinal)
-    ) {
+    if (run.status !== "rolled_back" && (latest === null || run.ordinal > latest.ordinal)) {
       latest = run;
     }
   }
   return latest?.id ?? null;
 }
+
+const SIDE_CHAT_TITLE = "Side chat";
+
+/** `Side chat`, then `Side chat 2` and up, taking the lowest number the open tabs leave free. */
+export function nextSideChatTitle(openTitles: ReadonlyArray<string>): string {
+  const taken = new Set(openTitles);
+  for (let number = 1; ; number += 1) {
+    const title = number === 1 ? SIDE_CHAT_TITLE : `${SIDE_CHAT_TITLE} ${number}`;
+    if (!taken.has(title)) return title;
+  }
+}
+
+export const SIDE_CHAT_PLACEHOLDER =
+  "Ask about this session. The side chat can read the whole main chat up to now; nothing you ask here is added to it.";
 
 function mainThreadIdIn(
   threadId: ThreadId,

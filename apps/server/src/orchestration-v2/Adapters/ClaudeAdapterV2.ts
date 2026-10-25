@@ -20,6 +20,7 @@ import {
 
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 import { normalizeClaudeTurnTokenUsage } from "../../provider/ClaudeTurnTokenUsage.ts";
+import { claudeMcpServersFromInit } from "./claudeMcpServers.ts";
 import {
   type CanUseTool,
   forkSession as forkClaudeSession,
@@ -71,6 +72,7 @@ import {
   type OrchestrationV2ExecutionNode,
   type OrchestrationV2ProviderCapabilities,
   type OrchestrationV2ProviderFailure,
+  type OrchestrationV2McpServerStatus,
   OrchestrationV2ProviderGoal,
   type OrchestrationV2PlanArtifact,
   type OrchestrationV2PlanStep,
@@ -91,6 +93,7 @@ import {
   type ProviderApprovalFullAccessOverride,
   type ProviderApprovalOption,
   ProviderDriverKind,
+  type OrchestrationV2ContextBreakdownEntry,
   type ProviderInstanceId,
   type ProviderRequestKind,
   type ProviderUserInputAnswers,
@@ -223,6 +226,21 @@ function claudeAutoCompactThreshold(autoCompactWindow: string, maxTokens: number
   return threshold > 0 && (maxTokens === null || threshold < maxTokens)
     ? { autoCompactThreshold: threshold }
     : {};
+}
+
+/** Maps the SDK's own per-category report, leaving out deferred rows that sit outside the window. */
+export function claudeContextBreakdown(report: {
+  readonly categories: ReadonlyArray<{
+    readonly name: string;
+    readonly tokens: number;
+    readonly kind: "used" | "free" | "buffer" | "deferred";
+  }>;
+}): ReadonlyArray<OrchestrationV2ContextBreakdownEntry> {
+  return report.categories.flatMap((category) =>
+    category.kind === "deferred" || category.name.trim().length === 0
+      ? []
+      : [{ name: category.name.trim(), tokens: category.tokens, kind: category.kind }],
+  );
 }
 
 function claudeMessageInputTokens(usage: {
@@ -496,6 +514,10 @@ export interface ClaudeAgentSdkQuerySession {
     mode: PermissionMode,
   ) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
   readonly stopTask: (taskId: string) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
+  readonly contextUsage?: Effect.Effect<
+    ReadonlyArray<OrchestrationV2ContextBreakdownEntry>,
+    ClaudeAgentSdkQueryRunnerError
+  >;
   readonly backgroundTasks: (
     toolUseId: string,
   ) => Effect.Effect<boolean, ClaudeAgentSdkQueryRunnerError>;
@@ -1080,6 +1102,10 @@ export const layerQueryRunner: Layer.Layer<
                 }),
               ),
             ),
+          contextUsage: Effect.tryPromise({
+            try: () => queryRuntime.getContextUsage({ detail: "summary" }),
+            catch: (cause) => queryRunnerError(cause, "getContextUsage"),
+          }).pipe(Effect.map(claudeContextBreakdown)),
           backgroundTasks: (toolUseId) =>
             Effect.tryPromise({
               try: () => queryRuntime.backgroundTasks(toolUseId),
@@ -4136,6 +4162,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           new Map<string, OrchestrationV2ProviderThread>(),
         );
         const goalsByNativeThread = new Map<string, OrchestrationV2ProviderGoal | null>();
+        const mcpServersByNativeThread = new Map<
+          string,
+          ReadonlyArray<OrchestrationV2McpServerStatus>
+        >();
         const goalCheckedTurns = new Set<string>();
         // Subagent registry that survives turn settle: a background subagent
         // (Agent with run_in_background) can complete after the root turn
@@ -4327,6 +4357,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           context: ActiveClaudeTurnContext,
           usage: ClaudeMessageUsage,
           requestStarted = false,
+          withBreakdown = false,
         ) {
           const now = yield* DateTime.now;
           // Only message_start marks the request start; an assistant snapshot
@@ -4340,6 +4371,15 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             context.streamUsage?.requestedAt,
           );
           if (tokenUsage.inputTokens <= 0) return;
+          const liveQuery = withBreakdown ? yield* Ref.get(queryContext) : null;
+          // Best effort: an unanswered report must not hold up the turn.
+          const breakdown =
+            liveQuery === null || liveQuery.stopping || liveQuery.query.contextUsage === undefined
+              ? []
+              : yield* liveQuery.query.contextUsage.pipe(
+                  Effect.timeout("2 seconds"),
+                  Effect.orElseSucceed(() => []),
+                );
           yield* emitProviderEvent({
             type: "provider_turn.updated",
             driver: CLAUDE_PROVIDER,
@@ -4358,7 +4398,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               status: "running",
               startedAt: context.startedAt,
               completedAt: null,
-              tokenUsage,
+              tokenUsage: breakdown.length === 0 ? tokenUsage : { ...tokenUsage, breakdown },
             },
           });
         });
@@ -4564,6 +4604,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ...(goalsByNativeThread.has(input.nativeThreadId)
               ? { goal: goalsByNativeThread.get(input.nativeThreadId) ?? null }
               : {}),
+            ...(mcpServersByNativeThread.has(input.nativeThreadId)
+              ? { mcpServers: mcpServersByNativeThread.get(input.nativeThreadId) ?? [] }
+              : {}),
             updatedAt: now,
           };
           yield* rememberProviderThread(providerThread);
@@ -4596,6 +4639,30 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           );
           if (providerThread === undefined) return;
           const updated = { ...providerThread, goal: next, updatedAt: yield* DateTime.now };
+          yield* rememberProviderThread(updated);
+          yield* emitProviderEvent({
+            type: "provider_thread.updated",
+            driver: CLAUDE_PROVIDER,
+            providerThread: updated,
+          });
+        });
+
+        const trackClaudeMcpServers = Effect.fnUntraced(function* (input: {
+          readonly nativeThreadId: string;
+          readonly message: SDKMessage;
+        }) {
+          const servers = claudeMcpServersFromInit(input.message);
+          if (servers === null) return;
+          mcpServersByNativeThread.set(input.nativeThreadId, servers);
+          const providerThread = (yield* Ref.get(lastProviderThreadByNativeThread)).get(
+            input.nativeThreadId,
+          );
+          if (providerThread === undefined) return;
+          const updated = {
+            ...providerThread,
+            mcpServers: servers,
+            updatedAt: yield* DateTime.now,
+          };
           yield* rememberProviderThread(updated);
           yield* emitProviderEvent({
             type: "provider_thread.updated",
@@ -6873,6 +6940,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   ...(nativeThreadId !== null && goalsByNativeThread.has(nativeThreadId)
                     ? { goal: goalsByNativeThread.get(nativeThreadId) ?? null }
                     : {}),
+                  ...(nativeThreadId !== null && mcpServersByNativeThread.has(nativeThreadId)
+                    ? { mcpServers: mcpServersByNativeThread.get(nativeThreadId) ?? [] }
+                    : {}),
                   firstRunOrdinal:
                     input.context.input.providerThread.firstRunOrdinal ??
                     input.context.input.runOrdinal,
@@ -7603,6 +7673,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             return;
           }
           yield* trackClaudeGoal({ nativeThreadId: liveQuery.nativeThreadId, context, message });
+          yield* trackClaudeMcpServers({ nativeThreadId: liveQuery.nativeThreadId, message });
 
           if (message.type === "stream_event" && !message.parent_tool_use_id) {
             const event = message.event;
@@ -7619,7 +7690,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               const stream = context.streamUsage;
               if (stream?.usage && usage !== undefined) {
                 stream.usage = mergeClaudeStreamUsage(stream.usage, usage);
-                yield* emitContextUsage(context, stream.usage);
+                yield* emitContextUsage(context, stream.usage, false, true);
               }
             } else if (
               event.type === "content_block_start" &&

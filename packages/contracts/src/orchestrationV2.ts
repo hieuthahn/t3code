@@ -204,6 +204,14 @@ export const OrchestrationV2ContextTransferResolution = Schema.Union([
 export type OrchestrationV2ContextTransferResolution =
   typeof OrchestrationV2ContextTransferResolution.Type;
 
+/** One row of a provider-reported split of the context window, in the provider's own words. */
+export const OrchestrationV2ContextBreakdownEntry = Schema.Struct({
+  name: TrimmedNonEmptyString,
+  tokens: NonNegativeInt,
+  kind: Schema.Literals(["used", "free", "buffer"]),
+});
+export type OrchestrationV2ContextBreakdownEntry = typeof OrchestrationV2ContextBreakdownEntry.Type;
+
 export const OrchestrationV2ProviderTurnTokenUsage = Schema.Struct({
   usedTokens: NonNegativeInt,
   maxTokens: Schema.optional(Schema.NullOr(NonNegativeInt)),
@@ -214,6 +222,8 @@ export const OrchestrationV2ProviderTurnTokenUsage = Schema.Struct({
   promptCacheTtlMs: Schema.optional(PositiveInt),
   autoCompactThreshold: Schema.optional(PositiveInt),
   promptCacheExpiresAt: Schema.optional(Schema.String),
+  /** Set only when the provider reports the split itself, never estimated. */
+  breakdown: Schema.optional(Schema.Array(OrchestrationV2ContextBreakdownEntry)),
   updatedAt: Schema.String,
 });
 export type OrchestrationV2ProviderTurnTokenUsage =
@@ -1018,6 +1028,12 @@ export const OrchestrationV2ProviderGoal = Schema.Struct({
 });
 export type OrchestrationV2ProviderGoal = typeof OrchestrationV2ProviderGoal.Type;
 
+export const OrchestrationV2McpServerStatus = Schema.Struct({
+  name: TrimmedNonEmptyString,
+  status: Schema.Literals(["connected", "failed", "needs_auth", "pending", "disabled"]),
+});
+export type OrchestrationV2McpServerStatus = typeof OrchestrationV2McpServerStatus.Type;
+
 export const OrchestrationV2ProviderThread = Schema.Struct({
   id: ProviderThreadId,
   driver: ProviderDriverKind,
@@ -1044,6 +1060,8 @@ export const OrchestrationV2ProviderThread = Schema.Struct({
   contextUsage: Schema.optional(Schema.NullOr(ThreadTokenUsageSnapshot)).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
+  /** MCP servers the provider session reported, with their connection state. */
+  mcpServers: Schema.optional(Schema.Array(OrchestrationV2McpServerStatus)),
   nativeMetadata: Schema.optional(Schema.NullOr(OrchestrationV2ProviderThreadNativeMetadata)).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),

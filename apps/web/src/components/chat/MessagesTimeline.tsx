@@ -109,6 +109,8 @@ import {
   HtmlRenderTimelineRow,
   McpAppTimelineRow,
 } from "./TimelineAssistantRows";
+import { ChildMessageTimelineRow } from "./TimelineChildMessageRow";
+import { TodoListTimelineRow } from "./TimelineTodoListRow";
 import { V2EventTimelineRow } from "./TimelineV2EventRow";
 import { useTimelinePositionRestore } from "./useTimelinePositionRestore";
 import { useThreadFindPositionReader } from "./useThreadFindPositionReader";
@@ -257,6 +259,7 @@ interface MessagesTimelineProps {
   findOpen?: boolean;
   cancelPositionRestoreRef?: React.RefObject<(() => void) | null> | undefined;
   hideEmptyPlaceholder?: boolean;
+  emptyPlaceholder?: string;
   /** Composer space to center the empty state against; held steady through collapse. */
   emptyPlaceholderInset: number;
   topFadeEnabled?: boolean;
@@ -351,6 +354,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   onManualNavigation,
   cancelPositionRestoreRef,
   hideEmptyPlaceholder = false,
+  emptyPlaceholder,
   emptyPlaceholderInset,
   topFadeEnabled = false,
   historyControls,
@@ -1047,7 +1051,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   if (
     rows.length === 0 &&
     !isWorking &&
-    parentThreadLink === null &&
+    (parentThreadLink === null || emptyPlaceholder !== undefined) &&
     historyControls === undefined &&
     footer === null
   ) {
@@ -1059,8 +1063,14 @@ const ConversationTimeline = memo(function ConversationTimeline({
         className="flex h-full items-center justify-center ps-(--chat-lane-inset-start) pe-(--chat-lane-inset-end)"
         style={{ paddingBottom: emptyPlaceholderInset }}
       >
-        <p className="text-sm text-muted-foreground/30">
-          Send a message to start the conversation.
+        <p
+          className={
+            emptyPlaceholder === undefined
+              ? "text-sm text-muted-foreground/30"
+              : "max-w-md text-sm text-muted-foreground"
+          }
+        >
+          {emptyPlaceholder ?? "Send a message to start the conversation."}
         </p>
       </div>
     );
@@ -1224,6 +1234,8 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
                 row.kind === "event" ||
                 row.kind === "attempt-fold" ||
                 row.kind === "html-render" ||
+                row.kind === "todo-list" ||
+                row.kind === "child-message" ||
                 row.kind === "mcp-app"
               ? "pb-2"
               : "pb-4",
@@ -1272,6 +1284,8 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       ) : null}
       {row.kind === "assistant-meta" ? <AssistantMetaTimelineRow row={row} /> : null}
       {row.kind === "proposed-plan" ? <ProposedPlanTimelineRow row={row} /> : null}
+      {row.kind === "todo-list" ? <TodoListTimelineRow row={row} /> : null}
+      {row.kind === "child-message" ? <ChildMessageTimelineRow row={row} /> : null}
       {row.kind === "html-render" ? <HtmlRenderTimelineRow row={row} /> : null}
       {row.kind === "mcp-app" ? <McpAppTimelineRow row={row} /> : null}
       {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}

@@ -669,6 +669,36 @@ describe("ClaudeAdapterV2 context usage", () => {
   });
 });
 
+describe("ClaudeAdapterV2 context breakdown", () => {
+  // Shape of a recorded SDKControlGetContextUsageResponse (claude-agent-sdk 0.3.276).
+  const recordedReport = {
+    categories: [
+      { name: "System prompt", tokens: 6200, color: "promptBorder", kind: "used" as const },
+      { name: "Messages", tokens: 41800, color: "purple", kind: "used" as const },
+      {
+        name: "MCP tools (deferred)",
+        tokens: 9000,
+        color: "gray",
+        isDeferred: true,
+        kind: "deferred" as const,
+      },
+      { name: "Free space", tokens: 120000, color: "promptBorder", kind: "free" as const },
+      { name: "Autocompact buffer", tokens: 33000, color: "inactive", kind: "buffer" as const },
+    ],
+    totalTokens: 48000,
+    maxTokens: 200000,
+  };
+
+  it("passes the SDK's own rows through and drops deferred ones", () => {
+    assert.deepStrictEqual(ClaudeAdapterV2.claudeContextBreakdown(recordedReport), [
+      { name: "System prompt", tokens: 6200, kind: "used" },
+      { name: "Messages", tokens: 41800, kind: "used" },
+      { name: "Free space", tokens: 120000, kind: "free" },
+      { name: "Autocompact buffer", tokens: 33000, kind: "buffer" },
+    ]);
+  });
+});
+
 describe("ClaudeAdapterV2 approval presentation", () => {
   it("marks asks that full access could not auto-allow and keeps the CLI's reason", () => {
     const presentation = ClaudeAdapterV2.claudeApprovalPresentation({
@@ -4061,6 +4091,51 @@ describe("ClaudeAdapterV2 background wake turns", () => {
   const makeRollbackHarness = makeWakeHarnessWithOptions({
     close: (sdkMessages) => Queue.shutdown(sdkMessages),
   });
+
+  it.effect("keeps the MCP servers the session init frame reports on the provider thread", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeWakeHarness;
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("mcp-status"),
+          text: "Use the connectors.",
+          attachments: [],
+          nativeThreadHasTurns: false,
+        }),
+      );
+      yield* harness.offerAndWait(
+        claudeSdkFrame({
+          type: "system",
+          subtype: "init",
+          uuid: "00000000-0000-4000-8000-000000000501",
+          session_id: WAKE_NATIVE_SESSION,
+          mcp_servers: [
+            { name: "github", status: "connected" },
+            { name: "linear", status: "needs-auth" },
+          ],
+        }),
+      );
+      yield* harness.offerAndWait(
+        makeAssistantTextFrame({ uuid: "mcp-status-message", text: "Done." }),
+      );
+      yield* harness.offerAndWait(makeResultFrame({ uuid: "mcp-status-result", result: "Done." }));
+      assert.equal((yield* Queue.take(harness.terminalReceipts)).status, "completed");
+      const updated = harness.events.findLast((event) => event.type === "provider_thread.updated");
+      assert.equal(updated?.type, "provider_thread.updated");
+      if (updated?.type !== "provider_thread.updated") return;
+      assert.deepEqual(updated.providerThread.mcpServers, [
+        { name: "github", status: "connected" },
+        { name: "linear", status: "needs_auth" },
+      ]);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+      ),
+    ),
+  );
 
   it.effect.each([
     { kind: "fork with inherited head", fork: true, headMessageId: "remapped-inherited-head" },

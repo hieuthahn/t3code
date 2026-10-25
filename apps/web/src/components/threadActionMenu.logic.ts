@@ -3,6 +3,9 @@ import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled"
 
 export type ThreadActionMenuId =
   | "new-thread-on-branch"
+  | "open-in"
+  | "open-in:split"
+  | "side-chat"
   | "filter-by-project"
   | "project-settings"
   | "pin"
@@ -78,6 +81,10 @@ export interface ThreadActionMenuState {
   readonly isRegeneratingTitle: boolean;
   /** Archive rejects a thread with an attached provider, so disable it here rather than let the action fail. */
   readonly isRunning: boolean;
+  /** False where the thread already fills a pane, such as the header of an open thread. */
+  readonly canOpenInSplitView: boolean;
+  /** A side chat reads the main chat, so it needs a turn to read. */
+  readonly canOpenSideChat: boolean;
   readonly supports: {
     readonly settlement: boolean;
     readonly autoSettleOptOut: boolean;
@@ -92,6 +99,8 @@ export interface ThreadActionMenuState {
 export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean {
   return ![
     "new-thread-on-branch",
+    "open-in",
+    "open-in:split",
     "project-settings",
     "mark-unread",
     "copy",
@@ -113,6 +122,19 @@ export function buildThreadActionMenuItems(
             icon: "message-square-plus",
           },
         ]
+      : []),
+    ...(state.canOpenInSplitView
+      ? [
+          {
+            id: "open-in" as const,
+            label: "Open in",
+            icon: "columns-2",
+            children: [{ id: "open-in:split" as const, label: "Split view", icon: "columns-2" }],
+          },
+        ]
+      : []),
+    ...(state.canOpenSideChat
+      ? [{ id: "side-chat" as const, label: "Open side chat", icon: "message-circle-question" }]
       : []),
     ...(state.supports.pinning
       ? [

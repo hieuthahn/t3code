@@ -65,6 +65,11 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
     },
     { tag: "path", attrs: { d: "m22 10-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 10" } },
   ],
+  "message-circle-question": [
+    { tag: "path", attrs: { d: "M7.9 20A9 9 0 1 0 4 16.1L2 22Z" } },
+    { tag: "path", attrs: { d: "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" } },
+    { tag: "path", attrs: { d: "M12 17h.01" } },
+  ],
   "message-square-plus": [
     {
       tag: "path",
@@ -109,6 +114,10 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
       },
     },
     { tag: "circle", attrs: { cx: "12", cy: "12", r: "3" } },
+  ],
+  "columns-2": [
+    { tag: "rect", attrs: { width: "18", height: "18", x: "3", y: "3", rx: "2" } },
+    { tag: "path", attrs: { d: "M12 3v18" } },
   ],
   "folder-tree": [
     {

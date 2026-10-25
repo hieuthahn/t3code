@@ -218,7 +218,7 @@ const RequestSecretTool = Tool.make("request_secret", {
 
 const ProposeTasksTool = Tool.make("propose_tasks", {
   description:
-    "Propose up to six child sessions on a card in this thread and wait while the user picks which start. Nothing starts before the user decides; only the user can decide, and you get the decision as this tool's result. Each approved child starts as delegate_task would start it, asynchronously, so follow it with task_status. Use it instead of delegate_task when the user should choose which parts of a split run in parallel. Give each child a short key and a self-contained task.",
+    "Propose up to six child sessions on a card in this thread and wait while the user picks which start. Nothing starts before the user decides; only the user can decide, and you get the decision as this tool's result. Each approved child starts as delegate_task would start it, asynchronously, so follow it with task_status. Use it instead of delegate_task when the user should choose which parts of a split run in parallel. Also use it with a single child when the user asks for something unrelated to this thread's work in the middle of a conversation: offer to start it in a separate thread instead of mixing it in here. The card then reads Start or Do it here; if the result starts nothing, do the work in this thread. Give each child a short key and a self-contained task.",
   parameters: OrchestratorMcpProposeTasksInput,
   success: OrchestratorMcpProposeTasksResult,
   failure: OrchestratorMcpFailure,

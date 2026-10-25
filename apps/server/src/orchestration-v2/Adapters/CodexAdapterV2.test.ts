@@ -5535,6 +5535,75 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       ),
   );
 
+  describe("MCP server status", () => {
+    const nativeThreadId = "mcp-thread";
+    const startupStatus = (
+      name: string,
+      status: string,
+    ): CodexReplay.CodexAppServerReplayEntry => ({
+      type: "emit_inbound",
+      label: "mcpServer/startupStatus/updated",
+      frame: {
+        method: "mcpServer/startupStatus/updated",
+        params: { threadId: nativeThreadId, name, status, error: null, failureReason: null },
+      },
+    });
+
+    it.effect("reports each MCP server's startup state on the provider thread", () =>
+      Effect.gen(function* () {
+        const transcript = makeCodexReplayTranscript({
+          scenario: "mcp-startup-status",
+          entries: [
+            ...codexReplayPreamble({ nativeThreadId, nativeTurnId: "mcp-turn", prompt: "hello" }),
+            startupStatus("github", "starting"),
+            startupStatus("github", "ready"),
+            startupStatus("linear", "failed"),
+            startupStatus("transient", "cancelled"),
+            {
+              type: "emit_inbound",
+              label: "turn/completed",
+              frame: {
+                method: "turn/completed",
+                params: {
+                  threadId: nativeThreadId,
+                  turn: makeCodexReplayTurn({ id: "mcp-turn", status: "completed" }),
+                },
+              },
+            },
+          ],
+        });
+        const harness = yield* makeCodexReplayHarness(transcript);
+        yield* harness.runtime.startTurn(
+          makeCodexTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("mcp-attempt"),
+            text: "hello",
+          }),
+        );
+        yield* harness.firstTerminal;
+
+        const updated = harness.events.findLast(
+          (event) =>
+            event.type === "provider_thread.updated" &&
+            event.providerThread.mcpServers !== undefined,
+        );
+        assert.equal(updated?.type, "provider_thread.updated");
+        if (updated?.type !== "provider_thread.updated") return;
+        assert.deepEqual(updated.providerThread.mcpServers, [
+          { name: "github", status: "connected" },
+          { name: "linear", status: "failed" },
+        ]);
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+    );
+  });
+
   describe("native goals", () => {
     const nativeThreadId = "goal-thread";
     const objective = "Ship the feature";

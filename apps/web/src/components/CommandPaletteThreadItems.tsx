@@ -5,6 +5,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
 import { MessageSquareIcon } from "lucide-react";
 
+import { useSplitViewActions } from "../hooks/useSplitView";
 import { useClientSettings } from "../hooks/useSettings";
 import {
   applyProviderInstanceSettings,
@@ -28,6 +29,8 @@ import {
   ThreadRowTrailingStatus,
   ThreadSearchPullRequestNumber,
 } from "./ThreadStatusIndicators";
+
+const SPLIT_PICKER_THREAD_LIMIT = 30;
 
 function useProviderEntryByEnvironmentAndInstanceId() {
   const { environments } = useEnvironments();
@@ -74,6 +77,7 @@ export function useCommandPaletteThreadItems(input: {
 }) {
   const { activeThreadId, threadSearchQuery } = input;
   const navigate = useNavigate();
+  const { openInSplitView } = useSplitViewActions();
   const threads = useThreadShells();
   const sidebarThreadSortOrder = useClientSettings((settings) => settings.sidebarThreadSortOrder);
   const { projectEnvironmentLocationById } = useEnvironmentLookups();
@@ -81,63 +85,71 @@ export function useCommandPaletteThreadItems(input: {
   const { threadSearch, contentMatchByKey } = useThreadSearchWithContentMatches(threadSearchQuery);
   const { projectByKey, projectTitleById } = useProjectLookups();
 
-  const threadItems = buildThreadActionItems({
-    threads,
-    ...(activeThreadId ? { activeThreadId } : {}),
-    projectTitleById,
-    sortOrder: sidebarThreadSortOrder,
-    icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
-    renderLeadingContent: (thread) => <ThreadRowLeadingStatus thread={thread} />,
-    renderTrailingContent: (thread) => (
-      <>
-        <ThreadSearchPullRequestNumber
-          thread={thread}
-          query={threadSearchQuery}
-          settled={thread.settledOverride === "settled"}
-        />
-        <ThreadRowTrailingStatus thread={thread} />
-      </>
-    ),
-    renderDescription: (thread, { projectTitle }) => {
-      const modelInstanceId =
-        thread.runtime?.providerInstanceId ?? thread.modelSelection.instanceId;
-      const providerEntry =
-        providerEntryByEnvironmentAndInstanceId.get(`${thread.environmentId}:${modelInstanceId}`) ??
-        null;
-      return (
-        <ThreadCommandSubtitle
-          project={projectByKey.get(`${thread.environmentId}:${thread.projectId}`) ?? null}
-          projectTitle={projectTitle ?? null}
-          environmentLabel={
-            projectEnvironmentLocationById.get(thread.environmentId)?.label ?? "Remote"
-          }
-          branch={thread.branch}
-          worktreePath={thread.worktreePath}
-          isCurrent={thread.id === activeThreadId}
-          driverKind={providerEntry?.driverKind ?? null}
-          providerDisplayName={
-            thread.runtime?.providerName ?? providerEntry?.displayName ?? modelInstanceId
-          }
-          acpRegistryAgentId={providerEntry?.acpRegistryAgentId}
-          acpRegistryIconUrl={providerEntry?.acpRegistryIconUrl}
-        />
-      );
-    },
-    getContentMatch: (thread) => {
-      const match = contentMatchByKey.get(
-        threadSearchMatchKey({
-          environmentId: thread.environmentId,
-          threadId: thread.id,
-        }),
-      );
-      return match && (match.source === "user" || match.source === "assistant")
-        ? {
-            source: match.source,
-            snippet: match.snippet,
-            query: threadSearch.query,
-          }
-        : undefined;
-    },
+  const buildItems = (extra: {
+    readonly runThread: (thread: { environmentId: EnvironmentId; id: ThreadId }) => Promise<void>;
+    readonly limit?: number;
+  }) =>
+    buildThreadActionItems({
+      ...extra,
+      threads,
+      ...(activeThreadId ? { activeThreadId } : {}),
+      projectTitleById,
+      sortOrder: sidebarThreadSortOrder,
+      icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
+      renderLeadingContent: (thread) => <ThreadRowLeadingStatus thread={thread} />,
+      renderTrailingContent: (thread) => (
+        <>
+          <ThreadSearchPullRequestNumber
+            thread={thread}
+            query={threadSearchQuery}
+            settled={thread.settledOverride === "settled"}
+          />
+          <ThreadRowTrailingStatus thread={thread} />
+        </>
+      ),
+      renderDescription: (thread, { projectTitle }) => {
+        const modelInstanceId =
+          thread.runtime?.providerInstanceId ?? thread.modelSelection.instanceId;
+        const providerEntry =
+          providerEntryByEnvironmentAndInstanceId.get(
+            `${thread.environmentId}:${modelInstanceId}`,
+          ) ?? null;
+        return (
+          <ThreadCommandSubtitle
+            project={projectByKey.get(`${thread.environmentId}:${thread.projectId}`) ?? null}
+            projectTitle={projectTitle ?? null}
+            environmentLabel={
+              projectEnvironmentLocationById.get(thread.environmentId)?.label ?? "Remote"
+            }
+            branch={thread.branch}
+            worktreePath={thread.worktreePath}
+            isCurrent={thread.id === activeThreadId}
+            driverKind={providerEntry?.driverKind ?? null}
+            providerDisplayName={
+              thread.runtime?.providerName ?? providerEntry?.displayName ?? modelInstanceId
+            }
+            acpRegistryAgentId={providerEntry?.acpRegistryAgentId}
+            acpRegistryIconUrl={providerEntry?.acpRegistryIconUrl}
+          />
+        );
+      },
+      getContentMatch: (thread) => {
+        const match = contentMatchByKey.get(
+          threadSearchMatchKey({
+            environmentId: thread.environmentId,
+            threadId: thread.id,
+          }),
+        );
+        return match && (match.source === "user" || match.source === "assistant")
+          ? {
+              source: match.source,
+              snippet: match.snippet,
+              query: threadSearch.query,
+            }
+          : undefined;
+      },
+    });
+  const threadItems = buildItems({
     runThread: async (thread) => {
       await navigate({
         to: "/$environmentId/$threadId",
@@ -145,6 +157,12 @@ export function useCommandPaletteThreadItems(input: {
       });
     },
   });
+  const splitThreadItems = buildItems({
+    limit: SPLIT_PICKER_THREAD_LIMIT,
+    runThread: async (thread) => {
+      openInSplitView([scopeThreadRef(thread.environmentId, thread.id)]);
+    },
+  }).map((item) => ({ ...item, value: `split-${item.value}` }));
 
-  return { threadItems, isSearchPending: threadSearch.isPending };
+  return { threadItems, splitThreadItems, isSearchPending: threadSearch.isPending };
 }

@@ -470,6 +470,12 @@ export const layerWith = (options: { readonly tickEvery: Duration.Duration | nul
         .runsWithStatus("running")
         .pipe(Effect.orElseSucceed(() => []));
       for (const run of cutByRestart) {
+        // A team with no worker in flight lost nothing to the restart, so it keeps running.
+        const workerCut = yield* store.assignmentsOf(run.run_id).pipe(
+          Effect.map((rows) => rows.some((row) => row.status === "running")),
+          Effect.orElseSucceed(() => true),
+        );
+        if (!workerCut) continue;
         yield* store
           .updateRun(run, {
             status: "interrupted",

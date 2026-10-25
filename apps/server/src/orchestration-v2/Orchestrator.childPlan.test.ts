@@ -91,6 +91,7 @@ const startParent = Effect.gen(function* () {
     planStatus: "pending" | "expired" | "cancelled",
     children = [proposal("api", "Retry sends"), proposal("ui", "Show retry state")],
     closedReason?: string,
+    waitsAfterRun?: true,
   ) =>
     orchestrator.dispatch({
       type: "child_plan.record",
@@ -104,6 +105,7 @@ const startParent = Effect.gen(function* () {
       children,
       planStatus,
       ...(closedReason === undefined ? {} : { closedReason }),
+      ...(waitsAfterRun === undefined ? {} : { waitsAfterRun }),
     });
   const decide = (
     id: string,
@@ -261,6 +263,58 @@ it.effect("closes a proposal with the reason it closed", () =>
     const closed = yield* card;
     assert.equal(closed?.planStatus, "cancelled");
     assert.equal(closed?.closedReason, "The user stopped the team.");
+    const late = yield* decide("plan-decide-late", 1, ["api"]).pipe(Effect.result);
+    assert.isTrue(Result.isFailure(late));
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("takes a decision on a team's card after its agent's run ended", () =>
+  Effect.gen(function* () {
+    const { orchestrator, run, record, decide, card } = yield* startParent;
+    yield* record("plan-record-1", "pending", undefined, undefined, true);
+    yield* orchestrator.dispatch({
+      type: "run.interrupt",
+      commandId: CommandId.make("plan-run-interrupt"),
+      threadId: parentThreadId,
+      runId: run.id,
+    });
+    const open = yield* card;
+    assert.equal(open?.planStatus, "pending");
+    assert.isTrue(open?.waitsAfterRun);
+
+    yield* decide("plan-decide-after-run", 1, ["api"]);
+    assert.equal((yield* card)?.planStatus, "partially_approved");
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("refuses a decision on an agent's own card once its run ended", () =>
+  Effect.gen(function* () {
+    const { orchestrator, run, record, decide, card } = yield* startParent;
+    yield* record("plan-record-1", "pending");
+    yield* orchestrator.dispatch({
+      type: "run.interrupt",
+      commandId: CommandId.make("plan-run-interrupt"),
+      threadId: parentThreadId,
+      runId: run.id,
+    });
+    const late = yield* decide("plan-decide-after-run", 1, ["api"]).pipe(Effect.result);
+    assert.isTrue(Result.isFailure(late));
+    assert.isNull((yield* card)?.planDecision ?? null);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("closes a team's waiting card when the user stops the thread", () =>
+  Effect.gen(function* () {
+    const { orchestrator, record, decide, card } = yield* startParent;
+    yield* record("plan-record-1", "pending", undefined, undefined, true);
+    yield* orchestrator.dispatch({
+      type: "thread.stop",
+      commandId: CommandId.make("plan-thread-stop"),
+      threadId: parentThreadId,
+    });
+    const closed = yield* card;
+    assert.equal(closed?.planStatus, "cancelled");
+    assert.equal(closed?.closedReason, "The thread stopped before a decision.");
     const late = yield* decide("plan-decide-late", 1, ["api"]).pipe(Effect.result);
     assert.isTrue(Result.isFailure(late));
   }).pipe(Effect.provide(layerTest)),

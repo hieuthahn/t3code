@@ -30,6 +30,7 @@ import { describeWait, teamMessage } from "./teamMessages.ts";
 import { assignmentView, runView, type TeamRunRow } from "./teamRows.ts";
 import { newAssignmentProblems } from "./teamScheduler.ts";
 import { makeTeamStore, type NewTeamAssignment } from "./teamStore.ts";
+import { closeCard, roundRequestPrefix, teamCardsOf } from "./teamCards.ts";
 import { makeTeamWatch } from "./teamWatch.ts";
 import { makeTeamWork, planFor } from "./teamWork.ts";
 
@@ -102,6 +103,13 @@ export const layerWith = (options: { readonly tickEvery: Duration.Duration | nul
           Effect.logWarning("Could not message the architect", { cause }),
         ),
       );
+      const closeOpenCards = (run: TeamRunRow, reason: string) =>
+        teamCardsOf(threads, run.thread_id, run.run_id).pipe(
+          Effect.flatMap((cards) =>
+            Effect.forEach(cards, (card) => closeCard(threads, card, reason), { discard: true }),
+          ),
+          Effect.catchCause((cause) => Effect.logWarning("Could not close a team card", { cause })),
+        );
       const watchRun = makeTeamWatch({ store, work, threads, tell, wokeAfter, awaitedMerges });
 
       const view: TeamService["Service"]["view"] = Effect.fn("Team.view")(function* (threadId) {
@@ -213,32 +221,29 @@ export const layerWith = (options: { readonly tickEvery: Duration.Duration | nul
             const worker = input.assignments.find((assignment) => assignment.key === key)?.worker;
             return worker === undefined ? {} : { worker };
           };
-          const closeReason = store.latestRun(thread.threadId).pipe(
-            Effect.map((latest) =>
-              latest?.run_id === run.run_id && isOpen(latest)
-                ? undefined
-                : teamMessage.stoppedByUser,
-            ),
-            Effect.orElseSucceed(() => undefined),
-          );
-          const decision =
-            team.autonomous === true
-              ? {
-                  status: "approved" as const,
-                  approvedKeys: incoming.map((item) => item.key),
-                  declinedKeys: [],
-                  recordLaunches: () => Effect.void,
+          if (team.autonomous !== true) {
+            const opened = yield* lock.withPermits(1)(
+              Effect.gen(function* () {
+                const fresh = yield* store.latestRun(thread.threadId);
+                if (fresh === null || fresh.run_id !== run.run_id || !isOpen(fresh)) {
+                  return yield* failure("invalid_request", teamMessage.stoppedByUser);
                 }
-              : yield* orchestrator.askChildPlan(callerScope, {
+                const cards = yield* teamCardsOf(threads, thread.threadId, run.run_id);
+                for (const card of cards) {
+                  yield* closeCard(threads, card, teamMessage.replacedByNewerRound);
+                }
+                return yield* orchestrator.openChildPlan(callerScope, {
                   reason: input.reason,
-                  closeReason,
-                  clientRequestId: `team:${run.run_id}:round:${run.rounds + 1}`,
+                  clientRequestId: `${roundRequestPrefix(run.run_id)}${run.rounds + 1}`,
                   tasks: incoming.map((item) => ({
                     key: item.key,
                     ...workerOf(item.key),
                     title: item.title,
                     task: item.task,
                     isolation: item.isolation,
+                    dependsOn: item.dependsOn,
+                    readOnly: item.readOnly,
+                    files: item.files,
                     target: {
                       providerInstanceId: item.instanceId,
                       model: item.model,
@@ -246,42 +251,31 @@ export const layerWith = (options: { readonly tickEvery: Duration.Duration | nul
                     },
                   })),
                 });
-          const declinedKeys = [...decision.declinedKeys];
-          const approved = incoming.filter((item) => decision.approvedKeys.includes(item.key));
+              }).pipe(
+                Effect.mapError((error) =>
+                  error._tag === "OrchestratorMcpFailure"
+                    ? error
+                    : failure("orchestration_error", `Could not show the round: ${String(error)}`),
+                ),
+              ),
+            );
+            return {
+              status: "proposed" as const,
+              turnItemId: opened.turnItemId,
+              started: [],
+              waiting: [],
+              declinedKeys: [],
+              failed: [],
+            };
+          }
           return yield* lock
             .withPermits(1)(
               Effect.gen(function* () {
                 const fresh = yield* store.latestRun(thread.threadId);
                 if (fresh === null || fresh.run_id !== run.run_id || !isOpen(fresh)) {
-                  if (approved.length > 0) {
-                    yield* decision.recordLaunches(
-                      approved.map((item) => ({
-                        key: item.key,
-                        failure: teamMessage.stoppedByUser,
-                      })),
-                    );
-                  }
                   return yield* failure("invalid_request", teamMessage.stoppedByUser);
                 }
-                if (decision.status === "timed_out" || decision.status === "cancelled") {
-                  return {
-                    status: decision.status,
-                    started: [],
-                    waiting: [],
-                    failed: [],
-                    declinedKeys,
-                  };
-                }
-                if (approved.length === 0) {
-                  return {
-                    status: "declined" as const,
-                    started: [],
-                    waiting: [],
-                    failed: [],
-                    declinedKeys,
-                  };
-                }
-                yield* store.queueAssignments(fresh, existing, approved);
+                yield* store.queueAssignments(fresh, existing, incoming);
                 yield* store.updateRun(fresh, { rounds: fresh.rounds + 1, stalls: 0 });
                 const current = yield* store.assignmentsOf(run.run_id);
                 const plan = planFor(fresh, team, current, true);
@@ -295,8 +289,8 @@ export const layerWith = (options: { readonly tickEvery: Duration.Duration | nul
                   status: "queued" as const,
                   started,
                   failed,
-                  declinedKeys,
-                  waiting: approved.flatMap((item) => {
+                  declinedKeys: [],
+                  waiting: incoming.flatMap((item) => {
                     const reason = plan.waits.get(item.key);
                     return reason === undefined
                       ? []
@@ -341,6 +335,7 @@ export const layerWith = (options: { readonly tickEvery: Duration.Duration | nul
                   yield* store.updateAssignment(run, row, { status: "cancelled" });
                 }
                 yield* store.updateRun(run, { status: "finished", summary: input.summary });
+                yield* closeOpenCards(run, teamMessage.teamFinished);
               }),
             )
             .pipe(
@@ -418,6 +413,7 @@ export const layerWith = (options: { readonly tickEvery: Duration.Duration | nul
               status: "stopped",
               report: teamMessage.stoppedByUser,
             });
+            yield* closeOpenCards(run, teamMessage.stoppedByUser);
           }),
         );
         yield* threads

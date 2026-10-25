@@ -3,11 +3,12 @@ import { create } from "zustand";
 
 /**
  * Token Saver and team chosen on a draft, carried into the thread its first send creates.
- * Absent follows the server's new-thread defaults; a null team keeps a single agent.
+ * Absent follows the server's new-thread defaults; a null team keeps a single agent, and
+ * "auto" lets the effort judge choose from the first message.
  */
 export interface DraftComposerSettings {
   readonly tokenSaver?: TokenSaverConfig;
-  readonly team?: TeamSetup | null;
+  readonly team?: TeamSetup | null | "auto" | undefined;
 }
 
 interface DraftComposerSettingsState {

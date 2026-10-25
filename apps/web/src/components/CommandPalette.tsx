@@ -904,8 +904,7 @@ function OpenCommandPaletteDialog(props: {
     threadItems: allThreadItems,
     splitThreadItems,
     isSearchPending: isThreadSearchPending,
-  } =
-    useCommandPaletteThreadItems({ activeThreadId, threadSearchQuery });
+  } = useCommandPaletteThreadItems({ activeThreadId, threadSearchQuery });
   const recentThreadItems = allThreadItems.slice(0, RECENT_THREAD_LIMIT);
 
   // Stable so the item builders that capture it during render never see the

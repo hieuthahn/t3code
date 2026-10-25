@@ -85,7 +85,10 @@ export function useCommandPaletteThreadItems(input: {
   const { threadSearch, contentMatchByKey } = useThreadSearchWithContentMatches(threadSearchQuery);
   const { projectByKey, projectTitleById } = useProjectLookups();
 
-  const threadItemOptions = {
+  const threadItemOptions: Omit<
+    Parameters<typeof buildThreadActionItems>[0],
+    "runThread" | "limit"
+  > = {
     threads,
     ...(activeThreadId ? { activeThreadId } : {}),
     projectTitleById,

@@ -11,6 +11,7 @@ import {
   PALETTE_MESSAGE_LIMIT,
   pickedQuery,
   rankMessageMatches,
+  threadRecentUse,
 } from "@t3tools/shared/paletteSearch";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
@@ -18,6 +19,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { MessageSquareIcon } from "lucide-react";
 import { useState } from "react";
 
+import { useSplitViewActions } from "../hooks/useSplitView";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
@@ -43,6 +45,8 @@ import {
   ThreadRowTrailingStatus,
   ThreadSearchPullRequestNumber,
 } from "./ThreadStatusIndicators";
+
+const SPLIT_PICKER_THREAD_LIMIT = 30;
 
 function useProviderEntryByEnvironmentAndInstanceId() {
   const { environments } = useEnvironments();
@@ -99,6 +103,7 @@ export function useCommandPaletteThreadItems(input: {
 }) {
   const { activeThread, threadSearchQuery } = input;
   const navigate = useNavigate();
+  const { openInSplitView } = useSplitViewActions();
   const threads = useThreadShells();
   const { projectEnvironmentLocationById } = useEnvironmentLookups();
   const providerEntryByEnvironmentAndInstanceId = useProviderEntryByEnvironmentAndInstanceId();
@@ -109,85 +114,99 @@ export function useCommandPaletteThreadItems(input: {
   const [now] = useState(() => Date.now());
 
   const { environments } = useEnvironments();
-  const threadItems = buildThreadActionItems({
-    threads,
-    ...(environments.length > 1
-      ? {
-          environmentLabelOf: (thread: (typeof threads)[number]) =>
-            projectEnvironmentLocationById.get(thread.environmentId)?.label ?? null,
-        }
-      : {}),
-    ...(activeThread ? { activeThread } : {}),
-    projectByKey,
-    icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
-    renderLeadingContent: (thread) => <ThreadRowLeadingStatus thread={thread} />,
-    renderTrailingContent: (thread) => (
-      <>
-        <ThreadSearchPullRequestNumber
-          thread={thread}
-          query={threadSearchQuery}
-          settled={thread.settledOverride === "settled"}
-        />
-        <ThreadRowTrailingStatus thread={thread} />
-      </>
-    ),
-    renderDescription: (thread, { projectTitle }) => {
-      const modelInstanceId =
-        thread.runtime?.providerInstanceId ?? thread.modelSelection.instanceId;
-      const providerEntry =
-        providerEntryByEnvironmentAndInstanceId.get(`${thread.environmentId}:${modelInstanceId}`) ??
-        null;
-      return (
-        <ThreadCommandSubtitle
-          project={projectByKey.get(`${thread.environmentId}:${thread.projectId}`) ?? null}
-          projectTitle={projectTitle ?? null}
-          environmentLabel={
-            projectEnvironmentLocationById.get(thread.environmentId)?.label ?? "Remote"
+  const buildItems = (runThread: (thread: (typeof threads)[number]) => Promise<void>) =>
+    buildThreadActionItems({
+      threads,
+      ...(environments.length > 1
+        ? {
+            environmentLabelOf: (thread: (typeof threads)[number]) =>
+              projectEnvironmentLocationById.get(thread.environmentId)?.label ?? null,
           }
-          branch={thread.branch}
-          worktreePath={thread.worktreePath}
-          isCurrent={
-            thread.id === activeThread?.id && thread.environmentId === activeThread.environmentId
-          }
-          driverKind={providerEntry?.driverKind ?? null}
-          providerDisplayName={
-            thread.runtime?.providerName ?? providerEntry?.displayName ?? modelInstanceId
-          }
-          acpRegistryAgentId={providerEntry?.acpRegistryAgentId}
-          acpRegistryIconUrl={providerEntry?.acpRegistryIconUrl}
-        />
-      );
-    },
-    runThread: async (thread) => {
-      // A pick sends its open with the query, always, so the server records
-      // it; the thread view then skips its own open. The open thread is no pick.
-      const isOpen =
-        activeThread?.environmentId === thread.environmentId && activeThread.id === thread.id;
-      if (threadSearchQuery.trim().length > 0 && !threadSearchQuery.startsWith(">") && !isOpen) {
-        claimThreadOpen(thread.environmentId, thread.id, Date.now());
-      }
-      if (
-        threadSearchQuery.trim().length > 0 &&
-        !threadSearchQuery.startsWith(">") &&
-        thread.lastVisitedAt !== undefined &&
-        !isOpen
-      ) {
-        void visitThread({
-          environmentId: thread.environmentId,
-          input: {
-            threadId: thread.id,
-            visitedAt: thread.updatedAt,
-            opened: true,
-            searchQuery: pickedQuery(threadSearchQuery),
-          },
-        });
-      }
-      await navigate({
-        to: "/$environmentId/$threadId",
-        params: buildThreadRouteParams(scopeThreadRef(thread.environmentId, thread.id)),
+        : {}),
+      ...(activeThread ? { activeThread } : {}),
+      projectByKey,
+      icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
+      renderLeadingContent: (thread) => <ThreadRowLeadingStatus thread={thread} />,
+      renderTrailingContent: (thread) => (
+        <>
+          <ThreadSearchPullRequestNumber
+            thread={thread}
+            query={threadSearchQuery}
+            settled={thread.settledOverride === "settled"}
+          />
+          <ThreadRowTrailingStatus thread={thread} />
+        </>
+      ),
+      renderDescription: (thread, { projectTitle }) => {
+        const modelInstanceId =
+          thread.runtime?.providerInstanceId ?? thread.modelSelection.instanceId;
+        const providerEntry =
+          providerEntryByEnvironmentAndInstanceId.get(
+            `${thread.environmentId}:${modelInstanceId}`,
+          ) ?? null;
+        return (
+          <ThreadCommandSubtitle
+            project={projectByKey.get(`${thread.environmentId}:${thread.projectId}`) ?? null}
+            projectTitle={projectTitle ?? null}
+            environmentLabel={
+              projectEnvironmentLocationById.get(thread.environmentId)?.label ?? "Remote"
+            }
+            branch={thread.branch}
+            worktreePath={thread.worktreePath}
+            isCurrent={
+              thread.id === activeThread?.id &&
+              thread.environmentId === activeThread.environmentId
+            }
+            driverKind={providerEntry?.driverKind ?? null}
+            providerDisplayName={
+              thread.runtime?.providerName ?? providerEntry?.displayName ?? modelInstanceId
+            }
+            acpRegistryAgentId={providerEntry?.acpRegistryAgentId}
+            acpRegistryIconUrl={providerEntry?.acpRegistryIconUrl}
+          />
+        );
+      },
+      runThread,
+    });
+  const threadItems = buildItems(async (thread) => {
+    // A pick sends its open with the query, always, so the server records
+    // it; the thread view then skips its own open. The open thread is no pick.
+    const isOpen =
+      activeThread?.environmentId === thread.environmentId && activeThread.id === thread.id;
+    if (threadSearchQuery.trim().length > 0 && !threadSearchQuery.startsWith(">") && !isOpen) {
+      claimThreadOpen(thread.environmentId, thread.id, Date.now());
+    }
+    if (
+      threadSearchQuery.trim().length > 0 &&
+      !threadSearchQuery.startsWith(">") &&
+      thread.lastVisitedAt !== undefined &&
+      !isOpen
+    ) {
+      void visitThread({
+        environmentId: thread.environmentId,
+        input: {
+          threadId: thread.id,
+          visitedAt: thread.updatedAt,
+          opened: true,
+          searchQuery: pickedQuery(threadSearchQuery),
+        },
       });
-    },
+    }
+    await navigate({
+      to: "/$environmentId/$threadId",
+      params: buildThreadRouteParams(scopeThreadRef(thread.environmentId, thread.id)),
+    });
   });
+  const splitThreadItems = buildItems(async (thread) => {
+    openInSplitView([scopeThreadRef(thread.environmentId, thread.id)]);
+  })
+    .toSorted(
+      (left, right) =>
+        (right.threadSearch ? threadRecentUse(right.threadSearch) : 0) -
+        (left.threadSearch ? threadRecentUse(left.threadSearch) : 0),
+    )
+    .slice(0, SPLIT_PICKER_THREAD_LIMIT)
+    .map((item) => ({ ...item, value: `split-${item.value}` }));
 
   const itemByValue = new Map(threadItems.map((item) => [item.value, item]));
   const itemForMatch = (match: EnvironmentThreadSearchMatch) =>
@@ -243,6 +262,7 @@ export function useCommandPaletteThreadItems(input: {
 
   return {
     threadItems,
+    splitThreadItems,
     threadMessageItems,
     now,
     isSearchPending: messageSearch.isPending,

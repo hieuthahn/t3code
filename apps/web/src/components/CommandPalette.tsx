@@ -70,6 +70,7 @@ import {
   TextSearchIcon,
   UserPlusIcon,
   XIcon,
+  Columns2Icon,
 } from "lucide-react";
 import { openThreadFind } from "./chat/threadFindStore";
 import {
@@ -241,6 +242,7 @@ import { buildSidebarProjectPickerEntries } from "../sidebarProjectGrouping";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "~/components/pullRequest/pullRequestListPreferences";
 import { useSplitViewActions } from "../hooks/useSplitView";
+import { MAX_SPLIT_PANES } from "../splitView.logic";
 import { useSplitViewStore } from "../splitViewStore";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 import { threadRecentUse } from "@t3tools/shared/paletteSearch";
@@ -912,6 +914,7 @@ function OpenCommandPaletteDialog(props: {
   const {
     threadItems: allThreadItems,
     threadMessageItems,
+    splitThreadItems,
     now: searchNow,
     isSearchPending: isThreadSearchPending,
   } = useCommandPaletteThreadItems({ activeThread: activeThread ?? null, threadSearchQuery });
@@ -1328,6 +1331,18 @@ function OpenCommandPaletteDialog(props: {
         });
       }
     }
+  }
+
+  if (activeThread !== null && splitPaneCount < MAX_SPLIT_PANES) {
+    actionItems.push({
+      kind: "submenu",
+      value: "action:open-in-split-view",
+      searchTerms: ["split", "split view", "pane", "side by side", "open", "chat"],
+      title: "Open thread in split view...",
+      icon: <Columns2Icon className={ITEM_ICON_CLASS} />,
+      addonIcon: <Columns2Icon className={ADDON_ICON_CLASS} />,
+      groups: [{ value: "split-threads", label: "Threads", items: splitThreadItems }],
+    });
   }
 
   if (activeThread !== null && splitPaneCount > 1) {

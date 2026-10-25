@@ -9,6 +9,8 @@ import {
   RunId,
   TEAM_SILENCE_LIMIT_MS,
   ThreadId,
+  AuthSessionId,
+  TurnItemId,
   type OrchestrationV2Subagent,
   type OrchestrationV2ThreadShell,
   type OrchestratorMcpTeamAssignment,
@@ -23,6 +25,7 @@ import type { McpInvocationScope } from "../mcp/McpInvocationContext.ts";
 import * as OrchestratorMcpService from "../mcp/OrchestratorMcpService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import type { TeamCard } from "./teamCards.ts";
 import * as TeamService from "./TeamService.ts";
 
 const projectId = ProjectId.make("project:team");
@@ -64,15 +67,8 @@ interface Fixture {
   readonly stopped: Array<ThreadId>;
   /** Each proposed task's key and the worker number the card shows. */
   readonly proposed: Array<{ readonly key: string; readonly worker: number | undefined }>;
-  /** What the user picks on the card; null leaves it unanswered. */
-  approve: ReadonlyArray<string> | null;
-  /** What the user does on the team while the card shows. */
-  duringCard: Effect.Effect<void> | null;
-  /** The user picked before the card's caller could close it. */
-  approvedBeforeClose: boolean;
-  /** Why the card closed before a decision, if it did. */
-  closedWith: string | undefined;
-  readonly launches: Array<OrchestratorMcpService.ChildPlanLaunch>;
+  /** The team's cards, as the thread records them. */
+  readonly cards: Array<TeamCard>;
 }
 
 const makeFixture = (setup: TeamSetup = team()): Fixture => ({
@@ -96,12 +92,36 @@ const makeFixture = (setup: TeamSetup = team()): Fixture => ({
   interrupted: [],
   stopped: [],
   proposed: [],
-  approve: null,
-  duringCard: null,
-  approvedBeforeClose: false,
-  closedWith: undefined,
-  launches: [],
+  cards: [],
 });
+
+/** The user's click on the newest card still waiting. */
+const decide = (
+  fixture: Fixture,
+  approved: ReadonlyArray<string>,
+  index = fixture.cards.findLastIndex((card) => card.planStatus === "pending"),
+) => {
+  const card = fixture.cards[index]!;
+  const keys = card.children.map((child) => child.key);
+  const approvedKeys = keys.filter((key) => approved.includes(key));
+  const declinedKeys = keys.filter((key) => !approved.includes(key));
+  fixture.cards[index] = {
+    ...card,
+    status: "completed",
+    planStatus:
+      approvedKeys.length === 0
+        ? "declined"
+        : declinedKeys.length === 0
+          ? "approved"
+          : "partially_approved",
+    planDecision: {
+      decidedBy: { actor: "user", authSessionId: AuthSessionId.make("session:web") },
+      revision: 1,
+      approvedKeys,
+      declinedKeys,
+    },
+  };
+};
 
 const keyOf = (clientRequestId: string) => clientRequestId.split(":").at(-2)!;
 
@@ -124,8 +144,28 @@ const dependenciesFor = (fixture: Fixture) =>
                 id: NodeId.make(`node:${key}`),
                 ...task,
               })),
+              turnItems: [...fixture.cards],
             }) as never,
         ),
+      dispatch: (command) =>
+        Effect.sync(() => {
+          const index = fixture.cards.findIndex(
+            (card) => "turnItemId" in command && card.id === command.turnItemId,
+          );
+          const card = fixture.cards[index];
+          if (card !== undefined && command.type === "child_plan.record") {
+            fixture.cards[index] = {
+              ...card,
+              status: "cancelled",
+              planStatus: command.planStatus,
+              ...(command.closedReason === undefined ? {} : { closedReason: command.closedReason }),
+            };
+          }
+          if (card !== undefined && command.type === "child_plan.launched") {
+            fixture.cards[index] = { ...card, launches: command.launches };
+          }
+          return {} as never;
+        }),
       sendToThread: (input) =>
         Effect.sync(() => {
           fixture.sent.push(input.text);
@@ -158,33 +198,43 @@ const dependenciesFor = (fixture: Fixture) =>
           });
           return { taskId: NodeId.make(`node:${key}`), childThreadId } as never;
         }),
-      askChildPlan: (_scope, input) =>
-        Effect.gen(function* () {
-          const keys = input.tasks.map((task) => task.key);
+      openChildPlan: (_scope, input) =>
+        Effect.sync(() => {
           fixture.proposed.push(
             ...input.tasks.map((task) => ({ key: task.key, worker: task.worker })),
           );
-          if (fixture.duringCard !== null) yield* fixture.duringCard;
-          if (!fixture.approvedBeforeClose && input.closeReason !== undefined) {
-            fixture.closedWith = yield* input.closeReason;
-          }
-          const approve = fixture.closedWith === undefined ? fixture.approve : null;
-          return {
-            status:
-              fixture.closedWith !== undefined
-                ? "cancelled"
-                : approve === null
-                  ? "timed_out"
-                  : "partially_approved",
-            requestKey: "request",
-            approvedKeys: keys.filter((key) => approve?.includes(key) ?? false),
-            declinedKeys: keys.filter((key) => !(approve?.includes(key) ?? true)),
-            children: [],
-            recordLaunches: (launches) =>
-              Effect.sync(() => {
-                fixture.launches.push(...launches);
-              }),
-          };
+          const id = TurnItemId.make(`card:${fixture.cards.length + 1}`);
+          fixture.cards.push({
+            id,
+            type: "child_plan_request",
+            threadId: architectId,
+            runId: RunId.make("run:architect-1"),
+            nodeId: NodeId.make("node:architect-1"),
+            planId: `child-plan:${encodeURIComponent(architectId)}:${encodeURIComponent(
+              `${input.clientRequestId!}#${fixture.cards.length + 1}`,
+            )}`,
+            status: "waiting",
+            revision: 1,
+            planStatus: "pending",
+            waitsAfterRun: true,
+            planDecision: null,
+            children: input.tasks.map((task) => ({
+              key: task.key,
+              title: task.title,
+              brief: task.task,
+              ...(task.worker === undefined ? {} : { worker: task.worker }),
+              isolation: task.isolation ?? "shared",
+              modelSelection: {
+                instanceId: task.target!.providerInstanceId!,
+                model: task.target!.model!,
+                options: [...(task.target!.options ?? [])],
+              },
+              ...(task.dependsOn === undefined ? {} : { dependsOn: task.dependsOn }),
+              ...(task.readOnly === undefined ? {} : { readOnly: task.readOnly }),
+              ...(task.files === undefined ? {} : { files: task.files }),
+            })),
+          } as unknown as TeamCard);
+          return { turnItemId: id };
         }),
     }),
   );
@@ -239,45 +289,76 @@ it.effect("starts what fits and says why the rest waits", () =>
   }),
 );
 
-it.effect("asks the user outside autonomous mode and queues only what they approve", () =>
+const keysDelegated = (fixture: Fixture) =>
+  fixture.delegated.map((call) => keyOf(call.clientRequestId));
+
+it.effect("returns at once outside autonomous mode and starts what the user approves later", () =>
   Effect.gen(function* () {
     const fixture = makeFixture(team({ autonomous: false }));
-    fixture.approve = ["api"];
-    const result = yield* withTeam(fixture, (service) =>
-      assign(service, [work("api"), work("ui", { worker: 2 })]),
-    );
-    assert.equal(result.status, "queued");
-    assert.deepEqual(result.declinedKeys, ["ui"]);
-    assert.deepEqual(fixture.proposed, [
-      { key: "api", worker: 1 },
-      { key: "ui", worker: 2 },
-    ]);
-    assert.deepEqual(
-      fixture.delegated.map((call) => keyOf(call.clientRequestId)),
-      ["api"],
+    yield* withTeam(fixture, (service) =>
+      Effect.gen(function* () {
+        const result = yield* assign(service, [work("api"), work("ui", { worker: 2 })]);
+        assert.equal(result.status, "proposed");
+        assert.equal(result.turnItemId, "card:1");
+        assert.deepEqual(fixture.proposed, [
+          { key: "api", worker: 1 },
+          { key: "ui", worker: 2 },
+        ]);
+        setArchitect(fixture, { activeRunId: null });
+        decide(fixture, ["api"]);
+        yield* service.tick;
+        yield* service.tick;
+        assert.deepEqual(keysDelegated(fixture), []);
+        assert.lengthOf(fixture.sent, 1);
+        assert.include(fixture.sent[0]!, "api can start now");
+        setArchitect(fixture, {
+          activeRunId: RunId.make("run:architect-2"),
+          latestRunId: RunId.make("run:architect-2"),
+        });
+        yield* service.tick;
+        yield* service.tick;
+        assert.deepEqual(keysDelegated(fixture), ["api"]);
+        assert.deepEqual(fixture.cards[0]?.launches, [
+          {
+            key: "api",
+            taskId: NodeId.make("node:api"),
+            childThreadId: ThreadId.make("thread:api"),
+          },
+        ]);
+        assert.equal((yield* service.view(architectId))?.usage.rounds, 1);
+      }),
     );
   }),
 );
 
-it.effect("starts nothing when the user does not answer the card", () =>
+it.effect("waits without a stall while the card waits on the user", () =>
   Effect.gen(function* () {
     const fixture = makeFixture(team({ autonomous: false }));
-    const result = yield* withTeam(fixture, (service) => assign(service, [work("api")]));
-    assert.equal(result.status, "timed_out");
-    assert.deepEqual(fixture.delegated, []);
+    yield* withTeam(fixture, (service) =>
+      Effect.gen(function* () {
+        yield* assign(service, [work("api")]);
+        setArchitect(fixture, { activeRunId: null });
+        yield* service.tick;
+        setArchitect(fixture, { latestRunId: RunId.make("run:architect-2") });
+        yield* service.tick;
+        assert.deepEqual(fixture.sent, []);
+        assert.deepEqual(fixture.delegated, []);
+        assert.equal((yield* service.view(architectId))?.status, "running");
+      }),
+    );
   }),
 );
 
 it.effect("closes the waiting card and starts nothing when the user stops the team", () =>
   Effect.gen(function* () {
     const fixture = makeFixture(team({ autonomous: false }));
-    fixture.approve = ["api"];
     yield* withTeam(fixture, (service) =>
       Effect.gen(function* () {
-        fixture.duringCard = service.stop({ threadId: architectId }).pipe(Effect.orDie);
-        const refused = yield* assign(service, [work("api")]).pipe(Effect.flip);
-        assert.include(refused.message, "The user stopped the team.");
-        assert.equal(fixture.closedWith, "The user stopped the team.");
+        yield* assign(service, [work("api")]);
+        yield* service.stop({ threadId: architectId });
+        assert.equal(fixture.cards[0]?.planStatus, "cancelled");
+        assert.equal(fixture.cards[0]?.closedReason, "The user stopped the team.");
+        yield* service.tick;
         assert.deepEqual(fixture.delegated, []);
         assert.equal((yield* service.view(architectId))?.status, "stopped");
       }),
@@ -285,20 +366,63 @@ it.effect("closes the waiting card and starts nothing when the user stops the te
   }),
 );
 
-it.effect("starts nothing the user approved just as the team stopped", () =>
+it.effect("replaces a card still waiting with the next round", () =>
   Effect.gen(function* () {
     const fixture = makeFixture(team({ autonomous: false }));
-    fixture.approve = ["api"];
-    fixture.approvedBeforeClose = true;
     yield* withTeam(fixture, (service) =>
       Effect.gen(function* () {
-        fixture.duringCard = service.stop({ threadId: architectId }).pipe(Effect.orDie);
-        const refused = yield* assign(service, [work("api")]).pipe(Effect.flip);
-        assert.include(refused.message, "The user stopped the team.");
-        assert.deepEqual(fixture.delegated, []);
-        assert.deepEqual(fixture.launches, [{ key: "api", failure: "The user stopped the team." }]);
+        yield* assign(service, [work("api")]);
+        const second = yield* assign(service, [work("api"), work("docs", { worker: 2 })]);
+        assert.equal(second.turnItemId, "card:2");
+        assert.equal(fixture.cards[0]?.planStatus, "cancelled");
+        assert.equal(fixture.cards[0]?.closedReason, "Replaced by a newer proposal.");
+        assert.equal(fixture.cards[1]?.planStatus, "pending");
+      }),
+    );
+  }),
+);
+
+it.effect("tells the architect once when the user declines the whole round", () =>
+  Effect.gen(function* () {
+    const fixture = makeFixture(team({ autonomous: false }));
+    yield* withTeam(fixture, (service) =>
+      Effect.gen(function* () {
+        yield* assign(service, [work("api")]);
+        setArchitect(fixture, { activeRunId: null });
+        decide(fixture, []);
         yield* service.tick;
-        assert.deepEqual(fixture.delegated, []);
+        yield* service.tick;
+        assert.lengthOf(fixture.sent, 1);
+        assert.include(fixture.sent[0]!, "the user declined api");
+        assert.deepEqual(fixture.cards[0]?.launches, []);
+        const view = yield* service.view(architectId);
+        assert.equal(view?.usage.rounds, 0);
+        assert.deepEqual(view?.assignments, []);
+      }),
+    );
+  }),
+);
+
+it.effect("refuses an approved round that no longer fits the team's limits", () =>
+  Effect.gen(function* () {
+    const fixture = makeFixture(
+      team({ autonomous: false, limits: { ...DEFAULT_TEAM_LIMITS, maxRounds: 1 } }),
+    );
+    yield* withTeam(fixture, (service) =>
+      Effect.gen(function* () {
+        yield* assign(service, [work("api")]);
+        yield* assign(service, [work("docs")]);
+        decide(fixture, ["api"], 0);
+        decide(fixture, ["docs"], 1);
+        setArchitect(fixture, { activeRunId: null });
+        yield* service.tick;
+        assert.deepEqual(
+          (yield* service.view(architectId))?.assignments.map((row) => row.key),
+          ["api"],
+        );
+        assert.equal(fixture.cards[1]?.launches?.[0]?.key, "docs");
+        assert.isDefined(fixture.cards[1]?.launches?.[0]?.failure);
+        assert.isTrue(fixture.sent.some((text) => text.includes("could not join the team")));
       }),
     );
   }),
@@ -307,24 +431,20 @@ it.effect("starts nothing the user approved just as the team stopped", () =>
 it.effect("holds what the user approves while the team is paused until it resumes", () =>
   Effect.gen(function* () {
     const fixture = makeFixture(team({ autonomous: false }));
-    fixture.approve = ["api"];
     yield* withTeam(fixture, (service) =>
       Effect.gen(function* () {
-        fixture.duringCard = service.pause({ threadId: architectId }).pipe(Effect.orDie);
-        const result = yield* assign(service, [work("api")]);
-        assert.equal(result.status, "queued");
-        assert.deepEqual(result.started, []);
-        assert.deepEqual(result.waiting, [
-          { key: "api", reason: "Waits for the user to resume the team." },
-        ]);
+        yield* assign(service, [work("api")]);
+        yield* service.pause({ threadId: architectId });
+        decide(fixture, ["api"]);
         yield* service.tick;
         assert.deepEqual(fixture.delegated, []);
-        yield* service.resume({ threadId: architectId });
-        yield* service.tick;
         assert.deepEqual(
-          fixture.delegated.map((call) => keyOf(call.clientRequestId)),
+          (yield* service.view(architectId))?.assignments.map((row) => row.key),
           ["api"],
         );
+        yield* service.resume({ threadId: architectId });
+        yield* service.tick;
+        assert.deepEqual(keysDelegated(fixture), ["api"]);
       }),
     );
   }),

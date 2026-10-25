@@ -4,8 +4,16 @@ import * as Effect from "effect/Effect";
 
 import type * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import { ACTIVE_STATUSES } from "../mergeQueue/mergeQueueRows.ts";
+import {
+  approvedAssignments,
+  launchesFromRows,
+  recordLaunches,
+  teamCardsOf,
+  type TeamCard,
+} from "./teamCards.ts";
 import { teamMessage } from "./teamMessages.ts";
 import type { TeamMerge, TeamRunRow } from "./teamRows.ts";
+import { newAssignmentProblems } from "./teamScheduler.ts";
 import type { TeamStore } from "./teamStore.ts";
 import { decideTeamTick } from "./teamSupervisor.ts";
 import { planFor, type TeamWork } from "./teamWork.ts";
@@ -64,6 +72,54 @@ export const makeTeamWatch = (input: {
       return;
     }
     let current = yield* work.syncTasks(run, yield* store.assignmentsOf(run.run_id));
+    const cards = yield* teamCardsOf(threads, run.thread_id, run.run_id).pipe(
+      Effect.orElseSucceed((): ReadonlyArray<TeamCard> => []),
+    );
+    for (const card of cards) {
+      if (card.planDecision === null) continue;
+      if (card.launches !== undefined) {
+        yield* recordLaunches(threads, card, launchesFromRows(card, current));
+        continue;
+      }
+      const latest = (yield* store.latestRun(run.thread_id)) ?? run;
+      const approved = approvedAssignments(card);
+      const problems = newAssignmentProblems({
+        existing: current.map((row) => ({
+          key: row.assignment_key,
+          status: row.status,
+          attempts: row.attempts,
+        })),
+        incoming: approved.map((item) => ({ key: item.key, dependsOn: item.dependsOn })),
+        limits: team.limits,
+        usage: { rounds: latest.rounds, assignments: current.length },
+      });
+      if (approved.length === 0) {
+        yield* recordLaunches(threads, card, []);
+        yield* tell(
+          shell.projectId,
+          run.thread_id,
+          teamMessage.roundDeclined(card.planDecision.declinedKeys),
+        );
+        wokeAfter.set(run.run_id, shell.latestRunId);
+        continue;
+      }
+      if (problems.length > 0) {
+        yield* recordLaunches(
+          threads,
+          card,
+          approved.map((item) => ({ key: item.key, failure: problems.join(" ") })),
+        );
+        yield* tell(shell.projectId, run.thread_id, teamMessage.roundRefused(problems));
+        wokeAfter.set(run.run_id, shell.latestRunId);
+        continue;
+      }
+      yield* store.queueAssignments(latest, current, approved);
+      yield* store.updateRun(latest, { rounds: latest.rounds + 1, stalls: 0 });
+      yield* recordLaunches(threads, card, []);
+      wokeAfter.delete(run.run_id);
+      current = yield* store.assignmentsOf(run.run_id);
+    }
+    const awaitingUser = cards.some((card) => card.planStatus === "pending");
     if (run.status !== "running") return;
     const architectActive = shell.activeRunId !== null;
     let plan = planFor(run, team, current, architectActive);
@@ -103,7 +159,7 @@ export const makeTeamWatch = (input: {
       architect: {
         threadId: run.thread_id,
         hasActiveRun: architectActive,
-        waitingOnUser: shell.pendingRuntimeRequest !== null,
+        waitingOnUser: shell.pendingRuntimeRequest !== null || awaitingUser,
         lastEventSeenAt: yield* lastEventAt(run.thread_id, at),
         latestRunId: shell.latestRunId,
       },

@@ -6,6 +6,7 @@ import {
   closePane,
   followRouteThread,
   openPane,
+  pruneUnavailablePanes,
   type OpenPaneResult,
   type PaneChange,
 } from "./splitView.logic";
@@ -19,6 +20,7 @@ interface SplitViewState {
   open: (key: string) => OpenPaneResult;
   close: (key: string) => PaneChange;
   followRoute: (routeKey: string | null) => void;
+  prune: (isAvailable: (key: string) => boolean) => void;
 }
 
 export const useSplitViewStore = create<SplitViewState>()(
@@ -44,6 +46,11 @@ export const useSplitViewStore = create<SplitViewState>()(
           panes: routeKey === null ? panes : followRouteThread(panes, focusKey, routeKey),
           focusKey: routeKey,
         });
+      },
+      prune: (isAvailable) => {
+        const { panes, focusKey } = get();
+        const change = pruneUnavailablePanes(panes, focusKey, isAvailable);
+        if (change.panes !== panes) set({ panes: change.panes });
       },
     }),
     {

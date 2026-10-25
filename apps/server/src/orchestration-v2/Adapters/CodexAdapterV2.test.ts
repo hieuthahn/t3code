@@ -5537,7 +5537,10 @@ describe("CodexAdapterV2 post-settle continuation", () => {
 
   describe("MCP server status", () => {
     const nativeThreadId = "mcp-thread";
-    const startupStatus = (name: string, status: string): CodexReplay.CodexAppServerReplayEntry => ({
+    const startupStatus = (
+      name: string,
+      status: string,
+    ): CodexReplay.CodexAppServerReplayEntry => ({
       type: "emit_inbound",
       label: "mcpServer/startupStatus/updated",
       frame: {
@@ -5583,7 +5586,8 @@ describe("CodexAdapterV2 post-settle continuation", () => {
 
         const updated = harness.events.findLast(
           (event) =>
-            event.type === "provider_thread.updated" && event.providerThread.mcpServers !== undefined,
+            event.type === "provider_thread.updated" &&
+            event.providerThread.mcpServers !== undefined,
         );
         assert.equal(updated?.type, "provider_thread.updated");
         if (updated?.type !== "provider_thread.updated") return;

@@ -73,12 +73,14 @@ export function ThreadContextPanel(props: {
       <div className={cn("flex flex-col gap-1.5 pb-1", THREAD_DETAILS_PANEL_ROW_CONTENT_CLASS)}>
         <div className="flex items-baseline justify-between gap-3 text-sm tabular-nums">
           <span className="font-medium text-foreground/80">
-            {hasWindow ? `${percentage} used` : `${formatContextWindowTokens(usage.usedTokens)} used`}
+            {hasWindow
+              ? `${percentage} used`
+              : `${formatContextWindowTokens(usage.usedTokens)} used`}
           </span>
           {hasWindow ? (
             <span className="text-2xs text-muted-foreground">
               {formatContextWindowTokens(usage.usedTokens)} /{" "}
-              {formatContextWindowTokens(usage.maxTokens)}
+              {formatContextWindowTokens(usage.maxTokens ?? null)}
             </span>
           ) : null}
         </div>
@@ -103,7 +105,10 @@ export function ThreadContextPanel(props: {
               )
             ) : (
               <div
-                className={cn("h-full rounded-full", overloaded ? "bg-destructive" : "bg-foreground/45")}
+                className={cn(
+                  "h-full rounded-full",
+                  overloaded ? "bg-destructive" : "bg-foreground/45",
+                )}
                 style={{ width: `${barPercentage}%` }}
               />
             )}
@@ -119,7 +124,9 @@ export function ThreadContextPanel(props: {
                 <span className={cn("size-2 shrink-0 rounded-sm", className)} aria-hidden />
                 <span className="min-w-0 flex-1 truncate">{row.name}</span>
                 <span>{formatContextWindowTokens(row.tokens)}</span>
-                <span className="w-10 text-right">{formatContextWindowPercentage(row.percentage)}</span>
+                <span className="w-10 text-right">
+                  {formatContextWindowPercentage(row.percentage)}
+                </span>
               </li>
             ))}
           </ul>

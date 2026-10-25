@@ -4088,7 +4088,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           ],
         }),
       );
-      yield* harness.offerAndWait(makeAssistantTextFrame({ uuid: "mcp-status-message", text: "Done." }));
+      yield* harness.offerAndWait(
+        makeAssistantTextFrame({ uuid: "mcp-status-message", text: "Done." }),
+      );
       yield* harness.offerAndWait(makeResultFrame({ uuid: "mcp-status-result", result: "Done." }));
       assert.equal((yield* Queue.take(harness.terminalReceipts)).status, "completed");
       const updated = harness.events.findLast((event) => event.type === "provider_thread.updated");

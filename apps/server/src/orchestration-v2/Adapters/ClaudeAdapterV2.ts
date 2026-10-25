@@ -4624,7 +4624,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             input.nativeThreadId,
           );
           if (providerThread === undefined) return;
-          const updated = { ...providerThread, mcpServers: servers, updatedAt: yield* DateTime.now };
+          const updated = {
+            ...providerThread,
+            mcpServers: servers,
+            updatedAt: yield* DateTime.now,
+          };
           yield* rememberProviderThread(updated);
           yield* emitProviderEvent({
             type: "provider_thread.updated",

@@ -75,7 +75,9 @@ describe("live provider-turn usage (#8144)", () => {
 });
 
 describe("context window breakdown", () => {
-  const usage = (breakdown?: ReadonlyArray<{ name: string; tokens: number; kind: string }>) =>
+  const usage = (
+    breakdown?: ReadonlyArray<{ name: string; tokens: number; kind: "used" | "buffer" | "free" }>,
+  ) =>
     decodeTokenUsage({
       usedTokens: 200_000,
       maxTokens: 1_000_000,

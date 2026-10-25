@@ -57,6 +57,7 @@ import {
 import { useScopedModelDisabledReason } from "./useScopedModelAvailability";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { scopedIdleCompaction } from "./scopedSettings";
+import { TeamAutoSettingRow } from "./TeamAutoSettingRow";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { ThreadTitleInstructionsSettings } from "./ThreadTitleInstructionsSettings";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
@@ -1171,6 +1172,7 @@ export function GeneralSettingsPanel() {
             </Select>
           }
         />
+        <TeamAutoSettingRow />
         <SettingsRow
           serverScoped
           {...searchableSetting("prompt-suggestions")}

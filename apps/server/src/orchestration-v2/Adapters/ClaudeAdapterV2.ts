@@ -97,6 +97,7 @@ import {
   type ProviderApprovalFullAccessOverride,
   type ProviderApprovalOption,
   ProviderDriverKind,
+  type OrchestrationV2ContextBreakdownEntry,
   type ProviderInstanceId,
   type ProviderRequestKind,
   type ProviderUserInputAnswers,
@@ -229,6 +230,21 @@ function claudeAutoCompactThreshold(autoCompactWindow: string, maxTokens: number
   return threshold > 0 && (maxTokens === null || threshold < maxTokens)
     ? { autoCompactThreshold: threshold }
     : {};
+}
+
+/** Maps the SDK's own per-category report, leaving out deferred rows that sit outside the window. */
+export function claudeContextBreakdown(report: {
+  readonly categories: ReadonlyArray<{
+    readonly name: string;
+    readonly tokens: number;
+    readonly kind: "used" | "free" | "buffer" | "deferred";
+  }>;
+}): ReadonlyArray<OrchestrationV2ContextBreakdownEntry> {
+  return report.categories.flatMap((category) =>
+    category.kind === "deferred" || category.name.trim().length === 0
+      ? []
+      : [{ name: category.name.trim(), tokens: category.tokens, kind: category.kind }],
+  );
 }
 
 function claudeMessageInputTokens(usage: {
@@ -515,6 +531,10 @@ export interface ClaudeAgentSdkQuerySession {
     mode: PermissionMode,
   ) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
   readonly stopTask: (taskId: string) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
+  readonly contextUsage?: Effect.Effect<
+    ReadonlyArray<OrchestrationV2ContextBreakdownEntry>,
+    ClaudeAgentSdkQueryRunnerError
+  >;
   readonly backgroundTasks: (
     toolUseId: string,
   ) => Effect.Effect<boolean, ClaudeAgentSdkQueryRunnerError>;
@@ -1112,6 +1132,10 @@ export const layerQueryRunner: Layer.Layer<
                 }),
               ),
             ),
+          contextUsage: Effect.tryPromise({
+            try: () => queryRuntime.getContextUsage({ detail: "summary" }),
+            catch: (cause) => queryRunnerError(cause, "getContextUsage"),
+          }).pipe(Effect.map(claudeContextBreakdown)),
           backgroundTasks: (toolUseId) =>
             Effect.tryPromise({
               try: () => queryRuntime.backgroundTasks(toolUseId),
@@ -4695,6 +4719,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           context: ActiveClaudeTurnContext,
           usage: ClaudeMessageUsage,
           requestStarted = false,
+          withBreakdown = false,
         ) {
           const now = yield* DateTime.now;
           // Only message_start marks the request start; an assistant snapshot
@@ -4708,6 +4733,15 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             context.streamUsage?.requestedAt,
           );
           if (tokenUsage.inputTokens <= 0) return;
+          const liveQuery = withBreakdown ? yield* Ref.get(queryContext) : null;
+          // Best effort: an unanswered report must not hold up the turn.
+          const breakdown =
+            liveQuery === null || liveQuery.stopping || liveQuery.query.contextUsage === undefined
+              ? []
+              : yield* liveQuery.query.contextUsage.pipe(
+                  Effect.timeout("2 seconds"),
+                  Effect.orElseSucceed(() => []),
+                );
           yield* emitProviderEvent({
             type: "provider_turn.updated",
             driver: CLAUDE_PROVIDER,
@@ -4726,7 +4760,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               status: "running",
               startedAt: context.startedAt,
               completedAt: null,
-              tokenUsage,
+              tokenUsage: breakdown.length === 0 ? tokenUsage : { ...tokenUsage, breakdown },
             },
           });
         });
@@ -8011,7 +8045,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               const stream = context.streamUsage;
               if (stream?.usage && usage !== undefined) {
                 stream.usage = mergeClaudeStreamUsage(stream.usage, usage);
-                yield* emitContextUsage(context, stream.usage);
+                yield* emitContextUsage(context, stream.usage, false, true);
               }
             } else if (
               event.type === "content_block_start" &&

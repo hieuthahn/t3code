@@ -155,7 +155,7 @@ interface StartThreadBootstrap {
     readonly createdAt: string;
     readonly fanoutGroupId?: string;
     readonly tokenSaver?: TokenSaverConfig;
-    readonly team?: TeamSetup | null;
+    readonly team?: TeamSetup | null | "auto";
   };
   readonly prepareWorktree?: {
     readonly requireWorktree?: boolean;

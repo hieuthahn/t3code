@@ -64,6 +64,7 @@ import {
   SettingsIcon,
   SquarePenIcon,
   TextSearchIcon,
+  XIcon,
 } from "lucide-react";
 import { requestThreadFindOpen } from "./chat/threadFindActionBus";
 import {
@@ -231,6 +232,8 @@ import type { ChatComposerHandle } from "./chat/ChatComposer";
 import { buildSidebarProjectPickerEntries } from "../sidebarProjectGrouping";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "~/components/pullRequest/pullRequestListPreferences";
+import { useSplitViewActions } from "../hooks/useSplitView";
+import { useSplitViewStore } from "../splitViewStore";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
@@ -1184,6 +1187,8 @@ function OpenCommandPaletteDialog(props: {
   };
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
+  const splitPaneCount = useSplitViewStore((state) => state.panes.length);
+  const { closePane: closeSplitPane } = useSplitViewActions();
 
   if (projects.length > 0) {
     const activeProjectTitle =
@@ -1297,6 +1302,20 @@ function OpenCommandPaletteDialog(props: {
         });
       }
     }
+  }
+
+  if (activeThread !== null && splitPaneCount > 1) {
+    const splitThreadRef = scopeThreadRef(activeThread.environmentId, activeThread.id);
+    actionItems.push({
+      kind: "action",
+      value: "action:close-split-pane",
+      searchTerms: ["close", "split", "pane", "split view", "single"],
+      title: "Close split pane",
+      icon: <XIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        closeSplitPane(splitThreadRef);
+      },
+    });
   }
 
   if (activeThreadReferenceCopyTarget !== null) {

@@ -13,6 +13,7 @@ const baseState: ThreadActionMenuState = {
   canSnoozeNow: true,
   isRegeneratingTitle: false,
   isRunning: false,
+  canOpenInSplitView: true,
   supports: {
     settlement: true,
     autoSettleOptOut: true,
@@ -70,5 +71,22 @@ describe("buildThreadActionMenuItems", () => {
       (item) => item.id === "archive",
     );
     expect(archiveItem?.disabled).toBe(true);
+  });
+
+  it("offers Open in > Split view", () => {
+    const item = buildThreadActionMenuItems(baseState).find((entry) => entry.id === "open-in");
+    expect(item?.children?.map((child) => child.id)).toEqual(["open-in:split"]);
+  });
+
+  it("omits Open in where the thread already fills a pane", () => {
+    const items = buildThreadActionMenuItems({ ...baseState, canOpenInSplitView: false });
+    expect(items.some((entry) => entry.id === "open-in")).toBe(false);
+  });
+
+  it("keeps Open in available to read-only clients", () => {
+    const items = buildThreadActionMenuItems({ ...baseState, canOperate: false });
+    const item = items.find((entry) => entry.id === "open-in");
+    expect(item?.disabled).toBeUndefined();
+    expect(item?.children?.every((child) => child.disabled === undefined)).toBe(true);
   });
 });

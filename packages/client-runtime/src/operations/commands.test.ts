@@ -355,6 +355,51 @@ describe("V2 environment commands", () => {
     }).pipe(Effect.provide(layerTestCrypto)),
   );
 
+  it.effect("sends a draft's token saver and team with its launch", () =>
+    Effect.gen(function* () {
+      const launches: OrchestrationV2ThreadLaunchInput[] = [];
+      const supervisor = yield* makeSupervisor({ commands: [], projects: [], launches });
+      const architect = v2Projection.thread.modelSelection;
+      const tokenSaver = {
+        concise: "lite",
+        leanCode: false,
+        quietTools: true,
+        rtk: false,
+      } as const;
+      const team = { architect, workers: [architect], limits: DEFAULT_TEAM_LIMITS };
+
+      yield* startThreadTurn({
+        commandId: CommandId.make("launch-draft-settings"),
+        threadId: v2ThreadId,
+        message: {
+          messageId: MessageId.make("message-draft-settings"),
+          role: "user",
+          text: "Plan it",
+          attachments: [],
+        },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        bootstrap: {
+          createThread: {
+            projectId: ProjectId.make("project-1"),
+            title: "Plan it",
+            modelSelection: architect,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            createdAt: "2026-06-20T00:00:00.000Z",
+            tokenSaver,
+            team,
+          },
+        },
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+
+      expect(launches[0]?.tokenSaver).toEqual(tokenSaver);
+      expect(launches[0]?.team).toEqual(team);
+    }).pipe(Effect.provide(layerTestCrypto)),
+  );
+
   it.effect("uses server-resolved delivery intent without fetching the full projection", () =>
     Effect.gen(function* () {
       const commands: OrchestrationV2Command[] = [];

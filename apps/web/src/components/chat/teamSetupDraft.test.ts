@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   canAddTeamWorker,
+  draftTeam,
   initialTeamSetup,
   leadGuidanceBytesLeft,
   teamControlName,
@@ -91,5 +92,22 @@ describe("team setup helpers", () => {
     const other = { id: "build", name: "Build", setup: saved };
     expect(upsertTeamProfile([first], renamed)).toEqual([renamed]);
     expect(upsertTeamProfile([first], other)).toEqual([first, other]);
+  });
+});
+
+describe("draftTeam", () => {
+  const off = { newThreads: false, defaultSetup: saved };
+  const on = { newThreads: true, defaultSetup: saved };
+
+  it("follows the new-thread default until the draft chooses", () => {
+    expect(draftTeam(undefined, off)).toBeNull();
+    expect(draftTeam(undefined, on)).toEqual(saved);
+    expect(draftTeam(undefined, { newThreads: true, defaultSetup: null })).toBeNull();
+  });
+
+  it("keeps the draft's own choice, a single agent included", () => {
+    const own: TeamSetup = { ...saved, architect };
+    expect(draftTeam(own, off)).toEqual(own);
+    expect(draftTeam(null, on)).toBeNull();
   });
 });

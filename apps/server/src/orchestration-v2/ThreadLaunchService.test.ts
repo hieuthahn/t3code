@@ -15,6 +15,7 @@ import {
   type ChatAttachment,
   CommandId,
   DEFAULT_SERVER_SETTINGS,
+  DEFAULT_TEAM_LIMITS,
   GitCommandError,
   MessageId,
   ProjectId,
@@ -266,6 +267,7 @@ function makeHarness(options: HarnessOptions = {}) {
       layerTitleRegeneration,
       layerOutbox,
       layerDatabase,
+      layerReceipts,
       layerExternalServices,
     ),
     createWorktree,
@@ -694,6 +696,69 @@ it.effect("keeps native maintenance commands out of steering and restart message
       }
     }).pipe(Effect.provide(harness.layer));
   }),
+);
+
+it.effect("applies a draft's token saver and team before its first message", () =>
+  Effect.gen(function* () {
+    const launches = yield* ThreadLaunch.ThreadLaunchService;
+    const threads = yield* ThreadManagement.ThreadManagementService;
+    const receipts = yield* CommandReceiptStore.CommandReceiptStoreV2;
+    const tokenSaver = { concise: "full", leanCode: true, quietTools: false, rtk: false } as const;
+    const team = {
+      architect: modelSelection,
+      workers: [modelSelection],
+      limits: DEFAULT_TEAM_LIMITS,
+    };
+    const launched = yield* launches.launch({
+      ...launchInput({
+        command: "command:launch:draft-settings",
+        thread: "thread:launch:draft-settings",
+        message: "Plan the work",
+      }),
+      tokenSaver,
+      team,
+    });
+
+    const projection = yield* threads.getThreadProjection(launched.threadId);
+    assert.deepStrictEqual(projection.thread.tokenSaver, tokenSaver);
+    assert.deepStrictEqual(projection.thread.team, team);
+    const settings = yield* receipts.getByCommandId(
+      CommandId.make("command:launch:draft-settings:composer-settings"),
+    );
+    const message = yield* receipts.getByCommandId(
+      CommandId.make("command:launch:draft-settings:initial-message"),
+    );
+    assert.isTrue(Option.isSome(settings) && Option.isSome(message));
+    if (Option.isSome(settings) && Option.isSome(message)) {
+      assert.isBelow(settings.value.resultSequence, message.value.resultSequence);
+    }
+  }).pipe(Effect.provide(makeHarness().layer)),
+);
+
+it.effect("launches without touching token saver or team when the draft set neither", () =>
+  Effect.gen(function* () {
+    const launches = yield* ThreadLaunch.ThreadLaunchService;
+    const threads = yield* ThreadManagement.ThreadManagementService;
+    const receipts = yield* CommandReceiptStore.CommandReceiptStoreV2;
+    const launched = yield* launches.launch(
+      launchInput({
+        command: "command:launch:no-draft-settings",
+        thread: "thread:launch:no-draft-settings",
+        message: "Plan the work",
+      }),
+    );
+
+    const projection = yield* threads.getThreadProjection(launched.threadId);
+    assert.isUndefined(projection.thread.tokenSaver);
+    assert.isUndefined(projection.thread.team);
+    assert.isTrue(
+      Option.isNone(
+        yield* receipts.getByCommandId(
+          CommandId.make("command:launch:no-draft-settings:composer-settings"),
+        ),
+      ),
+    );
+  }).pipe(Effect.provide(makeHarness().layer)),
 );
 
 it.effect("arms durable title generation after accepting the first message", () =>

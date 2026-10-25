@@ -42,6 +42,7 @@ import {
 } from "../logicalProject";
 import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
 import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models";
+import { canOpenSideChatFrom, useOpenSideChat } from "../components/chat/useSideQuestion";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
@@ -88,6 +89,7 @@ export function useThreadActionMenu(input: {
     reportFailure: false,
   });
   const handleNewThread = useNewThreadHandler();
+  const openSideChat = useOpenSideChat();
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
@@ -140,6 +142,7 @@ export function useThreadActionMenu(input: {
         isRegeneratingTitle,
         isRunning: !threadRuntimeCanArchive(thread.runtime),
         canOpenInSplitView: false,
+        canOpenSideChat: canOpenSideChatFrom(threadRef),
         supports,
         snoozePresets,
       });
@@ -207,6 +210,12 @@ export function useThreadActionMenu(input: {
           }
           return;
         }
+        case "side-chat":
+          await openSideChat({
+            environmentId: threadRef.environmentId,
+            threadId: threadRef.threadId,
+          });
+          return;
         case "settle":
           await reportFailure("Failed to settle thread", () => settleThread(threadRef));
           return;

@@ -5,6 +5,7 @@ export type ThreadActionMenuId =
   | "new-thread-on-branch"
   | "open-in"
   | "open-in:split"
+  | "side-chat"
   | "filter-by-project"
   | "project-settings"
   | "pin"
@@ -82,6 +83,8 @@ export interface ThreadActionMenuState {
   readonly isRunning: boolean;
   /** False where the thread already fills a pane, such as the header of an open thread. */
   readonly canOpenInSplitView: boolean;
+  /** A side chat reads the main chat, so it needs a turn to read. */
+  readonly canOpenSideChat: boolean;
   readonly supports: {
     readonly settlement: boolean;
     readonly autoSettleOptOut: boolean;
@@ -129,6 +132,9 @@ export function buildThreadActionMenuItems(
             children: [{ id: "open-in:split" as const, label: "Split view", icon: "columns-2" }],
           },
         ]
+      : []),
+    ...(state.canOpenSideChat
+      ? [{ id: "side-chat" as const, label: "Open side chat", icon: "message-circle-question" }]
       : []),
     ...(state.supports.pinning
       ? [

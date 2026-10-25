@@ -259,6 +259,7 @@ interface MessagesTimelineProps {
   findOpen?: boolean;
   cancelPositionRestoreRef?: React.RefObject<(() => void) | null> | undefined;
   hideEmptyPlaceholder?: boolean;
+  emptyPlaceholder?: string;
   /** Composer space to center the empty state against; held steady through collapse. */
   emptyPlaceholderInset: number;
   topFadeEnabled?: boolean;
@@ -353,6 +354,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   onManualNavigation,
   cancelPositionRestoreRef,
   hideEmptyPlaceholder = false,
+  emptyPlaceholder,
   emptyPlaceholderInset,
   topFadeEnabled = false,
   historyControls,
@@ -1049,7 +1051,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   if (
     rows.length === 0 &&
     !isWorking &&
-    parentThreadLink === null &&
+    (parentThreadLink === null || emptyPlaceholder !== undefined) &&
     historyControls === undefined &&
     footer === null
   ) {
@@ -1061,8 +1063,14 @@ const ConversationTimeline = memo(function ConversationTimeline({
         className="flex h-full items-center justify-center ps-(--chat-lane-inset-start) pe-(--chat-lane-inset-end)"
         style={{ paddingBottom: emptyPlaceholderInset }}
       >
-        <p className="text-sm text-muted-foreground/30">
-          Send a message to start the conversation.
+        <p
+          className={
+            emptyPlaceholder === undefined
+              ? "text-sm text-muted-foreground/30"
+              : "max-w-md text-sm text-muted-foreground"
+          }
+        >
+          {emptyPlaceholder ?? "Send a message to start the conversation."}
         </p>
       </div>
     );

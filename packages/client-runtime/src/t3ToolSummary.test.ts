@@ -35,6 +35,30 @@ describe("summarizeT3ToolCalls", () => {
     ).toBe("Sent 2 messages to 1 thread");
   });
 
+  it("names the thread a single send reached when the result carries its title", () => {
+    const sent = (messageId: string, threadId: string, threadTitle?: string) =>
+      completed(
+        { threadId },
+        { messageId, threadId, ...(threadTitle === undefined ? {} : { threadTitle }) },
+      );
+    expect(
+      summarizeT3ToolCalls("thread-send", [sent("m1", "main", "Weekly client report")]).label,
+    ).toBe("Messaged Weekly client report");
+    expect(
+      summarizeT3ToolCalls("thread-send", [
+        sent("m1", "main", "Weekly client report"),
+        sent("m2", "main", "Weekly client report"),
+      ]).label,
+    ).toBe("Messaged Weekly client report 2 times");
+    expect(
+      summarizeT3ToolCalls("thread-send", [sent("m1", "main", "A"), sent("m2", "other", "B")])
+        .label,
+    ).toBe("Sent messages to 2 threads");
+    expect(summarizeT3ToolCalls("thread-send", [sent("m1", "main")]).label).toBe(
+      "Sent 1 message to 1 thread",
+    );
+  });
+
   it("excludes failed and unfinished sends even if the provider reports completed", () => {
     const calls: T3ToolSummaryCall[] = [
       completed({ threadId: "success" }, { messageId: "ok", threadId: "success" }),

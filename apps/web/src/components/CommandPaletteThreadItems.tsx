@@ -5,6 +5,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
 import { MessageSquareIcon } from "lucide-react";
 
+import { useSplitViewActions } from "../hooks/useSplitView";
 import { useClientSettings } from "../hooks/useSettings";
 import {
   applyProviderInstanceSettings,
@@ -28,6 +29,8 @@ import {
   ThreadRowTrailingStatus,
   ThreadSearchPullRequestNumber,
 } from "./ThreadStatusIndicators";
+
+const SPLIT_PICKER_THREAD_LIMIT = 30;
 
 function useProviderEntryByEnvironmentAndInstanceId() {
   const { environments } = useEnvironments();
@@ -74,6 +77,7 @@ export function useCommandPaletteThreadItems(input: {
 }) {
   const { activeThreadId, threadSearchQuery } = input;
   const navigate = useNavigate();
+  const { openInSplitView } = useSplitViewActions();
   const threads = useThreadShells();
   const sidebarThreadSortOrder = useClientSettings((settings) => settings.sidebarThreadSortOrder);
   const { projectEnvironmentLocationById } = useEnvironmentLookups();
@@ -81,7 +85,7 @@ export function useCommandPaletteThreadItems(input: {
   const { threadSearch, contentMatchByKey } = useThreadSearchWithContentMatches(threadSearchQuery);
   const { projectByKey, projectTitleById } = useProjectLookups();
 
-  const threadItems = buildThreadActionItems({
+  const threadItemOptions = {
     threads,
     ...(activeThreadId ? { activeThreadId } : {}),
     projectTitleById,
@@ -138,6 +142,9 @@ export function useCommandPaletteThreadItems(input: {
           }
         : undefined;
     },
+  };
+  const threadItems = buildThreadActionItems({
+    ...threadItemOptions,
     runThread: async (thread) => {
       await navigate({
         to: "/$environmentId/$threadId",
@@ -145,6 +152,13 @@ export function useCommandPaletteThreadItems(input: {
       });
     },
   });
+  const splitThreadItems = buildThreadActionItems({
+    ...threadItemOptions,
+    limit: SPLIT_PICKER_THREAD_LIMIT,
+    runThread: async (thread) => {
+      openInSplitView([scopeThreadRef(thread.environmentId, thread.id)]);
+    },
+  }).map((item) => ({ ...item, value: `split-${item.value}` }));
 
-  return { threadItems, isSearchPending: threadSearch.isPending };
+  return { threadItems, splitThreadItems, isSearchPending: threadSearch.isPending };
 }

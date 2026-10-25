@@ -8222,10 +8222,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         : { closedReason: command.closedReason }),
       children,
       planDecision: null,
+      ...(command.waitsAfterRun === true || existing?.waitsAfterRun === true
+        ? { waitsAfterRun: true as const }
+        : {}),
     });
   });
 
-  /** Records the user's decision on a proposal the agent still waits on. */
+  /** Records the user's decision on a proposal its agent waits on, or that waits after its run. */
   const dispatchChildPlanDecide = Effect.fn("orchestrationV2.dispatch.childPlanDecide")(function* (
     command: Extract<OrchestrationV2Command, { readonly type: "child_plan.decide" }>,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
@@ -8254,7 +8257,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       return yield* reject(`The proposal has no child session ${unknown.join(", ")}.`);
     }
     const run = projection.runs.find((candidate) => candidate.id === existing.runId);
-    if (run === undefined || !isBlockingRun(run)) {
+    if (run === undefined || (existing.waitsAfterRun !== true && !isBlockingRun(run))) {
       return yield* reject("The agent that proposed these child sessions stopped waiting.");
     }
     const approvedKeys = keys.filter((key) => command.approvedKeys.includes(key));
@@ -8469,12 +8472,37 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     }) {
       const { turnItems } = yield* projectionStore
         .getThreadRecords(input.threadId, ["turnItems"], {
-          turnItemTypes: ["link_request"],
+          turnItemTypes: ["link_request", "child_plan_request"],
           turnItemStatuses: ["waiting"],
           messageRoles: [],
         })
         .pipe(mapDispatchError(input.command));
       for (const item of turnItems) {
+        if (
+          item.type === "child_plan_request" &&
+          item.waitsAfterRun === true &&
+          item.planStatus === "pending"
+        ) {
+          yield* emit(
+            input.events,
+            input.command,
+          )({
+            type: "turn-item.updated",
+            threadId: input.threadId,
+            ...(item.runId === null ? {} : { runId: item.runId }),
+            ...(item.nodeId === null ? {} : { nodeId: item.nodeId }),
+            occurredAt: input.now,
+            payload: {
+              ...item,
+              status: "cancelled",
+              planStatus: "cancelled",
+              closedReason: "The thread stopped before a decision.",
+              completedAt: input.now,
+              updatedAt: input.now,
+            },
+          });
+          continue;
+        }
         if (item.type !== "link_request" || item.linkStatus !== "pending") continue;
         yield* emit(
           input.events,

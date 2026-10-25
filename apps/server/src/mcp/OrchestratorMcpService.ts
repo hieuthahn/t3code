@@ -215,6 +215,11 @@ export interface OrchestratorMcpServiceShape {
     scope: McpInvocationScope,
     input: ChildPlanInput,
   ) => Effect.Effect<ChildPlanAnswer, OrchestratorMcpFailure>;
+  /** Show a team's card that stays open after its architect's turn, and return at once. */
+  readonly openChildPlan: (
+    scope: McpInvocationScope,
+    input: ChildPlanInput,
+  ) => Effect.Effect<{ readonly turnItemId: TurnItemId }, OrchestratorMcpFailure>;
   /** Record a delegated child's report on its own task, beside what git shows in its checkout. */
   readonly reportTask: (
     scope: McpInvocationScope,
@@ -672,10 +677,17 @@ function stablePart(value: string): string {
 /** A team's proposal also names the worker each task goes to, which an agent cannot set. */
 export interface ChildPlanInput extends OrchestratorMcpProposeTasksInput {
   readonly tasks: ReadonlyArray<
-    OrchestratorMcpProposeTasksInput["tasks"][number] & { readonly worker?: number }
+    OrchestratorMcpProposeTasksInput["tasks"][number] & {
+      readonly worker?: number;
+      readonly dependsOn?: ReadonlyArray<string>;
+      readonly readOnly?: boolean;
+      readonly files?: ReadonlyArray<string>;
+    }
   >;
   /** Read while the card waits; a reason closes the undecided card with it. */
   readonly closeReason?: Effect.Effect<string | undefined>;
+  /** The card stays open after the agent's run; set by openChildPlan. */
+  readonly waitsAfterRun?: true;
 }
 
 export type ChildPlanLaunch =
@@ -1920,7 +1932,8 @@ const make = Effect.gen(function* () {
   });
 
   /** Show child sessions on a card and wait for the user's pick; it starts none of them. */
-  const askChildPlan = Effect.fn("OrchestratorMcpService.askChildPlan")(function* (
+  /** Validate a proposal and name its card, without showing it yet. */
+  const prepareChildPlan = Effect.fn("OrchestratorMcpService.prepareChildPlan")(function* (
     callerScope: McpInvocationScope,
     input: ChildPlanInput,
   ) {
@@ -1964,6 +1977,9 @@ const make = Effect.gen(function* () {
           brief: task.task,
           ...(task.role === undefined ? {} : { role: task.role }),
           ...(task.worker === undefined ? {} : { worker: task.worker }),
+          ...(task.dependsOn === undefined ? {} : { dependsOn: task.dependsOn }),
+          ...(task.readOnly === undefined ? {} : { readOnly: task.readOnly }),
+          ...(task.files === undefined ? {} : { files: task.files }),
           isolation: task.isolation ?? "shared",
           modelSelection: target.modelSelection,
           runtimeMode: yield* resolveRuntimeMode(
@@ -2023,6 +2039,7 @@ const make = Effect.gen(function* () {
           children,
           planStatus,
           ...(closedReason === undefined ? {} : { closedReason }),
+          ...(input.waitsAfterRun === true ? { waitsAfterRun: true as const } : {}),
         })
         .pipe(
           Effect.mapError((error) =>
@@ -2045,6 +2062,30 @@ const make = Effect.gen(function* () {
       Effect.mapError((error) =>
         failure("orchestration_error", `Unable to read the proposal: ${errorMessage(error)}`),
       ),
+    );
+    return { scope, threadId, runId, key, turnItemId, record, readCard };
+  });
+
+  /** Show a card that outlives its agent's run; the caller reads the decision later. */
+  const openChildPlan = Effect.fn("OrchestratorMcpService.openChildPlan")(function* (
+    callerScope: McpInvocationScope,
+    input: ChildPlanInput,
+  ) {
+    const { turnItemId, record } = yield* prepareChildPlan(callerScope, {
+      ...input,
+      waitsAfterRun: true,
+    });
+    yield* record("pending");
+    return { turnItemId };
+  });
+
+  const askChildPlan = Effect.fn("OrchestratorMcpService.askChildPlan")(function* (
+    callerScope: McpInvocationScope,
+    input: ChildPlanInput,
+  ) {
+    const { scope, threadId, runId, key, turnItemId, record, readCard } = yield* prepareChildPlan(
+      callerScope,
+      input,
     );
     yield* record("pending");
     const answered = yield* Effect.gen(function* () {
@@ -2496,6 +2537,7 @@ const make = Effect.gen(function* () {
       },
     ),
     askChildPlan,
+    openChildPlan,
     proposeTasks: Effect.fn("OrchestratorMcpService.proposeTasks")(function* (callerScope, input) {
       const { parent } = yield* loadThreadCaller(callerScope, "propose_tasks");
       if (parent.thread.team !== undefined) {

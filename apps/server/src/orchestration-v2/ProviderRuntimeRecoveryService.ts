@@ -446,8 +446,9 @@ export const make = Effect.gen(function* () {
             candidate.runId === run.id &&
             (candidate.nodeId === null || !messageRequestNodeIds.has(candidate.nodeId)) &&
             !isAppOwnedDelegationItem(candidate) &&
-            // A link card waits on the user, not the run, and answers by message.
+            // A link card or a team's proposal waits on the user, not the run.
             candidate.type !== "link_request" &&
+            !(candidate.type === "child_plan_request" && candidate.waitsAfterRun === true) &&
             (candidate.status === "pending" ||
               candidate.status === "running" ||
               candidate.status === "waiting"),

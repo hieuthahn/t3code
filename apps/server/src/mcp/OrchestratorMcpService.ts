@@ -1978,8 +1978,36 @@ const make = Effect.gen(function* () {
         } satisfies OrchestrationV2ChildProposal;
       }),
     );
-    const key = yield* requestKey(input.clientRequestId);
-    const planId = `child-plan:${stablePart(threadId)}:${stablePart(key)}`;
+    const planIdOf = (candidate: string) =>
+      `child-plan:${stablePart(threadId)}:${stablePart(candidate)}`;
+    const earlierCards = yield* threadManagement
+      .getThreadRecords(threadId, ["turnItems"], {
+        turnItemTypes: ["child_plan_request"],
+        messageRoles: [],
+      })
+      .pipe(
+        Effect.mapError((error) =>
+          failure(
+            "orchestration_error",
+            `Unable to read earlier proposals: ${errorMessage(error)}`,
+          ),
+        ),
+      );
+    const closedUndecided = new Set(
+      earlierCards.turnItems.flatMap((item) =>
+        item.type === "child_plan_request" &&
+        item.planStatus !== "pending" &&
+        item.planDecision === null
+          ? [item.planId]
+          : [],
+      ),
+    );
+    const requestedKey = yield* requestKey(input.clientRequestId);
+    let key = requestedKey;
+    for (let attempt = 2; closedUndecided.has(planIdOf(key)); attempt += 1) {
+      key = `${requestedKey}#${attempt}`;
+    }
+    const planId = planIdOf(key);
     const turnItemId = TurnItemId.make(`turn-item:${planId}`);
     const record = (planStatus: "pending" | "expired" | "cancelled", closedReason?: string) =>
       threadManagement

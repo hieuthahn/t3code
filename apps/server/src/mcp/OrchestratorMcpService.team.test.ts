@@ -106,6 +106,8 @@ function makeLayer(input: {
   readonly parentRuntimeMode?: "full-access" | "auto-accept-edits";
   /** The keys the user approves as soon as the card shows; undefined never answers. */
   readonly approve?: ReadonlyArray<string>;
+  /** Like approve, but read on every card so a test can start answering midway. */
+  readonly approveLater?: { current?: ReadonlyArray<string> };
   readonly dispatched: Array<OrchestrationV2ServerCommand>;
   readonly team?: TeamSetup;
 }) {
@@ -157,7 +159,11 @@ function makeLayer(input: {
         Effect.sync(() => {
           input.dispatched.push(command);
           if (command.type === "child_plan.record") {
-            if (card === undefined || command.planStatus !== "pending") {
+            if (
+              card === undefined ||
+              card.id !== command.turnItemId ||
+              command.planStatus !== "pending"
+            ) {
               card = {
                 id: command.turnItemId,
                 type: "child_plan_request",
@@ -169,7 +175,8 @@ function makeLayer(input: {
                 planDecision: null,
               } as never;
             }
-            if (input.approve !== undefined && card?.planStatus === "pending") {
+            const approve = input.approve ?? input.approveLater?.current;
+            if (approve !== undefined && card?.planStatus === "pending") {
               const keys = command.children.map((child) => child.key);
               card = {
                 ...card,
@@ -177,8 +184,8 @@ function makeLayer(input: {
                 planDecision: {
                   decidedBy: { actor: "user", authSessionId: AuthSessionId.make("session:web") },
                   revision: 1,
-                  approvedKeys: keys.filter((key) => input.approve!.includes(key)),
-                  declinedKeys: keys.filter((key) => !input.approve!.includes(key)),
+                  approvedKeys: keys.filter((key) => approve.includes(key)),
+                  declinedKeys: keys.filter((key) => !approve.includes(key)),
                 },
               };
             }
@@ -305,6 +312,36 @@ it.effect("proposes a team's children on its workers only", () =>
         { instanceId, model: "gpt-5.4", options: [] },
       ],
     );
+  }),
+);
+
+it.effect("opens a fresh card when the same request comes back after its card closed", () =>
+  Effect.gen(function* () {
+    const dispatched: Array<OrchestrationV2ServerCommand> = [];
+    const approveLater: { current?: ReadonlyArray<string> } = {};
+    const ask = (closeReason?: Effect.Effect<string | undefined>) =>
+      call((service) =>
+        service.askChildPlan(scope, {
+          reason: "Split the work.",
+          clientRequestId: "team:run:round:1",
+          tasks: [{ key: "api", title: "Retry sends", task: "Do the api part" }],
+          ...(closeReason === undefined ? {} : { closeReason }),
+        }),
+      );
+    const answers = yield* Effect.gen(function* () {
+      const first = yield* ask(Effect.succeed("The user stopped the team."));
+      approveLater.current = ["api"];
+      const second = yield* ask();
+      return [first.status, second.status];
+    }).pipe(Effect.provide(makeLayer({ approveLater, dispatched, team })));
+    assert.deepEqual(answers, ["cancelled", "partially_approved"]);
+    const opened = dispatched.flatMap((command) =>
+      command.type === "child_plan.record" && command.planStatus === "pending"
+        ? [command.turnItemId]
+        : [],
+    );
+    assert.equal(opened.length, 2);
+    assert.notEqual(opened[0], opened[1]);
   }),
 );
 

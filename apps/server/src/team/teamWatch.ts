@@ -72,9 +72,11 @@ export const makeTeamWatch = (input: {
       return;
     }
     let current = yield* work.syncTasks(run, yield* store.assignmentsOf(run.run_id));
-    const cards = yield* teamCardsOf(threads, run.thread_id, run.run_id).pipe(
-      Effect.orElseSucceed((): ReadonlyArray<TeamCard> => []),
+    const read = yield* teamCardsOf(threads, run.thread_id, run.run_id).pipe(
+      Effect.map((found): ReadonlyArray<TeamCard> | null => found),
+      Effect.orElseSucceed(() => null),
     );
+    const cards = read ?? [];
     for (const card of cards) {
       if (card.planDecision === null) continue;
       if (card.launches !== undefined) {
@@ -93,6 +95,7 @@ export const makeTeamWatch = (input: {
         limits: team.limits,
         usage: { rounds: latest.rounds, assignments: current.length },
       });
+      if ((problems.length > 0 || approved.length === 0) && run.status !== "running") continue;
       if (approved.length === 0) {
         yield* recordLaunches(threads, card, []);
         yield* tell(
@@ -119,7 +122,7 @@ export const makeTeamWatch = (input: {
       wokeAfter.delete(run.run_id);
       current = yield* store.assignmentsOf(run.run_id);
     }
-    const awaitingUser = cards.some((card) => card.planStatus === "pending");
+    const awaitingUser = read === null || cards.some((card) => card.planStatus === "pending");
     if (run.status !== "running") return;
     const architectActive = shell.activeRunId !== null;
     let plan = planFor(run, team, current, architectActive);

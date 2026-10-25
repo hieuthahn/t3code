@@ -224,6 +224,10 @@ export const layerWith = (options: { readonly tickEvery: Duration.Duration | nul
           if (team.autonomous !== true) {
             const opened = yield* lock.withPermits(1)(
               Effect.gen(function* () {
+                const fresh = yield* store.latestRun(thread.threadId);
+                if (fresh === null || fresh.run_id !== run.run_id || !isOpen(fresh)) {
+                  return yield* failure("invalid_request", teamMessage.stoppedByUser);
+                }
                 const cards = yield* teamCardsOf(threads, thread.threadId, run.run_id);
                 for (const card of cards) {
                   yield* closeCard(threads, card, teamMessage.replacedByNewerRound);

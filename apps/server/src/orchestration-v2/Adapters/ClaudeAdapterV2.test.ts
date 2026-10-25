@@ -669,6 +669,36 @@ describe("ClaudeAdapterV2 context usage", () => {
   });
 });
 
+describe("ClaudeAdapterV2 context breakdown", () => {
+  // Shape of a recorded SDKControlGetContextUsageResponse (claude-agent-sdk 0.3.276).
+  const recordedReport = {
+    categories: [
+      { name: "System prompt", tokens: 6200, color: "promptBorder", kind: "used" as const },
+      { name: "Messages", tokens: 41800, color: "purple", kind: "used" as const },
+      {
+        name: "MCP tools (deferred)",
+        tokens: 9000,
+        color: "gray",
+        isDeferred: true,
+        kind: "deferred" as const,
+      },
+      { name: "Free space", tokens: 120000, color: "promptBorder", kind: "free" as const },
+      { name: "Autocompact buffer", tokens: 33000, color: "inactive", kind: "buffer" as const },
+    ],
+    totalTokens: 48000,
+    maxTokens: 200000,
+  };
+
+  it("passes the SDK's own rows through and drops deferred ones", () => {
+    assert.deepStrictEqual(ClaudeAdapterV2.claudeContextBreakdown(recordedReport), [
+      { name: "System prompt", tokens: 6200, kind: "used" },
+      { name: "Messages", tokens: 41800, kind: "used" },
+      { name: "Free space", tokens: 120000, kind: "free" },
+      { name: "Autocompact buffer", tokens: 33000, kind: "buffer" },
+    ]);
+  });
+});
+
 describe("ClaudeAdapterV2 approval presentation", () => {
   it("marks asks that full access could not auto-allow and keeps the CLI's reason", () => {
     const presentation = ClaudeAdapterV2.claudeApprovalPresentation({

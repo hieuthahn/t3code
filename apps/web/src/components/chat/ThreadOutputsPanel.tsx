@@ -41,7 +41,8 @@ export function ThreadOutputsPanel(props: {
     >
       <ul className="m-0 flex list-none flex-col p-0">
         {visible.map((output) => {
-          const relativePath = output.status === "deleted" ? null : workspacePath(output.path, props.workspaceRoot);
+          const relativePath =
+            output.status === "deleted" ? null : workspacePath(output.path, props.workspaceRoot);
           const content = (
             <>
               <FileIcon className={THREAD_DETAILS_PANEL_ICON_CLASS} aria-hidden />
@@ -82,7 +83,11 @@ export function ThreadOutputsPanel(props: {
         })}
       </ul>
       {hiddenCount > 0 || expanded ? (
-        <ThreadDetailsControl part="meta" className="ml-2.5 mt-1" onClick={() => setExpanded(!expanded)}>
+        <ThreadDetailsControl
+          part="meta"
+          className="ml-2.5 mt-1"
+          onClick={() => setExpanded(!expanded)}
+        >
           {expanded ? "Show fewer" : `Show ${hiddenCount} more`}
         </ThreadDetailsControl>
       ) : null}

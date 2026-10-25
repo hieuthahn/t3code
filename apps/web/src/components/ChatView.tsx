@@ -1492,7 +1492,9 @@ export default function ChatView(props: ChatViewProps) {
     activeThreadLiveTokenUsage,
     activeProviderThread,
   );
-  const activeThreadOutputs = deriveThreadOutputs(serverVisibleTurnItems.map((entry) => entry.item));
+  const activeThreadOutputs = deriveThreadOutputs(
+    serverVisibleTurnItems.map((entry) => entry.item),
+  );
   const pendingBackgroundTasks = deriveThreadPendingBackgroundTasks(serverProjection);
   const activeWorkStartedAt =
     deriveActiveWorkStartedAt(activeActivityRun, activeRuntime, localDispatchStartedAt) ??

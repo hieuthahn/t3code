@@ -15,8 +15,16 @@ const STATUS_PRESENTATION: Record<
     dotClass: "bg-amber-500",
     textClass: "text-warning-foreground",
   },
-  pending: { label: "Connecting", dotClass: "bg-muted-foreground/40", textClass: "text-muted-foreground" },
-  disabled: { label: "Off", dotClass: "bg-muted-foreground/40", textClass: "text-muted-foreground" },
+  pending: {
+    label: "Connecting",
+    dotClass: "bg-muted-foreground/40",
+    textClass: "text-muted-foreground",
+  },
+  disabled: {
+    label: "Off",
+    dotClass: "bg-muted-foreground/40",
+    textClass: "text-muted-foreground",
+  },
 };
 
 /** MCP servers this thread's provider session reported. Renders nothing when there are none. */

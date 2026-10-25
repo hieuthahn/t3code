@@ -771,6 +771,26 @@ it.effect("leaves a team interrupted after a restart until the user resumes it",
   }),
 );
 
+it.effect("keeps a team with no worker in flight running across a restart", () =>
+  Effect.gen(function* () {
+    const fixture = makeFixture();
+    yield* Effect.gen(function* () {
+      yield* Effect.gen(function* () {
+        const service = yield* TeamService.TeamService;
+        yield* assign(service, [work("api")]);
+        fixture.tasks.set("api", { status: "completed", result: "Built it." });
+        yield* service.tick;
+      }).pipe(Effect.provide(serviceLayer));
+      yield* Effect.gen(function* () {
+        const service = yield* TeamService.TeamService;
+        const view = yield* service.view(architectId);
+        assert.equal(view?.status, "running");
+        assert.isNull(view?.report ?? null);
+      }).pipe(Effect.provide(serviceLayer));
+    }).pipe(Effect.provide(dependenciesFor(fixture)));
+  }),
+);
+
 it.effect("finishes a team only once no worker runs", () =>
   Effect.gen(function* () {
     const fixture = makeFixture();

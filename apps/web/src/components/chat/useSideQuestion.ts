@@ -35,7 +35,10 @@ const warn = (title: string, description: string) => {
 /** Whether the thread, or the main chat it is a side chat of, has a turn for a side chat to read. */
 export function canOpenSideChatFrom(ref: ScopedThreadRef): boolean {
   const threads = readThreadShells().filter((thread) => thread.environmentId === ref.environmentId);
-  const mainRef = scopeThreadRef(ref.environmentId, sideQuestionMainThreadId(ref.threadId, threads));
+  const mainRef = scopeThreadRef(
+    ref.environmentId,
+    sideQuestionMainThreadId(ref.threadId, threads),
+  );
   const runs = appAtomRegistry.get(environmentThreadDetails.threadAtom(mainRef))?.projection?.runs;
   return latestSideChatSourceRunId(runs ?? []) !== null;
 }
@@ -63,7 +66,10 @@ function useForkSideChat() {
       appAtomRegistry.get(environmentThreadDetails.threadAtom(mainRef))?.projection?.runs ?? [];
     const runId = latestSideChatSourceRunId(runs);
     if (runId === null) {
-      warn("Nothing to ask about yet", "A side chat reads the main chat. Send a message there first.");
+      warn(
+        "Nothing to ask about yet",
+        "A side chat reads the main chat. Send a message there first.",
+      );
       return null;
     }
     const targetThreadId = newThreadId();

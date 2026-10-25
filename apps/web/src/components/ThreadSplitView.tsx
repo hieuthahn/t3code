@@ -1,7 +1,7 @@
 import { parseScopedThreadKey, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { Columns2Icon, XIcon } from "lucide-react";
-import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 
 import { useSplitViewActions } from "../hooks/useSplitView";
 import { useStableCallback } from "../hooks/useStableCallback";
@@ -75,7 +75,7 @@ function SplitPane(props: {
   onClose: (ref: ScopedThreadRef) => void;
 }) {
   const { threadRef, focused, isSplit } = props;
-  const target = useMemo(() => ({ kind: "server" as const, threadRef }), [threadRef]);
+  const target = { kind: "server" as const, threadRef };
   const focus = useStableCallback(() => {
     if (!focused) props.onFocus(threadRef);
   });
@@ -105,12 +105,7 @@ function SplitPane(props: {
           <Tooltip>
             <TooltipTrigger
               render={
-                <Button
-                  aria-label="Close pane"
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={close}
-                />
+                <Button aria-label="Close pane" variant="ghost" size="icon-sm" onClick={close} />
               }
             >
               <XIcon aria-hidden className="size-4" />
@@ -149,8 +144,11 @@ function ServerThreadSplitView({
   }, [routeKey]);
   useLayoutEffect(() => () => useSplitViewStore.getState().followRoute(null), []);
 
-  useThreadContextDrop(containerRef, threadRef.environmentId as EnvironmentId, "split-view", (refs) =>
-    openInSplitView(refs),
+  useThreadContextDrop(
+    containerRef,
+    threadRef.environmentId as EnvironmentId,
+    "split-view",
+    (refs) => openInSplitView(refs),
   );
 
   const visibleCount = resolveVisiblePaneCount({
@@ -159,15 +157,10 @@ function ServerThreadSplitView({
     paneCount: panes.length,
   });
   const shown = visiblePanes(panes, routeKey, visibleCount);
-  const shownKey = shown.join("|");
-  const shownRefs = useMemo(
-    () =>
-      shownKey.split("|").flatMap((key) => {
-        const ref = parseScopedThreadKey(key);
-        return ref ? [ref] : [];
-      }),
-    [shownKey],
-  );
+  const shownRefs = shown.flatMap((key) => {
+    const ref = parseScopedThreadKey(key);
+    return ref ? [ref] : [];
+  });
   const isSplit = panes.length > 1;
 
   return (
@@ -183,7 +176,7 @@ function ServerThreadSplitView({
       >
         {shownRefs.map((ref, index) => (
           <SplitPane
-            key={index}
+            key={scopedThreadKey(ref)}
             threadRef={ref}
             focused={scopedThreadKey(ref) === routeKey}
             leading={index === 0}

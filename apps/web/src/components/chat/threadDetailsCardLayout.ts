@@ -14,7 +14,10 @@ export function resolveThreadDetailsCardDensity(
   return "essential";
 }
 
-/** The merge queue and team panels hold actions waiting on the user, so they stay at any density. */
+/**
+ * The merge queue and team panels hold actions waiting on the user, so they stay at any density.
+ * Context, connectors and outputs are reference cards that give way when the card is short.
+ */
 export function threadDetailsPanels(
   density: ReturnType<typeof resolveThreadDetailsCardDensity>,
   isDraft: boolean,
@@ -24,6 +27,9 @@ export function threadDetailsPanels(
     mergeQueue: !isDraft,
     team: !isDraft,
     relationships: density === "full" && !isDraft,
+    context: density === "full" && !isDraft,
+    connectors: density === "full" && !isDraft,
+    outputs: density === "full" && !isDraft,
   };
 }
 

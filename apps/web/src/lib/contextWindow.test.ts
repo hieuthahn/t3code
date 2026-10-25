@@ -12,7 +12,11 @@ import {
 } from "@t3tools/contracts";
 import { makeThreadProjectionFixture } from "../test-fixtures";
 import { shouldOfferResumeCompaction } from "../components/chat/ContextWindowMeter.logic";
-import { deriveLatestContextWindowSnapshot, latestProviderTurnTokenUsage } from "./contextWindow";
+import {
+  deriveContextBreakdownRows,
+  deriveLatestContextWindowSnapshot,
+  latestProviderTurnTokenUsage,
+} from "./contextWindow";
 
 const decodeTokenUsage = Schema.decodeSync(OrchestrationV2ProviderTurnTokenUsage);
 
@@ -67,6 +71,51 @@ describe("live provider-turn usage (#8144)", () => {
     expect(
       formatContextWindowCompactionMessage("Claude Sonnet 4.6", snapshot?.autoCompactThreshold),
     ).toBe("Compacts automatically at about 150,000 tokens.");
+  });
+});
+
+describe("context window breakdown", () => {
+  const usage = (breakdown?: ReadonlyArray<{ name: string; tokens: number; kind: string }>) =>
+    decodeTokenUsage({
+      usedTokens: 200_000,
+      maxTokens: 1_000_000,
+      ...(breakdown === undefined ? {} : { breakdown }),
+      updatedAt: "2026-10-25T00:00:00.000Z",
+    });
+
+  it("carries the provider's split through to the snapshot and sizes each row", () => {
+    const snapshot = deriveLatestContextWindowSnapshot(
+      [],
+      usage([
+        { name: "Messages", tokens: 150_000, kind: "used" },
+        { name: "MCP tools", tokens: 50_000, kind: "used" },
+        { name: "Autocompact buffer", tokens: 33_000, kind: "buffer" },
+        { name: "Free space", tokens: 767_000, kind: "free" },
+      ]),
+    );
+    expect(deriveContextBreakdownRows(snapshot)).toEqual([
+      { name: "Messages", tokens: 150_000, kind: "used", percentage: 15 },
+      { name: "MCP tools", tokens: 50_000, kind: "used", percentage: 5 },
+      { name: "Autocompact buffer", tokens: 33_000, kind: "buffer", percentage: 3.3 },
+      { name: "Free space", tokens: 767_000, kind: "free", percentage: 76.7 },
+    ]);
+  });
+
+  it("shows no rows when the provider reports only a total", () => {
+    expect(deriveContextBreakdownRows(deriveLatestContextWindowSnapshot([], usage()))).toEqual([]);
+    expect(deriveContextBreakdownRows(null)).toEqual([]);
+  });
+
+  it("shows no rows without a window size to measure them against", () => {
+    const snapshot = deriveLatestContextWindowSnapshot(
+      [],
+      decodeTokenUsage({
+        usedTokens: 10,
+        breakdown: [{ name: "Messages", tokens: 10, kind: "used" }],
+        updatedAt: "2026-10-25T00:00:00.000Z",
+      }),
+    );
+    expect(deriveContextBreakdownRows(snapshot)).toEqual([]);
   });
 });
 

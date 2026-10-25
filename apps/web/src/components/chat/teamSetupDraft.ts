@@ -31,6 +31,15 @@ export function initialTeamSetup(input: {
   return { architect, workers: [architect], limits: DEFAULT_TEAM_LIMITS };
 }
 
+/** A draft's team: its own choice, else the team new threads start with. */
+export function draftTeam(
+  choice: TeamSetup | null | undefined,
+  settings: { readonly newThreads: boolean; readonly defaultSetup: TeamSetup | null },
+): TeamSetup | null {
+  if (choice !== undefined) return choice;
+  return settings.newThreads ? settings.defaultSetup : null;
+}
+
 export const canAddTeamWorker = (setup: TeamSetup) => setup.workers.length < TEAM_MAX_WORKERS;
 
 export const leadGuidanceBytesLeft = (guidance: string) =>

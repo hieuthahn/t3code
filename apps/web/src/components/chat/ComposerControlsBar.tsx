@@ -8,7 +8,7 @@ import { ComposerControl, ComposerControlSeparator } from "./ComposerControl";
 import { ComposerTeamControl } from "./ComposerTeamControl";
 import { ComposerTokenSaverControl, supportsTokenSaver } from "./ComposerTokenSaverControl";
 import { TeamModelsTooltip } from "./TeamModelsTooltip";
-import { teamModelSuffix } from "./teamSetupDraft";
+import { draftTeam, teamModelSuffix } from "./teamSetupDraft";
 import {
   ComposerFooterModeControls,
   ComposerModelPicker,
@@ -25,6 +25,10 @@ import {
 } from "@t3tools/contracts";
 import { useState } from "react";
 
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { useComposerDraftStore } from "~/composerDraftStore";
+import { useDraftComposerSettings } from "~/draftComposerSettingsStore";
+import { useEnvironmentSettings } from "~/hooks/useSettings";
 import { cn } from "~/lib/utils";
 import { useThreadShell } from "~/state/entities";
 import {
@@ -135,7 +139,13 @@ export function ComposerControlsBar(props: {
     modelPickerIconClassName,
     getModelDisabledReason,
   } = props;
-  const team = useThreadShell(routeKind === "server" ? routeThreadRef : null)?.team ?? null;
+  const serverTeam = useThreadShell(routeKind === "server" ? routeThreadRef : null)?.team;
+  const draftTeamChoice = useDraftComposerSettings(
+    routeKind === "draft" ? scopedThreadKey(routeThreadRef) : null,
+  ).team;
+  const teamSettings = useEnvironmentSettings(environmentId, (value) => value.team);
+  const team =
+    routeKind === "server" ? (serverTeam ?? null) : draftTeam(draftTeamChoice, teamSettings);
   const teamPickerProps =
     team === null || multipleModelSelections !== null
       ? {}
@@ -149,7 +159,7 @@ export function ComposerControlsBar(props: {
   const [overflowAnchor, setOverflowAnchor] = useState<HTMLDivElement | null>(null);
   // The mode block, which holds the Saver button, is the first to hide when the footer is tight.
   const tokenSaverInOverflow =
-    props.routeKind === "server" &&
+    (routeKind === "server" || multipleModelSelections === null) &&
     supportsTokenSaver(props.selectedProvider) &&
     props.restingHiddenBlockCount > 0;
   const providerTraitsMenuContent = renderProviderTraitsMenuContent({
@@ -213,10 +223,11 @@ export function ComposerControlsBar(props: {
             onToggleInteractionMode={toggleInteractionMode}
             onRuntimeModeChange={handleRuntimeModeChange}
           />
-          {routeKind === "server" ? (
+          {routeKind === "server" || multipleModelSelections === null ? (
             <>
               <ComposerTokenSaverControl
                 threadRef={routeThreadRef}
+                isDraft={routeKind === "draft"}
                 driver={selectedProvider}
                 size={composerControlsCollapsed ? "xs" : "sm"}
                 open={tokenSaverOpen}
@@ -225,6 +236,14 @@ export function ComposerControlsBar(props: {
               />
               <ComposerTeamControl
                 threadRef={routeThreadRef}
+                isDraft={routeKind === "draft"}
+                onDraftArchitect={(architect) => {
+                  if (draftId === null) return;
+                  useComposerDraftStore.getState().setModelSelection(draftId, architect, {
+                    explicit: true,
+                    replaceOptions: true,
+                  });
+                }}
                 driver={selectedProvider}
                 threadModel={selectedModelSelection}
                 lockedProvider={lockedProvider}

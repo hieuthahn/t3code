@@ -57,8 +57,13 @@ import {
 import { resolvePlanFollowUpSubmission } from "../../proposedPlan";
 import { parseSideQuestionCommand } from "./sideQuestions.logic";
 import { useSideQuestion } from "./useSideQuestion";
+import { teamWithArchitect } from "./teamSetupDraft";
 import { type ChatMessage } from "../../types";
 import { stackedThreadToast, toastManager } from "../ui/toast";
+import {
+  clearDraftComposerSettings,
+  readDraftComposerSettings,
+} from "~/draftComposerSettingsStore";
 import { newMessageId, newThreadId } from "~/lib/utils";
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { buildThreadRouteParams } from "../../threadRoutes";
@@ -1218,6 +1223,9 @@ export function useComposerSend(input: ComposerSendInput) {
 
     let backgroundDraftOpened = false;
     let turnStartSucceeded = false;
+    const draftSettingsKey = sentDraftThreadRef ? scopedThreadKey(sentDraftThreadRef) : null;
+    const draftSettings =
+      draftSettingsKey === null ? null : readDraftComposerSettings(draftSettingsKey);
     if (failure === null && turnAttachmentsResult._tag === "Success") {
       const bootstrap =
         isLocalDraftThread || baseBranchForWorktree
@@ -1233,6 +1241,17 @@ export function useComposerSend(input: ComposerSendInput) {
                       branch: activeThreadBranch,
                       worktreePath: activeThread.worktreePath,
                       createdAt: activeThread.createdAt,
+                      ...(draftSettings?.tokenSaver === undefined
+                        ? {}
+                        : { tokenSaver: draftSettings.tokenSaver }),
+                      ...(draftSettings?.team === undefined
+                        ? {}
+                        : {
+                            team:
+                              draftSettings.team === null
+                                ? null
+                                : teamWithArchitect(draftSettings.team, ctxSelectedModelSelection),
+                          }),
                     },
                   }
                 : {}),
@@ -1310,6 +1329,7 @@ export function useComposerSend(input: ComposerSendInput) {
         failure = startResult;
       } else {
         turnStartSucceeded = true;
+        if (draftSettingsKey !== null) clearDraftComposerSettings(draftSettingsKey);
         setKeepFullHistory(routeThreadKey, false);
         clearUsageLimitsFor(routeThreadKey);
         if (turnUsesAttachmentUploads) {

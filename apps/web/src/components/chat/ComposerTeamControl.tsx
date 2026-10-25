@@ -13,9 +13,14 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { ChevronRightIcon, PlusIcon, UsersIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 
+import {
+  updateDraftComposerSettings,
+  useDraftComposerSettings,
+} from "~/draftComposerSettingsStore";
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "~/hooks/useSettings";
 import { randomUUID } from "~/lib/utils";
 import { useThreadShell } from "~/state/entities";
@@ -40,6 +45,7 @@ import { TeamMemberPicker } from "./TeamMemberPicker";
 import { TeamProfileBar } from "./TeamProfileBar";
 import {
   canAddTeamWorker,
+  draftTeam,
   initialTeamSetup,
   leadGuidanceBytesLeft,
   teamControlName,
@@ -53,6 +59,10 @@ const NO_USAGE = { rounds: 0, assignments: 0 };
 /** The thread's team: an architect model and the worker models it may delegate to. */
 export function ComposerTeamControl(props: {
   readonly threadRef: ScopedThreadRef;
+  /** Set on a draft route: the team waits in the draft until the first send creates the thread. */
+  readonly isDraft?: boolean;
+  /** Moves the draft's model to the architect it starts the team with. */
+  readonly onDraftArchitect?: (architect: ModelSelection) => void;
   readonly driver: ProviderDriverKind;
   readonly threadModel: ModelSelection;
   readonly lockedProvider: ProviderDriverKind | null;
@@ -65,7 +75,10 @@ export function ComposerTeamControl(props: {
   const floatingLayerProps = useComposerMenuProps();
   const settings = useEnvironmentSettings(environmentId, (value) => value.team);
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
-  const thread = useThreadShell(props.threadRef);
+  const isDraft = props.isDraft === true;
+  const threadKey = scopedThreadKey(props.threadRef);
+  const draftSettings = useDraftComposerSettings(isDraft ? threadKey : null);
+  const thread = useThreadShell(isDraft ? null : props.threadRef);
   const updateMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata);
   const canOperate = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const canWriteSettings = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
@@ -75,13 +88,13 @@ export function ComposerTeamControl(props: {
   const [applying, setApplying] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
   const runQuery = useEnvironmentQuery(
-    thread?.team === undefined
+    isDraft || thread?.team === undefined
       ? null
       : serverEnvironment.teamLive({ environmentId, input: { threadId } }),
   );
 
-  if (thread === null || !SUPPORTED_DRIVERS.has(props.driver)) return null;
-  const team = thread.team ?? null;
+  if ((!isDraft && thread === null) || !SUPPORTED_DRIVERS.has(props.driver)) return null;
+  const team = isDraft ? draftTeam(draftSettings.team, settings) : (thread?.team ?? null);
   const setup =
     draft ??
     initialTeamSetup({
@@ -99,6 +112,16 @@ export function ComposerTeamControl(props: {
   const limitProblems = team === null ? [] : teamLimitChangeProblems(setup.limits, used);
 
   const apply = async (next: TeamSetup | null) => {
+    if (isDraft) {
+      updateDraftComposerSettings(threadKey, { team: next });
+      if (next !== null) {
+        props.onDraftArchitect?.(next.architect);
+        if (canWriteSettings) updateSettings({ team: { defaultSetup: next } });
+      }
+      setApplyError(null);
+      setOpen(false);
+      return;
+    }
     setApplying(true);
     setApplyError(null);
     const result = await updateMetadata({

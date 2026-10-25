@@ -8,10 +8,15 @@ import {
   type TeamRunView,
   type TeamSetup,
 } from "@t3tools/contracts";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../../test/render";
+import {
+  clearDraftComposerSettings,
+  readDraftComposerSettings,
+} from "~/draftComposerSettingsStore";
 import { ComposerTeamControl } from "./ComposerTeamControl";
 
 const state = vi.hoisted(() => ({
@@ -25,6 +30,7 @@ const state = vi.hoisted(() => ({
   settings: [] as unknown[],
   run: null as TeamRunView | null,
   metadataFailure: null as string | null,
+  draftModels: [] as unknown[],
 }));
 
 vi.mock("~/hooks/useSettings", () => ({
@@ -40,7 +46,9 @@ vi.mock("~/hooks/useSettings", () => ({
     state.settings.push(patch);
   },
 }));
-vi.mock("~/state/entities", () => ({ useThreadShell: () => ({ team: state.team }) }));
+vi.mock("~/state/entities", () => ({
+  useThreadShell: (ref: unknown) => (ref === null ? null : { team: state.team }),
+}));
 vi.mock("~/state/threads", () => ({ threadEnvironment: { updateMetadata: {} } }));
 vi.mock("~/state/session", async (importOriginal) => ({
   ...(await importOriginal()),
@@ -79,6 +87,7 @@ const threadRef = {
   environmentId: EnvironmentId.make("environment-team"),
   threadId: ThreadId.make("thread-team"),
 };
+const threadKey = scopedThreadKey(threadRef);
 const architect = { instanceId: ProviderInstanceId.make("claudeAgent"), model: "claude-opus-4-1" };
 const worker = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5-codex" };
 
@@ -94,8 +103,10 @@ function setup(overrides: Partial<typeof state> = {}) {
     settings: [],
     run: null,
     metadataFailure: null,
+    draftModels: [],
     ...overrides,
   });
+  clearDraftComposerSettings(threadKey);
 }
 
 const renderControl = () =>
@@ -109,6 +120,53 @@ const renderControl = () =>
       modelOptionsByInstance={new Map()}
     />,
   );
+
+const renderDraftControl = (driver = "claudeAgent") =>
+  render(
+    <ComposerTeamControl
+      threadRef={threadRef}
+      isDraft
+      onDraftArchitect={(selection) => state.draftModels.push(selection)}
+      driver={ProviderDriverKind.make(driver)}
+      threadModel={architect}
+      lockedProvider={null}
+      instanceEntries={[]}
+      modelOptionsByInstance={new Map()}
+    />,
+  );
+
+it("keeps a draft's team in the draft until its first send creates the thread", async () => {
+  setup();
+  await using _screen = await renderDraftControl();
+  await userEvent.click(page.getByRole("button", { name: /^Team(, |$)/ }));
+  await userEvent.click(page.getByRole("button", { name: "Start team" }));
+
+  const team = { architect, workers: [architect], limits: DEFAULT_TEAM_LIMITS };
+  expect(state.metadata).toEqual([]);
+  expect(readDraftComposerSettings(threadKey).team).toEqual(team);
+  expect(state.draftModels).toEqual([architect]);
+  await expect.element(page.getByRole("button", { name: "Team, 1 worker" })).toBeInTheDocument();
+});
+
+it("turns a draft into a single agent even when new threads start as a team", async () => {
+  setup({
+    newThreads: true,
+    defaultSetup: { architect, workers: [worker], limits: DEFAULT_TEAM_LIMITS },
+  });
+  await using _screen = await renderDraftControl();
+  await userEvent.click(page.getByRole("button", { name: "Team, 1 worker" }));
+  await userEvent.click(page.getByRole("button", { name: "Use a single agent" }));
+
+  expect(state.metadata).toEqual([]);
+  expect(readDraftComposerSettings(threadKey).team).toBeNull();
+  await expect.element(page.getByRole("button", { name: "Team" })).toBeInTheDocument();
+});
+
+it("hides on a draft whose provider cannot run a team", async () => {
+  setup();
+  await using _screen = await renderDraftControl("cursor");
+  await expect.element(page.getByRole("button", { name: /^Team(, |$)/ })).not.toBeInTheDocument();
+});
 
 it("starts a team from the thread's model and saves it as the default", async () => {
   setup();

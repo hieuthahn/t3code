@@ -14,6 +14,7 @@ const baseState: ThreadActionMenuState = {
   isRegeneratingTitle: false,
   isRunning: false,
   canOpenInSplitView: true,
+  canOpenSideChat: true,
   supports: {
     settlement: true,
     autoSettleOptOut: true,
@@ -39,6 +40,7 @@ describe("buildThreadActionMenuItems", () => {
       });
       const expected = reversed
         ? [
+            "side-chat",
             "unpin",
             "unsettle",
             "unsnooze",
@@ -49,6 +51,7 @@ describe("buildThreadActionMenuItems", () => {
             "delete",
           ]
         : [
+            "side-chat",
             "pin",
             "settle",
             "snooze",
@@ -88,5 +91,17 @@ describe("buildThreadActionMenuItems", () => {
     const item = items.find((entry) => entry.id === "open-in");
     expect(item?.disabled).toBeUndefined();
     expect(item?.children?.every((child) => child.disabled === undefined)).toBe(true);
+  });
+
+  it("offers a side chat once the thread has a turn, and never to a read-only connection", () => {
+    const ids = (state: ThreadActionMenuState) =>
+      buildThreadActionMenuItems(state).map((item) => item.id);
+    expect(ids(baseState)).toContain("side-chat");
+    expect(ids({ ...baseState, canOpenSideChat: false })).not.toContain("side-chat");
+    expect(
+      buildThreadActionMenuItems({ ...baseState, canOperate: false }).find(
+        (item) => item.id === "side-chat",
+      )?.disabled,
+    ).toBe(true);
   });
 });

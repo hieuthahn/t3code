@@ -345,6 +345,30 @@ it.effect("opens a fresh card when the same request comes back after its card cl
   }),
 );
 
+it.effect("opens a team card under a fresh key when the same round was already decided", () =>
+  Effect.gen(function* () {
+    const dispatched: Array<OrchestrationV2ServerCommand> = [];
+    const open = call((service) =>
+      service.openChildPlan(scope, {
+        reason: "Split the work.",
+        clientRequestId: "team:run:round:1",
+        tasks: [{ key: "api", title: "Retry sends", task: "Do the api part" }],
+      }),
+    );
+    const [first, second] = yield* Effect.gen(function* () {
+      const opened = yield* open;
+      const again = yield* open;
+      return [opened.turnItemId, again.turnItemId];
+    }).pipe(Effect.provide(makeLayer({ approve: [], dispatched, team })));
+    assert.notEqual(first, second);
+    assert.isTrue(
+      dispatched.every(
+        (command) => command.type !== "child_plan.record" || command.waitsAfterRun === true,
+      ),
+    );
+  }),
+);
+
 it.effect("closes a waiting card with the reason its caller gives", () =>
   Effect.gen(function* () {
     const dispatched: Array<OrchestrationV2ServerCommand> = [];

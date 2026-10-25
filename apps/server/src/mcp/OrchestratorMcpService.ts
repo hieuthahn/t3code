@@ -2013,7 +2013,7 @@ const make = Effect.gen(function* () {
       earlierCards.turnItems.flatMap((item) =>
         item.type === "child_plan_request" &&
         item.planStatus !== "pending" &&
-        item.planDecision === null
+        (item.planDecision === null || input.waitsAfterRun === true)
           ? [item.planId]
           : [],
       ),

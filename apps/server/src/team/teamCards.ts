@@ -4,6 +4,7 @@ import {
   type OrchestrationV2TurnItem,
   type ThreadId,
 } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 
 import type * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
@@ -74,17 +75,20 @@ export const recordLaunches = (
 ) =>
   card.launches !== undefined && launchesKey(card.launches) === launchesKey(launches)
     ? Effect.void
-    : threads
-        .dispatch({
-          type: "child_plan.launched",
-          commandId: CommandId.make(
-            `team:card:${card.id}:launched:${encodeURIComponent(launchesKey(launches))}`,
-          ),
-          threadId: card.threadId,
-          turnItemId: card.id,
-          launches,
-        })
-        .pipe(Effect.asVoid);
+    : Clock.currentTimeMillis.pipe(
+        Effect.flatMap((at) =>
+          threads.dispatch({
+            type: "child_plan.launched",
+            commandId: CommandId.make(
+              `team:card:${card.id}:launched:${encodeURIComponent(launchesKey(launches))}:${at}`,
+            ),
+            threadId: card.threadId,
+            turnItemId: card.id,
+            launches,
+          }),
+        ),
+        Effect.asVoid,
+      );
 
 /** The approved children as team assignments, with the scheduling the architect gave them. */
 export const approvedAssignments = (card: TeamCard): ReadonlyArray<NewTeamAssignment> => {

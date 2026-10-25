@@ -417,6 +417,25 @@ it.effect("tells the architect once when the user declines the whole round", () 
   }),
 );
 
+it.effect("tells the architect about a decline only once the paused team resumes", () =>
+  Effect.gen(function* () {
+    const fixture = makeFixture(team({ autonomous: false }));
+    yield* withTeam(fixture, (service) =>
+      Effect.gen(function* () {
+        yield* assign(service, [work("api")]);
+        setArchitect(fixture, { activeRunId: null });
+        yield* service.pause({ threadId: architectId });
+        decide(fixture, []);
+        yield* service.tick;
+        assert.deepEqual(fixture.sent, []);
+        yield* service.resume({ threadId: architectId });
+        yield* service.tick;
+        assert.isTrue(fixture.sent.some((text) => text.includes("the user declined api")));
+      }),
+    );
+  }),
+);
+
 it.effect("refuses an approved round that no longer fits the team's limits", () =>
   Effect.gen(function* () {
     const fixture = makeFixture(

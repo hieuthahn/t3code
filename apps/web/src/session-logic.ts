@@ -9,6 +9,7 @@ import {
   type OrchestrationV2RunAttempt,
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2TurnItem,
+  type OrchestrationV2PlanStep,
   type PlanId,
   type RunId,
   type ToolActivitySurface,
@@ -27,7 +28,12 @@ import {
 import type { HtmlRenderReference } from "@t3tools/shared/htmlRender";
 import { turnItemDetailRevision } from "@t3tools/client-runtime/work-log/item-detail";
 import type { McpAppReference } from "@t3tools/shared/mcpApp";
-import { htmlRenderFromToolItem, mcpAppFromToolItem } from "@t3tools/shared/toolOutput";
+import {
+  compactDynamicToolOutput,
+  htmlRenderFromToolItem,
+  mcpAppFromToolItem,
+} from "@t3tools/shared/toolOutput";
+import { resolveT3McpToolDefinition } from "@t3tools/shared/t3McpToolPresentation";
 import {
   contextCompactionLabel,
   workEntryIndicatesToolFailure,
@@ -51,6 +57,7 @@ import {
 } from "./types";
 import * as DateTime from "effect/DateTime";
 import * as Equal from "effect/Equal";
+import * as Predicate from "effect/Predicate";
 import { shallow } from "zustand/vanilla/shallow";
 
 export { formatDuration } from "@t3tools/shared/orchestrationTiming";
@@ -137,6 +144,21 @@ export type TimelineEntry = (
       readonly kind: "proposed-plan";
       readonly createdAt: string;
       readonly proposedPlan: ProposedPlan;
+    }
+  | {
+      readonly id: string;
+      readonly kind: "todo-list";
+      readonly createdAt: string;
+      readonly runId: RunId | null;
+      readonly planId: PlanId;
+      readonly steps: ReadonlyArray<OrchestrationV2PlanStep>;
+    }
+  | {
+      readonly id: string;
+      readonly kind: "child-message";
+      readonly createdAt: string;
+      readonly runId: RunId | null;
+      readonly childThreadId: ThreadId;
     }
   | {
       readonly id: string;
@@ -618,11 +640,34 @@ export interface TimelineEntriesInput {
   readonly attempts?: ReadonlyArray<OrchestrationV2RunAttempt>;
   readonly nodes?: ReadonlyArray<OrchestrationV2ExecutionNode>;
   readonly plans?: ReadonlyArray<OrchestrationV2PlanArtifact>;
+  /** Children started by items outside `visibleTurnItems`, such as an earlier slice of the thread. */
+  readonly knownChildThreadIds?: ReadonlySet<ThreadId>;
 }
 
 export interface TimelineEntriesProjection {
   readonly input: TimelineEntriesInput;
   readonly entries: TimelineEntry[];
+}
+
+function messagedChildOf(
+  item: OrchestrationV2TurnItem,
+  childThreadIds: ReadonlySet<ThreadId>,
+): ThreadId | null {
+  if (
+    item.type !== "dynamic_tool" ||
+    item.status !== "completed" ||
+    resolveT3McpToolDefinition(item.toolName)?.summaryAction !== "thread-send"
+  ) {
+    return null;
+  }
+  const output = compactDynamicToolOutput(item.output);
+  if (output === undefined || output.isError || output.messageId === undefined) return null;
+  const input = Predicate.isObject(item.input) ? item.input : {};
+  if (input.environmentId !== undefined) return null;
+  const threadId = output.threadId ?? input.threadId;
+  return typeof threadId === "string" && childThreadIds.has(threadId as ThreadId)
+    ? (threadId as ThreadId)
+    : null;
 }
 
 export function deriveTimelineEntriesFromVisibleTurnItems(
@@ -653,6 +698,13 @@ export function deriveTimelineEntriesFromVisibleTurnItems(
     return undefined;
   };
 
+  const todoListPlanIds = new Set<PlanId>();
+  const childThreadIds = new Set<ThreadId>(input.knownChildThreadIds);
+  for (const { item } of input.visibleTurnItems) {
+    if (item.type === "subagent" && item.childThreadId !== null) {
+      childThreadIds.add(item.childThreadId);
+    }
+  }
   const foldedAnswerMessageIds = new Set(
     input.visibleTurnItems.flatMap(({ item }) =>
       item.type === "user_input_request" && item.questionAnswer
@@ -663,11 +715,26 @@ export function deriveTimelineEntriesFromVisibleTurnItems(
   for (const row of input.visibleTurnItems) {
     const { item } = row;
     if (turnItemIsWorkspacePreparation(item)) continue;
-    if (item.type === "todo_list" || item.type === "checkpoint") continue;
+    if (item.type === "checkpoint") continue;
+    if (item.type === "todo_list" && todoListPlanIds.has(item.planId)) continue;
     if (item.type === "user_message" && foldedAnswerMessageIds.has(item.messageId)) continue;
     const createdAt = projectedItemCreatedAt(row);
     const attempt = resolveAttempt(item);
     const attemptMetadata = attempt === undefined ? {} : { attempt };
+    if (item.type === "todo_list") {
+      todoListPlanIds.add(item.planId);
+      const plan = planById.get(item.planId);
+      entries.push({
+        id: item.id,
+        kind: "todo-list",
+        createdAt,
+        runId: item.runId,
+        planId: item.planId,
+        steps: plan?.kind === "todo_list" ? plan.steps : item.steps,
+        ...attemptMetadata,
+      });
+      continue;
+    }
     if (item.type === "notification") {
       entries.push({
         id: item.id,
@@ -744,6 +811,19 @@ export function deriveTimelineEntriesFromVisibleTurnItems(
         kind: "proposed-plan",
         createdAt,
         proposedPlan,
+        ...attemptMetadata,
+      });
+      continue;
+    }
+
+    const messagedChildThreadId = messagedChildOf(item, childThreadIds);
+    if (messagedChildThreadId !== null) {
+      entries.push({
+        id: item.id,
+        kind: "child-message",
+        createdAt,
+        runId: item.runId,
+        childThreadId: messagedChildThreadId,
         ...attemptMetadata,
       });
       continue;
@@ -970,7 +1050,8 @@ function reuseTimelineEntries(
     !shallow(input.attachmentUrlById, before.attachmentUrlById) ||
     !shallow(input.attempts, before.attempts) ||
     !shallow(input.nodes, before.nodes) ||
-    !shallow(input.plans, before.plans)
+    !shallow(input.plans, before.plans) ||
+    input.knownChildThreadIds !== before.knownChildThreadIds
   ) {
     return null;
   }
@@ -1023,11 +1104,21 @@ function reuseTimelineEntries(
     };
   });
   if (appended) {
+    const knownChildThreadIds = new Set(input.knownChildThreadIds);
+    for (const { item } of before.visibleTurnItems) {
+      if (item.type === "subagent" && item.childThreadId !== null) {
+        knownChildThreadIds.add(item.childThreadId);
+      }
+    }
+    const shownPlanIds = new Set(
+      entries.flatMap((entry) => (entry.kind === "todo-list" ? [entry.planId] : [])),
+    );
     entries.push(
       ...deriveTimelineEntriesFromVisibleTurnItems({
         ...input,
         visibleTurnItems: input.visibleTurnItems.slice(before.visibleTurnItems.length),
-      }),
+        knownChildThreadIds,
+      }).filter((entry) => entry.kind !== "todo-list" || !shownPlanIds.has(entry.planId)),
     );
   }
   return entries;

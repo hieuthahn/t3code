@@ -1,7 +1,10 @@
 import { useAtomValue } from "@effect/atom-react";
 import { StackActions, useIsFocused, useNavigation } from "@react-navigation/native";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { summarizeSubagentStatuses } from "@t3tools/client-runtime/state/subagent-display";
+import {
+  startedThreadsLabel,
+  summarizeSubagentStatuses,
+} from "@t3tools/client-runtime/state/subagent-display";
 import { isActiveSubagentStatus } from "@t3tools/client-runtime/state/subagentRuntime";
 import type {
   EnvironmentId,
@@ -96,7 +99,7 @@ export function ThreadSubagentGroup(props: {
     };
   });
   const grouped = agents.length > 1;
-  const label = `${agents.length} subagents`;
+  const label = startedThreadsLabel(agents);
   const summary = summarizeSubagentStatuses(agents.map((agent) => agent.status));
   const expanded = props.expandedRows[props.anchorKey] ?? false;
   const serverConfigs = useServerConfigs();

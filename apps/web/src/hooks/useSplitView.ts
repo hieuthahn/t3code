@@ -1,9 +1,11 @@
 import { parseScopedThreadKey, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
+import { useEffect } from "react";
 
 import { toastManager } from "../components/ui/toast";
 import { MAX_SPLIT_PANES } from "../splitView.logic";
+import { useAllEnvironmentShellsBootstrapped, useQuietThreadShells } from "../state/entities";
 import { useSplitViewStore } from "../splitViewStore";
 import { buildThreadRouteParams } from "../threadRoutes";
 import { useStableCallback } from "./useStableCallback";
@@ -47,4 +49,22 @@ export function useSplitViewActions() {
   });
 
   return { closePane, focusThread, openInSplitView };
+}
+
+/** Drops persisted panes whose thread was deleted or archived while the app was closed. */
+export function usePruneUnavailableSplitPanes() {
+  const bootstrapped = useAllEnvironmentShellsBootstrapped();
+  const shells = useQuietThreadShells();
+  useEffect(() => {
+    if (!bootstrapped) return;
+    const available = new Set(
+      shells.flatMap((shell) =>
+        shell.deletedAt == null && shell.archivedAt == null
+          ? [scopedThreadKey({ environmentId: shell.environmentId, threadId: shell.id })]
+          : [],
+      ),
+    );
+    const { focusKey } = useSplitViewStore.getState();
+    useSplitViewStore.getState().prune((key) => key === focusKey || available.has(key));
+  }, [bootstrapped, shells]);
 }

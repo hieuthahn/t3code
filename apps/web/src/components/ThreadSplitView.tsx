@@ -3,7 +3,7 @@ import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { Columns2Icon, XIcon } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 
-import { useSplitViewActions } from "../hooks/useSplitView";
+import { usePruneUnavailableSplitPanes, useSplitViewActions } from "../hooks/useSplitView";
 import { useStableCallback } from "../hooks/useStableCallback";
 import { observeResize } from "../lib/observeResize";
 import { cn } from "../lib/utils";
@@ -131,6 +131,7 @@ function ServerThreadSplitView({ threadRef }: { threadRef: ScopedThreadRef }) {
   const focusKey = useSplitViewStore((state) => state.focusKey);
   const panes = followRouteThread(storedPanes, focusKey, routeKey);
   const { closePane, focusThread, openInSplitView } = useSplitViewActions();
+  usePruneUnavailableSplitPanes();
   const containerRef = useRef<HTMLDivElement>(null);
   const width = useElementWidth(containerRef);
 

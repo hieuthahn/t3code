@@ -3618,7 +3618,8 @@ export const OrchestrationV2ThreadLaunchInput = Schema.Struct({
   fanoutGroupId: Schema.optional(TrimmedNonEmptyString),
   /** Chosen on the draft and applied before its first turn; a null team keeps a single agent. */
   tokenSaver: Schema.optional(TokenSaverConfig),
-  team: Schema.optional(Schema.NullOr(TeamSetup)),
+  /** "auto" lets the effort judge choose team or single agent from the first message. */
+  team: Schema.optional(Schema.Union([Schema.NullOr(TeamSetup), Schema.Literal("auto")])),
   initialMessage: Schema.optional(
     Schema.Struct({
       messageId: Schema.optional(MessageId),

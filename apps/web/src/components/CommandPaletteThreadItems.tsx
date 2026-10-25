@@ -85,69 +85,71 @@ export function useCommandPaletteThreadItems(input: {
   const { threadSearch, contentMatchByKey } = useThreadSearchWithContentMatches(threadSearchQuery);
   const { projectByKey, projectTitleById } = useProjectLookups();
 
-  const threadItemOptions: Omit<
-    Parameters<typeof buildThreadActionItems>[0],
-    "runThread" | "limit"
-  > = {
-    threads,
-    ...(activeThreadId ? { activeThreadId } : {}),
-    projectTitleById,
-    sortOrder: sidebarThreadSortOrder,
-    icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
-    renderLeadingContent: (thread) => <ThreadRowLeadingStatus thread={thread} />,
-    renderTrailingContent: (thread) => (
-      <>
-        <ThreadSearchPullRequestNumber
-          thread={thread}
-          query={threadSearchQuery}
-          settled={thread.settledOverride === "settled"}
-        />
-        <ThreadRowTrailingStatus thread={thread} />
-      </>
-    ),
-    renderDescription: (thread, { projectTitle }) => {
-      const modelInstanceId =
-        thread.runtime?.providerInstanceId ?? thread.modelSelection.instanceId;
-      const providerEntry =
-        providerEntryByEnvironmentAndInstanceId.get(`${thread.environmentId}:${modelInstanceId}`) ??
-        null;
-      return (
-        <ThreadCommandSubtitle
-          project={projectByKey.get(`${thread.environmentId}:${thread.projectId}`) ?? null}
-          projectTitle={projectTitle ?? null}
-          environmentLabel={
-            projectEnvironmentLocationById.get(thread.environmentId)?.label ?? "Remote"
-          }
-          branch={thread.branch}
-          worktreePath={thread.worktreePath}
-          isCurrent={thread.id === activeThreadId}
-          driverKind={providerEntry?.driverKind ?? null}
-          providerDisplayName={
-            thread.runtime?.providerName ?? providerEntry?.displayName ?? modelInstanceId
-          }
-          acpRegistryAgentId={providerEntry?.acpRegistryAgentId}
-          acpRegistryIconUrl={providerEntry?.acpRegistryIconUrl}
-        />
-      );
-    },
-    getContentMatch: (thread) => {
-      const match = contentMatchByKey.get(
-        threadSearchMatchKey({
-          environmentId: thread.environmentId,
-          threadId: thread.id,
-        }),
-      );
-      return match && (match.source === "user" || match.source === "assistant")
-        ? {
-            source: match.source,
-            snippet: match.snippet,
-            query: threadSearch.query,
-          }
-        : undefined;
-    },
-  };
-  const threadItems = buildThreadActionItems({
-    ...threadItemOptions,
+  const buildItems = (extra: {
+    readonly runThread: (thread: { environmentId: EnvironmentId; id: ThreadId }) => Promise<void>;
+    readonly limit?: number;
+  }) =>
+    buildThreadActionItems({
+      ...extra,
+      threads,
+      ...(activeThreadId ? { activeThreadId } : {}),
+      projectTitleById,
+      sortOrder: sidebarThreadSortOrder,
+      icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
+      renderLeadingContent: (thread) => <ThreadRowLeadingStatus thread={thread} />,
+      renderTrailingContent: (thread) => (
+        <>
+          <ThreadSearchPullRequestNumber
+            thread={thread}
+            query={threadSearchQuery}
+            settled={thread.settledOverride === "settled"}
+          />
+          <ThreadRowTrailingStatus thread={thread} />
+        </>
+      ),
+      renderDescription: (thread, { projectTitle }) => {
+        const modelInstanceId =
+          thread.runtime?.providerInstanceId ?? thread.modelSelection.instanceId;
+        const providerEntry =
+          providerEntryByEnvironmentAndInstanceId.get(
+            `${thread.environmentId}:${modelInstanceId}`,
+          ) ?? null;
+        return (
+          <ThreadCommandSubtitle
+            project={projectByKey.get(`${thread.environmentId}:${thread.projectId}`) ?? null}
+            projectTitle={projectTitle ?? null}
+            environmentLabel={
+              projectEnvironmentLocationById.get(thread.environmentId)?.label ?? "Remote"
+            }
+            branch={thread.branch}
+            worktreePath={thread.worktreePath}
+            isCurrent={thread.id === activeThreadId}
+            driverKind={providerEntry?.driverKind ?? null}
+            providerDisplayName={
+              thread.runtime?.providerName ?? providerEntry?.displayName ?? modelInstanceId
+            }
+            acpRegistryAgentId={providerEntry?.acpRegistryAgentId}
+            acpRegistryIconUrl={providerEntry?.acpRegistryIconUrl}
+          />
+        );
+      },
+      getContentMatch: (thread) => {
+        const match = contentMatchByKey.get(
+          threadSearchMatchKey({
+            environmentId: thread.environmentId,
+            threadId: thread.id,
+          }),
+        );
+        return match && (match.source === "user" || match.source === "assistant")
+          ? {
+              source: match.source,
+              snippet: match.snippet,
+              query: threadSearch.query,
+            }
+          : undefined;
+      },
+    });
+  const threadItems = buildItems({
     runThread: async (thread) => {
       await navigate({
         to: "/$environmentId/$threadId",
@@ -155,8 +157,7 @@ export function useCommandPaletteThreadItems(input: {
       });
     },
   });
-  const splitThreadItems = buildThreadActionItems({
-    ...threadItemOptions,
+  const splitThreadItems = buildItems({
     limit: SPLIT_PICKER_THREAD_LIMIT,
     runThread: async (thread) => {
       openInSplitView([scopeThreadRef(thread.environmentId, thread.id)]);

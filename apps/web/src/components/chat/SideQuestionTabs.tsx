@@ -10,7 +10,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { MessageCircleQuestion, MessageSquare } from "lucide-react";
+import { MessageCircleQuestion, MessageSquare, PlusIcon } from "lucide-react";
 
 import { cn } from "~/lib/utils";
 import { useQuietThreadShells } from "../../state/entities";
@@ -20,6 +20,7 @@ import { buildThreadRouteParams } from "../../threadRoutes";
 import { PanelTabCloseButton } from "../ui/panel-tab-close-button";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { openSideQuestions, sideQuestionMainThreadId } from "./sideQuestions.logic";
+import { useOpenSideChat } from "./useSideQuestion";
 
 const tabClassName = (active: boolean) =>
   cn(
@@ -29,12 +30,13 @@ const tabClassName = (active: boolean) =>
       : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
   );
 
-/** The main thread and its open `/btw` side questions, shown only while one is open. */
+/** The main thread and its open side chats, shown only while one is open. */
 export function SideQuestionTabs(props: {
   readonly environmentId: EnvironmentId;
   readonly activeThreadId: ThreadId;
 }) {
   const navigate = useNavigate();
+  const openSideChat = useOpenSideChat();
   const archiveThread = useOrchestrationCommand(threadEnvironment.archive, {
     reportFailure: false,
   });
@@ -56,7 +58,7 @@ export function SideQuestionTabs(props: {
       toastManager.add(
         stackedThreadToast({
           type: "warning",
-          title: "Side question is still answering",
+          title: "Side chat is still answering",
           description: "Stop it before closing its tab.",
         }),
       );
@@ -72,7 +74,7 @@ export function SideQuestionTabs(props: {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Could not close the side question",
+          title: "Could not close the side chat",
           description: error instanceof Error ? error.message : "Try again.",
         }),
       );
@@ -82,7 +84,7 @@ export function SideQuestionTabs(props: {
   return (
     <div
       role="tablist"
-      aria-label="Side questions"
+      aria-label="Side chats"
       className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-3 py-1 sm:px-5"
     >
       <button
@@ -123,6 +125,16 @@ export function SideQuestionTabs(props: {
           </div>
         );
       })}
+      <button
+        type="button"
+        aria-label="New side chat"
+        className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+        onClick={() =>
+          void openSideChat({ environmentId: props.environmentId, threadId: props.activeThreadId })
+        }
+      >
+        <PlusIcon className="size-3.5" aria-hidden />
+      </button>
     </div>
   );
 }

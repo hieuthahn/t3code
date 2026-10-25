@@ -3,7 +3,8 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { makeThreadFixture } from "../../test-fixtures";
 import {
-  latestForkableRunId,
+  latestSideChatSourceRunId,
+  nextSideChatTitle,
   openSideQuestions,
   parseSideQuestionCommand,
   sideQuestionMainThreadId,
@@ -45,19 +46,30 @@ describe("sideQuestionTitle", () => {
   });
 });
 
-describe("latestForkableRunId", () => {
-  it("skips the running turn and picks the newest settled one", () => {
+describe("latestSideChatSourceRunId", () => {
+  it("picks the newest run even while it is still running, and skips rolled-back ones", () => {
     expect(
-      latestForkableRunId([
+      latestSideChatSourceRunId([
         { id: RunId.make("run-1"), ordinal: 1, status: "completed" },
-        { id: RunId.make("run-2"), ordinal: 2, status: "interrupted" },
-        { id: RunId.make("run-3"), ordinal: 3, status: "running" },
-        { id: RunId.make("run-4"), ordinal: 4, status: "queued" },
+        { id: RunId.make("run-2"), ordinal: 2, status: "running" },
+        { id: RunId.make("run-3"), ordinal: 3, status: "rolled_back" },
       ]),
     ).toBe("run-2");
-    expect(latestForkableRunId([{ id: RunId.make("run-1"), ordinal: 1, status: "running" }])).toBe(
-      null,
+    expect(latestSideChatSourceRunId([])).toBeNull();
+    expect(
+      latestSideChatSourceRunId([{ id: RunId.make("run-1"), ordinal: 1, status: "rolled_back" }]),
+    ).toBeNull();
+  });
+});
+
+describe("nextSideChatTitle", () => {
+  it("numbers a side chat after the lowest number its main chat has free", () => {
+    expect(nextSideChatTitle([])).toBe("Side chat");
+    expect(nextSideChatTitle(["Side chat"])).toBe("Side chat 2");
+    expect(nextSideChatTitle(["Side chat", "Side chat 3", "why is it flaky?"])).toBe(
+      "Side chat 2",
     );
+    expect(nextSideChatTitle(["Side chat 2"])).toBe("Side chat");
   });
 });
 

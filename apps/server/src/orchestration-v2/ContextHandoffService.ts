@@ -120,6 +120,14 @@ function summarizeDeltaItem(item: OrchestrationV2TurnItem): string | null {
   }
 }
 
+function sideChatCoverage(main: { readonly threadId: ThreadId; readonly title: string }): string {
+  return [
+    `You are a side chat of the main chat "${main.title}" (threadId ${main.threadId}). The history above is that chat up to now, including a turn still in progress.`,
+    `For newer activity call t3_thread_read({threadId:"${main.threadId}",view:"activity",limit:20}). Nothing said here enters the main chat.`,
+    `Only when the user asks you to pass something on, call t3_thread_send({threadId:"${main.threadId}",message}) and tell the user what you sent.`,
+  ].join("\n");
+}
+
 function makeForkDeltaSummary(input: {
   readonly sourceThreadId: ThreadId;
   readonly targetThreadId: ThreadId;
@@ -424,6 +432,7 @@ const makeContextHandoffService = Effect.fn("orchestrationV2.ContextHandoffServi
         "delta_since_target_last_seen" | "full_thread_summary"
       >;
       readonly items: ReadonlyArray<OrchestrationV2TurnItem>;
+      readonly sideChatOf?: { readonly threadId: ThreadId; readonly title: string };
       readonly createdAt: DateTime.Utc;
     }) {
       const handoffId = yield* idAllocator.allocate
@@ -445,7 +454,10 @@ const makeContextHandoffService = Effect.fn("orchestrationV2.ContextHandoffServi
           ),
         );
       const runStatuses = new Map(input.runs?.map((run) => [run.id, run.status]));
-      const coverage = handoffCoverage(input);
+      const coverage = [
+        handoffCoverage(input),
+        ...(input.sideChatOf === undefined ? [] : [sideChatCoverage(input.sideChatOf)]),
+      ].join("\n");
       const selected = selectHistory({
         messages: input.items.flatMap((item) => {
           const message = historicalMessage(item);

@@ -12,9 +12,14 @@ import {
   type TokenSaverStats,
   type TokenSaverTurnSample,
 } from "@t3tools/contracts";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { LeafIcon } from "lucide-react";
 import { useId, useState } from "react";
 
+import {
+  updateDraftComposerSettings,
+  useDraftComposerSettings,
+} from "~/draftComposerSettingsStore";
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "~/hooks/useSettings";
 import { useThreadShell } from "~/state/entities";
 import { orchestrationEnvironment } from "~/state/orchestration";
@@ -157,6 +162,8 @@ function StatsTable(props: { readonly stats: TokenSaverStats }) {
 /** The thread's Token Saver packs and their estimated and measured saving. */
 export function ComposerTokenSaverControl(props: {
   readonly threadRef: ScopedThreadRef;
+  /** Set on a draft route: the choice waits in the draft until the first send creates the thread. */
+  readonly isDraft?: boolean;
   readonly driver: ProviderDriverKind;
   readonly size?: ComposerControlSize;
   /** Set while the footer hides this button, to open it from the overflow menu instead. */
@@ -171,7 +178,10 @@ export function ComposerTokenSaverControl(props: {
   const settings = useEnvironmentSettings(environmentId, (value) => value.tokenSaver);
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
   const canWriteSettings = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
-  const thread = useThreadShell(props.threadRef);
+  const isDraft = props.isDraft === true;
+  const threadKey = scopedThreadKey(props.threadRef);
+  const draftSettings = useDraftComposerSettings(isDraft ? threadKey : null);
+  const thread = useThreadShell(isDraft ? null : props.threadRef);
   const updateMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata);
   const loadStats = useAtomCommand(orchestrationEnvironment.tokenSaverStats, {
     reportFailure: false,
@@ -181,9 +191,10 @@ export function ComposerTokenSaverControl(props: {
   const [stats, setStats] = useState<TokenSaverStats | null>(null);
   const [statsError, setStatsError] = useState(false);
 
-  if (thread === null || !supportsTokenSaver(props.driver)) return null;
+  if ((!isDraft && thread === null) || !supportsTokenSaver(props.driver)) return null;
+  const threadConfig = isDraft ? draftSettings.tokenSaver : (thread?.tokenSaver ?? undefined);
   const defaults = defaultsDraft ?? settings.newThreads;
-  const config = draft ?? thread.tokenSaver ?? defaults;
+  const config = draft ?? threadConfig ?? defaults;
   const rtkAvailable = stats?.rtkAvailable ?? false;
   const effective = rtkAvailable ? config : { ...config, rtk: false };
   const active = isTokenSaverConfigActive(effective);
@@ -196,6 +207,10 @@ export function ComposerTokenSaverControl(props: {
 
   const save = (next: TokenSaverConfig) => {
     setDraft(next);
+    if (isDraft) {
+      updateDraftComposerSettings(threadKey, { tokenSaver: next });
+      return;
+    }
     void updateMetadata({ environmentId, input: { threadId, tokenSaver: next } });
   };
   const loadMeasurements = async () => {
@@ -217,7 +232,7 @@ export function ComposerTokenSaverControl(props: {
         : { ...config, [pack]: on },
     );
   const saveDefaults = (next: TokenSaverConfig) => {
-    if (thread.tokenSaver === undefined || thread.tokenSaver === null) save(config);
+    if (threadConfig === undefined) save(config);
     setDefaultsDraft(next);
     updateSettings({ tokenSaver: { newThreads: next } });
   };

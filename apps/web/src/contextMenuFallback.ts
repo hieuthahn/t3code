@@ -116,6 +116,10 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
     { tag: "line", attrs: { x1: "19", x2: "19", y1: "8", y2: "14" } },
     { tag: "line", attrs: { x1: "22", x2: "16", y1: "11", y2: "11" } },
   ],
+  "columns-2": [
+    { tag: "rect", attrs: { width: "18", height: "18", x: "3", y: "3", rx: "2" } },
+    { tag: "path", attrs: { d: "M12 3v18" } },
+  ],
   "folder-tree": [
     {
       tag: "path",

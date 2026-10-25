@@ -188,6 +188,8 @@ interface DiffPanelProps {
   composerDraftTarget: ScopedThreadRef | DraftId;
   workspaceMutationId: string | null;
   visible: boolean;
+  /** The thread this panel belongs to, for a panel that is not the route thread's. */
+  threadRef?: ScopedThreadRef | null;
 }
 
 export default function DiffPanel({
@@ -195,6 +197,7 @@ export default function DiffPanel({
   composerDraftTarget,
   workspaceMutationId,
   visible,
+  threadRef,
 }: DiffPanelProps) {
   const resolvedTheme = useRenderedAppearance();
   const settings = useClientSettings((settings) => ({
@@ -216,7 +219,8 @@ export default function DiffPanel({
   const [codeViewRevision, setCodeViewRevision] = useState(0);
   const [codeView, setCodeView] = useState<AnnotatableCodeViewHandle | null>(null);
 
-  const routeThreadRef = useThreadRouteRef();
+  const currentRouteThreadRef = useThreadRouteRef();
+  const routeThreadRef = threadRef ?? currentRouteThreadRef;
   const activeThreadId = routeThreadRef?.threadId ?? null;
   const activeThread = useQuietThreadShell(routeThreadRef);
   const fileAccess = useFilesystemReadAccess(activeThread?.environmentId ?? null);

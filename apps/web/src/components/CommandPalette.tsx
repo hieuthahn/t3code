@@ -69,6 +69,8 @@ import {
   SquarePenIcon,
   TextSearchIcon,
   UserPlusIcon,
+  XIcon,
+  Columns2Icon,
 } from "lucide-react";
 import { openThreadFind } from "./chat/threadFindStore";
 import {
@@ -239,6 +241,9 @@ import type { ChatComposerHandle } from "./chat/ChatComposer";
 import { buildSidebarProjectPickerEntries } from "../sidebarProjectGrouping";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "~/components/pullRequest/pullRequestListPreferences";
+import { useSplitViewActions } from "../hooks/useSplitView";
+import { MAX_SPLIT_PANES } from "../splitView.logic";
+import { useSplitViewStore } from "../splitViewStore";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 import { threadRecentUse } from "@t3tools/shared/paletteSearch";
 
@@ -909,6 +914,7 @@ function OpenCommandPaletteDialog(props: {
   const {
     threadItems: allThreadItems,
     threadMessageItems,
+    splitThreadItems,
     now: searchNow,
     isSearchPending: isThreadSearchPending,
   } = useCommandPaletteThreadItems({ activeThread: activeThread ?? null, threadSearchQuery });
@@ -1209,6 +1215,8 @@ function OpenCommandPaletteDialog(props: {
   };
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
+  const splitPaneCount = useSplitViewStore((state) => state.panes.length);
+  const { closePane: closeSplitPane } = useSplitViewActions();
 
   if (projects.length > 0) {
     const activeProjectTitle =
@@ -1323,6 +1331,32 @@ function OpenCommandPaletteDialog(props: {
         });
       }
     }
+  }
+
+  if (activeThread !== null && splitPaneCount < MAX_SPLIT_PANES) {
+    actionItems.push({
+      kind: "submenu",
+      value: "action:open-in-split-view",
+      searchTerms: ["split", "split view", "pane", "side by side", "open", "chat"],
+      title: "Open thread in split view...",
+      icon: <Columns2Icon className={ITEM_ICON_CLASS} />,
+      addonIcon: <Columns2Icon className={ADDON_ICON_CLASS} />,
+      groups: [{ value: "split-threads", label: "Threads", items: splitThreadItems }],
+    });
+  }
+
+  if (activeThread !== null && splitPaneCount > 1) {
+    const splitThreadRef = scopeThreadRef(activeThread.environmentId, activeThread.id);
+    actionItems.push({
+      kind: "action",
+      value: "action:close-split-pane",
+      searchTerms: ["close", "split", "pane", "split view", "single"],
+      title: "Close split pane",
+      icon: <XIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        closeSplitPane(splitThreadRef);
+      },
+    });
   }
 
   if (activeThreadReferenceCopyTarget !== null) {

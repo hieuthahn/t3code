@@ -114,6 +114,12 @@ export function summarizeT3ToolCalls(
       const messages = countEntities(selected.map((call) => id(call.output?.messageId)));
       const targetsKnown = threadIds.every((value) => value !== undefined);
       const threads = new Set(threadIds).size;
+      const titles = new Set(selected.map((call) => id(call.output?.threadTitle)));
+      const [title] = titles;
+      if (completed.length > 0 && targetsKnown && threads === 1 && titles.size === 1 && title) {
+        label = messages === 1 ? `Messaged ${title}` : `Messaged ${title} ${messages} times`;
+        break;
+      }
       const object = targetsKnown
         ? messages === threads && messages > 1
           ? `messages to ${quantity(threads, "thread")}`

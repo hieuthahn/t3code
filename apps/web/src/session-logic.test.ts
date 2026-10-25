@@ -526,6 +526,7 @@ describe("V2 session presentation", () => {
       ["event", requestItem.id],
       ["work", commandItem.id],
       ["event", resultItem.id],
+      ["todo-list", todoItem.id],
       ["work", errorItem.id],
       ["work", threadCreatedItem.id],
     ]);
@@ -545,7 +546,7 @@ describe("V2 session presentation", () => {
       expect(commandEntry.entry.command).toBe(commandItem.input);
       expect(commandEntry.entry.detail).toBeUndefined();
     }
-    const errorEntry = entries[4];
+    const errorEntry = entries[5];
     expect(errorEntry?.kind).toBe("work");
     if (errorEntry?.kind === "work") {
       expect(errorEntry.entry.projectedItem).toBe(visibleTurnItems[5]);
@@ -554,7 +555,7 @@ describe("V2 session presentation", () => {
       expect(errorEntry.entry.tone).toBe("info");
       expect(errorEntry.entry.toolLifecycleStatus).toBe("failed");
     }
-    const threadCreatedEntry = entries[5];
+    const threadCreatedEntry = entries[6];
     expect(threadCreatedEntry?.kind).toBe("work");
     if (threadCreatedEntry?.kind === "work") {
       expect(threadCreatedEntry.entry.projectedItem?.item.type).toBe("thread_created");
@@ -562,7 +563,7 @@ describe("V2 session presentation", () => {
   });
 
   it.each(["pending", "running", "completed"] as const)(
-    "keeps %s task progress available to the composer and out of the timeline",
+    "keeps %s task progress available to the composer and shows it in the timeline",
     (stepStatus) => {
       const projection = makeThreadProjectionFixture();
       const now = DateTime.makeUnsafe("2026-09-04T00:00:00.000Z");
@@ -615,7 +616,14 @@ describe("V2 session presentation", () => {
           optimisticMessages: [],
           plans,
         }),
-      ).toEqual([]);
+      ).toMatchObject([
+        {
+          kind: "todo-list",
+          id: item.id,
+          planId,
+          steps: [{ text: "Verify the change", status: stepStatus }],
+        },
+      ]);
       expect(
         deriveActivePlanState({ ...projection, plans, turnItems: [item] }, runId),
       ).toMatchObject({
@@ -629,6 +637,158 @@ describe("V2 session presentation", () => {
       });
     },
   );
+
+  it("shows one to-do card per plan with the plan's live steps", () => {
+    const projection = makeThreadProjectionFixture();
+    const now = DateTime.makeUnsafe("2026-09-04T00:00:00.000Z");
+    const runId = RunId.make("run-live-todo");
+    const planId = PlanId.make("plan-live-todo");
+    const staleSteps = [
+      { id: "a", text: "Read", status: "pending" as const },
+      { id: "b", text: "Write", status: "pending" as const },
+    ];
+    const itemFor = (id: string) =>
+      ({
+        id: TurnItemId.make(id),
+        threadId: projection.thread.id,
+        runId,
+        nodeId: NodeId.make("node-live-todo"),
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal: 0,
+        status: "completed" as const,
+        title: null,
+        startedAt: now,
+        completedAt: now,
+        updatedAt: now,
+        type: "todo_list" as const,
+        planId,
+        steps: staleSteps,
+      }) satisfies OrchestrationV2TurnItem;
+    const items = [itemFor("item-todo-1"), itemFor("item-todo-2")];
+    const plan = {
+      id: planId,
+      threadId: projection.thread.id,
+      runId,
+      nodeId: NodeId.make("node-live-todo"),
+      kind: "todo_list" as const,
+      status: "active" as const,
+      steps: [
+        { id: "a", text: "Read", status: "completed" as const },
+        { id: "b", text: "Write", status: "running" as const },
+      ],
+    };
+
+    const entries = deriveTimelineEntriesFromVisibleTurnItems({
+      visibleTurnItems: items.map((item, position) => ({
+        position,
+        visibility: "local" as const,
+        sourceThreadId: projection.thread.id,
+        sourceItemId: item.id,
+        item,
+      })),
+      optimisticMessages: [],
+      plans: [plan],
+    });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      kind: "todo-list",
+      id: "item-todo-1",
+      steps: [
+        { text: "Read", status: "completed" },
+        { text: "Write", status: "running" },
+      ],
+    });
+  });
+
+  it("turns a completed message to a started child into a child-message entry", () => {
+    const projection = makeThreadProjectionFixture();
+    const now = DateTime.makeUnsafe("2026-09-04T00:00:00.000Z");
+    const runId = RunId.make("run-messaged-child");
+    const childThreadId = ThreadId.make("thread-child-outline");
+    const base = (id: string, ordinal: number) => ({
+      id: TurnItemId.make(id),
+      threadId: projection.thread.id,
+      runId,
+      nodeId: NodeId.make("node-messaged-child"),
+      providerThreadId: null,
+      providerTurnId: null,
+      nativeItemRef: null,
+      parentItemId: null,
+      ordinal,
+      status: "completed" as const,
+      title: null,
+      startedAt: now,
+      completedAt: now,
+      updatedAt: now,
+    });
+    const subagent = {
+      ...base("item-child", 0),
+      type: "subagent" as const,
+      subagentId: NodeId.make("node-child"),
+      origin: "app_owned" as const,
+      driver: ProviderDriverKind.make("claudeAgent"),
+      providerInstanceId: ProviderInstanceId.make("claude-default"),
+      childThreadId,
+      prompt: "Outline",
+      result: null,
+    } satisfies OrchestrationV2TurnItem;
+    const send = (id: string, ordinal: number, input: unknown, output: unknown) =>
+      ({
+        ...base(id, ordinal),
+        type: "dynamic_tool" as const,
+        toolName: "mcp__t3-code__t3_thread_send",
+        input,
+        output,
+      }) satisfies OrchestrationV2TurnItem;
+    const toChild = send(
+      "item-send-child",
+      1,
+      { threadId: childThreadId, message: "Open with the setup numbers" },
+      { threadId: childThreadId, messageId: "message-1" },
+    );
+    const toOther = send(
+      "item-send-other",
+      2,
+      { threadId: "thread-unrelated", message: "Hi" },
+      { threadId: "thread-unrelated", messageId: "message-2" },
+    );
+    const remote = send(
+      "item-send-remote",
+      3,
+      { threadId: childThreadId, environmentId: "environment-other", message: "Hi" },
+      { threadId: childThreadId, messageId: "message-3" },
+    );
+    const failed = send(
+      "item-send-failed",
+      4,
+      { threadId: childThreadId, message: "Hi" },
+      { isError: true },
+    );
+
+    const entries = deriveTimelineEntriesFromVisibleTurnItems({
+      visibleTurnItems: [subagent, toChild, toOther, remote, failed].map((item, position) => ({
+        position,
+        visibility: "local" as const,
+        sourceThreadId: projection.thread.id,
+        sourceItemId: item.id,
+        item,
+      })),
+      optimisticMessages: [],
+    });
+
+    expect(entries.map((entry) => [entry.kind, entry.id])).toEqual([
+      ["event", "item-child"],
+      ["child-message", "item-send-child"],
+      ["work", "item-send-other"],
+      ["work", "item-send-remote"],
+      ["work", "item-send-failed"],
+    ]);
+    expect(entries[1]).toMatchObject({ childThreadId });
+  });
 
   it("preserves independently derived durations for repeated plan-step labels", () => {
     const projection = makeThreadProjectionFixture();

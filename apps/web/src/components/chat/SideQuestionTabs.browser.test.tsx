@@ -108,7 +108,7 @@ it("keeps a side question that is still answering open", async () => {
   await userEvent.click(screen.getByRole("button", { name: "Close Why did CI fail?" }));
   await vi.waitFor(() =>
     expect(toast).toHaveBeenCalledWith(
-      expect.objectContaining({ title: "Side question is still answering" }),
+      expect.objectContaining({ title: "Side chat is still answering" }),
     ),
   );
   expect(state.archive).not.toHaveBeenCalled();

@@ -4083,7 +4083,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         cause: `No stable source run was found for fork source ${command.sourcePoint.type}.`,
       });
     }
-    if (!isForkableSourceRunStatus(sourceRun.status)) {
+    // A side chat reads the turn in progress through the portable handoff, never the native ref.
+    if (command.sideQuestion !== true && !isForkableSourceRunStatus(sourceRun.status)) {
       return yield* new OrchestratorDispatchError({
         commandId: command.commandId,
         commandType: command.type,
@@ -6195,12 +6196,24 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                   }),
               ),
             );
-    const sourceRun =
+    const isSideChat = projection.thread.lineage.sideQuestion === true;
+    const recordedSourceRun =
       pendingForkTransfer?.sourcePoint.runId === undefined || sourceProjection === null
         ? null
         : (sourceProjection.runs.find(
             (candidate) => candidate.id === pendingForkTransfer.sourcePoint.runId,
           ) ?? null);
+    // A side chat reads its main chat as of its first message, not as of the moment it opened.
+    const sourceRun =
+      isSideChat && sourceProjection !== null && recordedSourceRun !== null
+        ? sourceProjection.runs.reduce(
+            (latest, candidate) =>
+              candidate.status !== "rolled_back" && candidate.ordinal > latest.ordinal
+                ? candidate
+                : latest,
+            recordedSourceRun,
+          )
+        : recordedSourceRun;
     const sourceProviderThread =
       sourceProjection === null || sourceRun === null
         ? undefined
@@ -6214,7 +6227,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ?.providerTurnId ??
           undefined);
     if (pendingForkTransfer !== undefined) {
-      if (sourceRun === null || sourceProviderThread === undefined) {
+      if (sourceRun === null || (sourceProviderThread === undefined && !isSideChat)) {
         return yield* new OrchestratorDispatchError({
           commandId: command.commandId,
           commandType: command.type,
@@ -6293,6 +6306,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               hasStrongNativeSource: sourceProviderThread?.nativeThreadRef?.strength === "strong",
               sourceRunStatus: sourceRun.status,
               fromSpecificTurn: sourceRun !== null,
+              portableOnly: isSideChat,
             }),
           );
     const canResolveForkNatively = forkExecution === "native_fork";
@@ -6375,6 +6389,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               strategy: "full_thread_summary",
               items: portableForkItems,
               runs: sourceProjection.runs,
+              ...(isSideChat
+                ? {
+                    sideChatOf: {
+                      threadId: sourceProjection.thread.id,
+                      title: sourceProjection.thread.title,
+                    },
+                  }
+                : {}),
               createdAt: now,
             })
             .pipe(

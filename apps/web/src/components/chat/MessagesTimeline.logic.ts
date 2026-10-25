@@ -55,6 +55,7 @@ import {
   type MessageId,
   type OrchestrationV2IdleCompaction,
   type WorktreeSetupSnapshot,
+  type OrchestrationV2PlanStep,
   type OrchestrationV2ProjectedTurnItem,
   type RunAttemptId,
   RunId,
@@ -86,7 +87,14 @@ function timelineEntryRunId(entry: TimelineEntry): RunId | null {
   if (entry.kind === "proposed-plan") {
     return entry.proposedPlan.runId;
   }
-  if (entry.kind === "html-render" || entry.kind === "mcp-app") return entry.runId;
+  if (
+    entry.kind === "html-render" ||
+    entry.kind === "mcp-app" ||
+    entry.kind === "todo-list" ||
+    entry.kind === "child-message"
+  ) {
+    return entry.runId;
+  }
   return entry.kind === "work" ? (entry.entry.runId ?? null) : null;
 }
 
@@ -640,6 +648,18 @@ type MessagesTimelineRowContent =
       id: string;
       createdAt: string;
       proposedPlan: ProposedPlan;
+    }
+  | {
+      kind: "todo-list";
+      id: string;
+      createdAt: string;
+      steps: ReadonlyArray<OrchestrationV2PlanStep>;
+    }
+  | {
+      kind: "child-message";
+      id: string;
+      createdAt: string;
+      childThreadId: ThreadId;
     }
   | {
       kind: "html-render";
@@ -1920,6 +1940,26 @@ export function deriveMessagesTimelineRows(input: {
       continue;
     }
 
+    if (timelineEntry.kind === "todo-list") {
+      nextRows.push({
+        kind: "todo-list",
+        id: timelineEntry.id,
+        createdAt: timelineEntry.createdAt,
+        steps: timelineEntry.steps,
+      });
+      continue;
+    }
+
+    if (timelineEntry.kind === "child-message") {
+      nextRows.push({
+        kind: "child-message",
+        id: timelineEntry.id,
+        createdAt: timelineEntry.createdAt,
+        childThreadId: timelineEntry.childThreadId,
+      });
+      continue;
+    }
+
     if (timelineEntry.kind === "html-render") {
       nextRows.push({
         kind: "html-render",
@@ -2394,6 +2434,12 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
 
     case "proposed-plan":
       return a.proposedPlan === (b as typeof a).proposedPlan;
+
+    case "todo-list":
+      return a.steps === (b as typeof a).steps;
+
+    case "child-message":
+      return a.childThreadId === (b as typeof a).childThreadId;
 
     case "html-render": {
       // Tool updates rebuild entries; preserve frames for unchanged pages.

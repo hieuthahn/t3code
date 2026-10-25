@@ -13,6 +13,8 @@ const baseState: ThreadActionMenuState = {
   canSnoozeNow: true,
   isRegeneratingTitle: false,
   isRunning: false,
+  canOpenInSplitView: true,
+  canOpenSideChat: true,
   supports: {
     settlement: true,
     autoSettleOptOut: true,
@@ -38,6 +40,7 @@ describe("buildThreadActionMenuItems", () => {
       });
       const expected = reversed
         ? [
+            "side-chat",
             "unpin",
             "unsettle",
             "unsnooze",
@@ -48,6 +51,7 @@ describe("buildThreadActionMenuItems", () => {
             "delete",
           ]
         : [
+            "side-chat",
             "pin",
             "settle",
             "snooze",
@@ -70,5 +74,34 @@ describe("buildThreadActionMenuItems", () => {
       (item) => item.id === "archive",
     );
     expect(archiveItem?.disabled).toBe(true);
+  });
+
+  it("offers Open in > Split view", () => {
+    const item = buildThreadActionMenuItems(baseState).find((entry) => entry.id === "open-in");
+    expect(item?.children?.map((child) => child.id)).toEqual(["open-in:split"]);
+  });
+
+  it("omits Open in where the thread already fills a pane", () => {
+    const items = buildThreadActionMenuItems({ ...baseState, canOpenInSplitView: false });
+    expect(items.some((entry) => entry.id === "open-in")).toBe(false);
+  });
+
+  it("keeps Open in available to read-only clients", () => {
+    const items = buildThreadActionMenuItems({ ...baseState, canOperate: false });
+    const item = items.find((entry) => entry.id === "open-in");
+    expect(item?.disabled).toBeUndefined();
+    expect(item?.children?.every((child) => child.disabled === undefined)).toBe(true);
+  });
+
+  it("offers a side chat once the thread has a turn, and never to a read-only connection", () => {
+    const ids = (state: ThreadActionMenuState) =>
+      buildThreadActionMenuItems(state).map((item) => item.id);
+    expect(ids(baseState)).toContain("side-chat");
+    expect(ids({ ...baseState, canOpenSideChat: false })).not.toContain("side-chat");
+    expect(
+      buildThreadActionMenuItems({ ...baseState, canOperate: false }).find(
+        (item) => item.id === "side-chat",
+      )?.disabled,
+    ).toBe(true);
   });
 });

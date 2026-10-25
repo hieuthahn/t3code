@@ -7,7 +7,6 @@ import ChatView from "./ChatView";
 import { BackgroundThreadContext } from "./chat/backgroundThread";
 import { resolveDraftPromotionNavigationTarget, threadHasStarted } from "./ChatView.logic";
 import { waitForDraftHeroTransition } from "./chat/draftHeroTransition";
-import { SidebarInset } from "./ui/sidebar";
 import {
   finalizePromotedDraftThreadByRef,
   markPromotedDraftThreadByRef,
@@ -32,9 +31,14 @@ import {
 export function ThreadRouteView({
   target,
   background = false,
+  onMissing,
+  reserveTitleBarControlInset,
 }: {
   target: ThreadRouteTarget;
   background?: boolean;
+  /** Replaces the redirect home when the thread disappears, for a thread that shares the screen. */
+  onMissing?: () => void;
+  reserveTitleBarControlInset?: boolean;
 }) {
   const navigate = useNavigate();
   const draftId = target.kind === "draft" ? target.draftId : null;
@@ -151,14 +155,25 @@ export function ThreadRouteView({
     if (target.kind !== "server" || !bootstrapComplete) {
       return;
     }
-    if (renderState === "missing") {
+    if (renderState === "missing" || serverThreadShell?.archivedAt != null) {
       const { clearPendingFileDropsForThread } = useSidebarPendingFileDropStore.getState();
       clearPendingFileDropsForThread(target.threadRef);
-      if (environmentHasAnyThreads && !background) {
+      if (onMissing) {
+        onMissing();
+      } else if (renderState === "missing" && environmentHasAnyThreads && !background) {
         void navigate({ to: "/", replace: true });
       }
     }
-  }, [background, bootstrapComplete, environmentHasAnyThreads, navigate, renderState, target]);
+  }, [
+    background,
+    bootstrapComplete,
+    environmentHasAnyThreads,
+    navigate,
+    onMissing,
+    renderState,
+    serverThreadShell?.archivedAt,
+    target,
+  ]);
 
   useEffect(() => {
     if (target.kind !== "server" || !serverThreadStarted || !draftThread) {
@@ -188,16 +203,10 @@ export function ThreadRouteView({
         environmentId={target.threadRef.environmentId}
         threadId={target.threadRef.threadId}
         routeKind="server"
+        {...(reserveTitleBarControlInset === undefined ? {} : { reserveTitleBarControlInset })}
       />
     );
   }
 
-  return (
-    <SidebarInset
-      className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh"
-      inert={background}
-    >
-      <BackgroundThreadContext value={background}>{view}</BackgroundThreadContext>
-    </SidebarInset>
-  );
+  return <BackgroundThreadContext value={background}>{view}</BackgroundThreadContext>;
 }

@@ -4062,6 +4062,49 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     close: (sdkMessages) => Queue.shutdown(sdkMessages),
   });
 
+  it.effect("keeps the MCP servers the session init frame reports on the provider thread", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeWakeHarness;
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("mcp-status"),
+          text: "Use the connectors.",
+          attachments: [],
+          nativeThreadHasTurns: false,
+        }),
+      );
+      yield* harness.offerAndWait(
+        claudeSdkFrame({
+          type: "system",
+          subtype: "init",
+          uuid: "00000000-0000-4000-8000-000000000501",
+          session_id: WAKE_NATIVE_SESSION,
+          mcp_servers: [
+            { name: "github", status: "connected" },
+            { name: "linear", status: "needs-auth" },
+          ],
+        }),
+      );
+      yield* harness.offerAndWait(makeAssistantTextFrame({ uuid: "mcp-status-message", text: "Done." }));
+      yield* harness.offerAndWait(makeResultFrame({ uuid: "mcp-status-result", result: "Done." }));
+      assert.equal((yield* Queue.take(harness.terminalReceipts)).status, "completed");
+      const updated = harness.events.findLast((event) => event.type === "provider_thread.updated");
+      assert.equal(updated?.type, "provider_thread.updated");
+      if (updated?.type !== "provider_thread.updated") return;
+      assert.deepEqual(updated.providerThread.mcpServers, [
+        { name: "github", status: "connected" },
+        { name: "linear", status: "needs_auth" },
+      ]);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+      ),
+    ),
+  );
+
   it.effect.each([
     { kind: "fork with inherited head", fork: true, headMessageId: "remapped-inherited-head" },
     { kind: "fork without recorded head", fork: true, headMessageId: undefined },

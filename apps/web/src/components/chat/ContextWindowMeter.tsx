@@ -1,5 +1,9 @@
 import { Button } from "../ui/button";
-import { type ContextWindowSnapshot, formatContextWindowTokens } from "~/lib/contextWindow";
+import {
+  type ContextWindowSnapshot,
+  formatContextWindowPercentage,
+  formatContextWindowTokens,
+} from "~/lib/contextWindow";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import {
   formatContextWindowCompactionMessage,
@@ -7,16 +11,6 @@ import {
 } from "./ContextWindowMeter.logic";
 import { Minimize2Icon } from "lucide-react";
 import { composerFloatingLayerProps } from "./composerEventScope";
-
-function formatPercentage(value: number | null): string | null {
-  if (value === null || !Number.isFinite(value)) {
-    return null;
-  }
-  if (value < 10) {
-    return `${value.toFixed(1).replace(/\.0$/, "")}%`;
-  }
-  return `${Math.round(value)}%`;
-}
 
 export function ContextWindowMeter(props: {
   usage: ContextWindowSnapshot;
@@ -26,7 +20,7 @@ export function ContextWindowMeter(props: {
   compactDisabledReason?: string | null | undefined;
 }) {
   const { usage, modelDisplayName, onCompact, compactDisabled, compactDisabledReason } = props;
-  const usedPercentage = formatPercentage(usage.usedPercentage);
+  const usedPercentage = formatContextWindowPercentage(usage.usedPercentage);
   const normalizedPercentage = Math.max(0, Math.min(100, usage.usedPercentage ?? 0));
   const radius = 9.75;
   const circumference = 2 * Math.PI * radius;

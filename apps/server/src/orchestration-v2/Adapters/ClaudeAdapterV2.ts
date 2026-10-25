@@ -20,6 +20,7 @@ import {
 
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 import { normalizeClaudeTurnTokenUsage } from "../../provider/ClaudeTurnTokenUsage.ts";
+import { claudeMcpServersFromInit } from "./claudeMcpServers.ts";
 import {
   type CanUseTool,
   forkSession as forkClaudeSession,
@@ -71,6 +72,7 @@ import {
   type OrchestrationV2ExecutionNode,
   type OrchestrationV2ProviderCapabilities,
   type OrchestrationV2ProviderFailure,
+  type OrchestrationV2McpServerStatus,
   OrchestrationV2ProviderGoal,
   type OrchestrationV2PlanArtifact,
   type OrchestrationV2PlanStep,
@@ -4136,6 +4138,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           new Map<string, OrchestrationV2ProviderThread>(),
         );
         const goalsByNativeThread = new Map<string, OrchestrationV2ProviderGoal | null>();
+        const mcpServersByNativeThread = new Map<
+          string,
+          ReadonlyArray<OrchestrationV2McpServerStatus>
+        >();
         const goalCheckedTurns = new Set<string>();
         // Subagent registry that survives turn settle: a background subagent
         // (Agent with run_in_background) can complete after the root turn
@@ -4564,6 +4570,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ...(goalsByNativeThread.has(input.nativeThreadId)
               ? { goal: goalsByNativeThread.get(input.nativeThreadId) ?? null }
               : {}),
+            ...(mcpServersByNativeThread.has(input.nativeThreadId)
+              ? { mcpServers: mcpServersByNativeThread.get(input.nativeThreadId) ?? [] }
+              : {}),
             updatedAt: now,
           };
           yield* rememberProviderThread(providerThread);
@@ -4596,6 +4605,26 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           );
           if (providerThread === undefined) return;
           const updated = { ...providerThread, goal: next, updatedAt: yield* DateTime.now };
+          yield* rememberProviderThread(updated);
+          yield* emitProviderEvent({
+            type: "provider_thread.updated",
+            driver: CLAUDE_PROVIDER,
+            providerThread: updated,
+          });
+        });
+
+        const trackClaudeMcpServers = Effect.fnUntraced(function* (input: {
+          readonly nativeThreadId: string;
+          readonly message: SDKMessage;
+        }) {
+          const servers = claudeMcpServersFromInit(input.message);
+          if (servers === null) return;
+          mcpServersByNativeThread.set(input.nativeThreadId, servers);
+          const providerThread = (yield* Ref.get(lastProviderThreadByNativeThread)).get(
+            input.nativeThreadId,
+          );
+          if (providerThread === undefined) return;
+          const updated = { ...providerThread, mcpServers: servers, updatedAt: yield* DateTime.now };
           yield* rememberProviderThread(updated);
           yield* emitProviderEvent({
             type: "provider_thread.updated",
@@ -6873,6 +6902,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   ...(nativeThreadId !== null && goalsByNativeThread.has(nativeThreadId)
                     ? { goal: goalsByNativeThread.get(nativeThreadId) ?? null }
                     : {}),
+                  ...(nativeThreadId !== null && mcpServersByNativeThread.has(nativeThreadId)
+                    ? { mcpServers: mcpServersByNativeThread.get(nativeThreadId) ?? [] }
+                    : {}),
                   firstRunOrdinal:
                     input.context.input.providerThread.firstRunOrdinal ??
                     input.context.input.runOrdinal,
@@ -7603,6 +7635,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             return;
           }
           yield* trackClaudeGoal({ nativeThreadId: liveQuery.nativeThreadId, context, message });
+          yield* trackClaudeMcpServers({ nativeThreadId: liveQuery.nativeThreadId, message });
 
           if (message.type === "stream_event" && !message.parent_tool_use_id) {
             const event = message.event;

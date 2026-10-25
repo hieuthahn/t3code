@@ -92,9 +92,10 @@ export function ThreadDetailsCard({
       const frame = element.closest<HTMLElement>("[data-thread-details-card]");
       const next = element.offsetHeight + (frame ? frame.offsetHeight - frame.clientHeight : 0);
       // PR lists and lineage scroll as they expand, and the merge queue and team panels show at
-      // every density. Counting them would hide the section and workspace controls.
+      // every density. Counting them, or the reference cards below them, would hide the section
+      // and workspace controls.
       const lists = element.querySelectorAll<HTMLElement>(
-        "[data-thread-relationships-panel], [data-thread-details-pr-list], [data-thread-merge-queue-panel], [data-thread-team-panel]",
+        "[data-thread-relationships-panel], [data-thread-details-pr-list], [data-thread-merge-queue-panel], [data-thread-team-panel], [data-thread-context-panel], [data-thread-connectors-panel], [data-thread-outputs-panel]",
       );
       const fittingHeight =
         next - Array.from(lists).reduce((sum, list) => sum + list.offsetHeight, 0);

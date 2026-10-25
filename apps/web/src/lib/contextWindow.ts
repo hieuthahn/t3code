@@ -1,4 +1,5 @@
 import type {
+  OrchestrationV2ContextBreakdownEntry,
   OrchestrationV2ProviderTurn,
   OrchestrationV2ProviderTurnTokenUsage,
   OrchestrationV2ProviderThread,
@@ -22,6 +23,7 @@ export type ContextWindowSnapshot = NullableContextWindowUsage & {
   readonly remainingTokens: number | null;
   readonly usedPercentage: number | null;
   readonly remainingPercentage: number | null;
+  readonly breakdown: ReadonlyArray<OrchestrationV2ContextBreakdownEntry> | null;
   readonly updatedAt: string;
 };
 
@@ -92,6 +94,7 @@ export function deriveLatestContextWindowSnapshot(
       compactsAutomatically: true,
       autoCompactThreshold: liveUsage.autoCompactThreshold ?? null,
       cost: null,
+      breakdown: liveUsage.breakdown ?? null,
       updatedAt: liveUsage.updatedAt,
     };
   }
@@ -127,6 +130,7 @@ export function deriveLatestContextWindowSnapshot(
       compactsAutomatically: providerUsage.compactsAutomatically ?? null,
       cost: providerUsage.cost ?? null,
       autoCompactThreshold: providerUsage.autoCompactThreshold ?? null,
+      breakdown: null,
       updatedAt: DateTime.formatIso(providerUsageUpdatedAt),
     };
   }
@@ -169,11 +173,38 @@ export function deriveLatestContextWindowSnapshot(
       compactsAutomatically: true,
       autoCompactThreshold: null,
       cost: null,
+      breakdown: null,
       updatedAt: DateTime.formatIso(payload.startedAt ?? payload.updatedAt),
     };
   }
 
   return null;
+}
+
+export function formatContextWindowPercentage(value: number | null): string | null {
+  if (value === null || !Number.isFinite(value)) {
+    return null;
+  }
+  if (value < 10) {
+    return `${value.toFixed(1).replace(/\.0$/, "")}%`;
+  }
+  return `${Math.round(value)}%`;
+}
+
+export interface ContextBreakdownRow extends OrchestrationV2ContextBreakdownEntry {
+  readonly percentage: number;
+}
+
+/** Rows the provider reported, sized against the window. Empty when it reported only a total. */
+export function deriveContextBreakdownRows(
+  snapshot: Pick<ContextWindowSnapshot, "breakdown" | "maxTokens"> | null,
+): ReadonlyArray<ContextBreakdownRow> {
+  const maxTokens = snapshot?.maxTokens;
+  if (!snapshot?.breakdown || maxTokens == null || maxTokens <= 0) return [];
+  return snapshot.breakdown.map((entry) => ({
+    ...entry,
+    percentage: Math.round((entry.tokens / maxTokens) * 1000) / 10,
+  }));
 }
 
 export function formatContextWindowTokens(value: number | null): string {

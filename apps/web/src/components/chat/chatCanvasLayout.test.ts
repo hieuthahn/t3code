@@ -294,6 +294,9 @@ describe("threadDetailsPanels", () => {
         mergeQueue: true,
         team: true,
         relationships: false,
+        context: false,
+        connectors: false,
+        outputs: false,
       });
     }
     expect(threadDetailsPanels("full", false)).toEqual({
@@ -301,6 +304,9 @@ describe("threadDetailsPanels", () => {
       mergeQueue: true,
       team: true,
       relationships: true,
+      context: true,
+      connectors: true,
+      outputs: true,
     });
   });
 
@@ -310,6 +316,9 @@ describe("threadDetailsPanels", () => {
       mergeQueue: false,
       team: false,
       relationships: false,
+      context: false,
+      connectors: false,
+      outputs: false,
     });
   });
 });

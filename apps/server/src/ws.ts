@@ -2204,6 +2204,8 @@ const makeWsRpcLayer = (
                     ...(input.fanoutGroupId === undefined
                       ? {}
                       : { fanoutGroupId: input.fanoutGroupId }),
+                    ...(input.tokenSaver === undefined ? {} : { tokenSaver: input.tokenSaver }),
+                    ...(input.team === undefined ? {} : { team: input.team }),
                     ...(input.initialMessage === undefined
                       ? {}
                       : {

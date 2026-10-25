@@ -1,6 +1,8 @@
 import { remapComposerContextAttachments } from "@t3tools/shared/composerContextReferences";
 import {
   type ThreadLinkedPullRequest,
+  type TeamSetup,
+  type TokenSaverConfig,
   CommandId,
   CheckpointId,
   CheckpointScopeId,
@@ -156,6 +158,8 @@ interface StartThreadBootstrap {
     readonly worktreePath: string | null;
     readonly createdAt: string;
     readonly fanoutGroupId?: string;
+    readonly tokenSaver?: TokenSaverConfig;
+    readonly team?: TeamSetup | null;
   };
   readonly prepareWorktree?: {
     readonly requireWorktree?: boolean;
@@ -741,6 +745,8 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
       interactionMode: input.interactionMode,
       workspaceStrategy,
       ...(bootstrap?.fanoutGroupId === undefined ? {} : { fanoutGroupId: bootstrap.fanoutGroupId }),
+      ...(bootstrap?.tokenSaver === undefined ? {} : { tokenSaver: bootstrap.tokenSaver }),
+      ...(bootstrap?.team === undefined ? {} : { team: bootstrap.team }),
       initialMessage: {
         messageId: input.message.messageId,
         text: input.message.text,

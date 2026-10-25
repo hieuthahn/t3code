@@ -8,10 +8,15 @@ import {
   type TokenSaverConfig,
   type TokenSaverStats,
 } from "@t3tools/contracts";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
+import {
+  clearDraftComposerSettings,
+  readDraftComposerSettings,
+} from "~/draftComposerSettingsStore";
 import { render } from "../../../test/render";
 import { ComposerTokenSaverControl } from "./ComposerTokenSaverControl";
 
@@ -34,7 +39,7 @@ vi.mock("~/hooks/useSettings", () => ({
 }));
 vi.mock("~/state/session", () => ({ useEnvironmentScope: () => true }));
 vi.mock("~/state/entities", () => ({
-  useThreadShell: () => ({ tokenSaver: state.override }),
+  useThreadShell: (ref: unknown) => (ref === null ? null : { tokenSaver: state.override }),
 }));
 vi.mock("~/state/orchestration", () => ({ orchestrationEnvironment: { tokenSaverStats: {} } }));
 vi.mock("~/state/threads", () => ({ threadEnvironment: { updateMetadata: {} } }));
@@ -69,6 +74,7 @@ function setup(input: {
     overall: { on: sample(40, 315.4), off: sample(3, null) },
     rtkAvailable: input.rtkAvailable ?? true,
   };
+  clearDraftComposerSettings(scopedThreadKey(threadRef));
 }
 
 const threadRef = {
@@ -83,6 +89,37 @@ async function openPanel() {
   await userEvent.click(page.getByRole("button", { name: /^Token Saver/ }));
   await expect.element(page.getByRole("switch", { name: "RTK compression" })).toBeEnabled();
 }
+
+it("keeps a draft's packs in the draft until its first send creates the thread", async () => {
+  setup({});
+  await using _screen = await render(
+    <ComposerTokenSaverControl
+      threadRef={threadRef}
+      isDraft
+      driver={ProviderDriverKind.make("claudeAgent")}
+    />,
+  );
+  await openPanel();
+  await userEvent.click(page.getByRole("switch", { name: "Lean code" }));
+
+  expect(state.updates).toEqual([]);
+  expect(readDraftComposerSettings(scopedThreadKey(threadRef)).tokenSaver).toEqual({
+    ...DEFAULT_TOKEN_SAVER_CONFIG,
+    leanCode: true,
+  });
+});
+
+it("hides on a draft whose provider has no Token Saver", async () => {
+  setup({});
+  await using _screen = await render(
+    <ComposerTokenSaverControl
+      threadRef={threadRef}
+      isDraft
+      driver={ProviderDriverKind.make("cursor")}
+    />,
+  );
+  await expect.element(page.getByRole("button", { name: /^Token Saver/ })).not.toBeInTheDocument();
+});
 
 it("recomputes the compound estimate as packs turn on and shows the measured saving", async () => {
   setup({});

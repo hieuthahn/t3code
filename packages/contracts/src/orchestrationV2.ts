@@ -1549,6 +1549,10 @@ export const OrchestrationV2ChildProposal = Schema.Struct({
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
+  /** A team assignment's scheduling, kept so the round can start after its architect's turn. */
+  dependsOn: Schema.optional(Schema.Array(TrimmedNonEmptyString)),
+  readOnly: Schema.optional(Schema.Boolean),
+  files: Schema.optional(Schema.Array(TrimmedNonEmptyString)),
 });
 export type OrchestrationV2ChildProposal = typeof OrchestrationV2ChildProposal.Type;
 
@@ -1586,6 +1590,8 @@ const OrchestrationV2ChildPlanRequestFields = {
   children: Schema.Array(OrchestrationV2ChildProposal),
   planDecision: Schema.NullOr(OrchestrationV2ChildPlanDecision),
   launches: Schema.optional(Schema.Array(OrchestrationV2ChildPlanLaunch)),
+  /** The card stays open after its agent's run ends, and its team reads the decision. */
+  waitsAfterRun: Schema.optional(Schema.Literal(true)),
 } as const;
 
 export const OrchestrationV2TurnItem = Schema.Union([
@@ -3470,6 +3476,7 @@ const OrchestrationV2InternalCommand = Schema.Union([
     children: Schema.Array(OrchestrationV2ChildProposal),
     planStatus: Schema.Literals(["pending", "expired", "cancelled"]),
     closedReason: Schema.optional(Schema.String),
+    waitsAfterRun: Schema.optional(Schema.Literal(true)),
   }),
   /** Records which approved children started, and why any did not. */
   Schema.Struct({

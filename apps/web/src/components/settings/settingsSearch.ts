@@ -363,6 +363,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["reasoning effort auto judge haiku jev typesafe thinking"],
   },
   {
+    id: "team-auto-new-threads",
+    title: "Team Auto for new threads",
+    to: "/settings/general",
+    searchTerms: ["team architect workers auto single agent judge new thread default"],
+  },
+  {
     id: "prompt-suggestions",
     title: "Prompt suggestions",
     to: "/settings/general",

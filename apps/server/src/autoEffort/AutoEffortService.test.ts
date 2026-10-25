@@ -361,3 +361,125 @@ describe("AutoEffortService", () => {
     }),
   );
 });
+
+describe("AutoEffortService team verdict", () => {
+  const teamRequest = (
+    overrides: Partial<AutoEffort.AutoTeamRequest> = {},
+  ): AutoEffort.AutoTeamRequest => ({
+    threadId: ThreadId.make("thread-1"),
+    modelSelection: selection(CLAUDE, "effort", true),
+    text: "build the billing module across server, web and the database",
+    attachmentCount: 0,
+    teamName: "Strong team",
+    ...overrides,
+  });
+  const haikuSays = (json: string) => ({
+    judge: "haiku" as const,
+    haikuReply: Effect.succeed(Option.some(json)),
+  });
+
+  it.effect("starts a team when the judge says team, in one judge call", () =>
+    run(
+      haikuSays('{"effort":"high","sure":0.9,"why":"big job","team":true,"teamSure":0.8}'),
+      ({ service, haikuQuestions }) =>
+        Effect.gen(function* () {
+          expect(yield* service.judgeTeam(teamRequest())).toBe(true);
+          const resolution = yield* service.resolve(request({ firstTurn: true }));
+          expect(effortOf(resolution)).toBe("high");
+          expect(resolution.notice).toBe(
+            "Auto effort: high · by Haiku · big job · team: Strong team, 80% sure",
+          );
+          const questions = yield* Ref.get(haikuQuestions);
+          expect(questions).toHaveLength(1);
+          expect(questions[0]?.question).toContain("Team:");
+        }),
+    ),
+  );
+
+  it.effect("keeps a single agent when the judge says single", () =>
+    run(
+      haikuSays('{"effort":"low","sure":0.9,"why":"quick fix","team":false,"teamSure":0.9}'),
+      ({ service }) =>
+        Effect.gen(function* () {
+          expect(yield* service.judgeTeam(teamRequest({ text: "fix the typo in README" }))).toBe(
+            false,
+          );
+          const resolution = yield* service.resolve(request({ firstTurn: true }));
+          expect(resolution.notice).toBe("Auto effort: low · by Haiku · quick fix · single agent");
+        }),
+    ),
+  );
+
+  it.effect("keeps a single agent when the team verdict is below the threshold", () =>
+    run(
+      haikuSays('{"effort":"high","sure":0.9,"why":"big job","team":true,"teamSure":0.4}'),
+      ({ service }) =>
+        Effect.gen(function* () {
+          expect(yield* service.judgeTeam(teamRequest())).toBe(false);
+          const resolution = yield* service.resolve(request({ firstTurn: true }));
+          expect(resolution.notice).toContain("single agent (team only 40% sure, needs 60% sure)");
+        }),
+    ),
+  );
+
+  it.effect("keeps a single agent when the judge is unavailable", () =>
+    run({ judge: "haiku", haikuReply: Effect.succeed(Option.none()) }, ({ service }) =>
+      Effect.gen(function* () {
+        expect(yield* service.judgeTeam(teamRequest())).toBe(false);
+        const resolution = yield* service.resolve(request({ firstTurn: true }));
+        expect(resolution.notice).toContain("single agent (judge unavailable)");
+      }),
+    ),
+  );
+
+  it.effect("reads the team answer from Jev", () =>
+    run(
+      {
+        jevKeyFile: "TYPESAFE_API_KEY=ts_test\n",
+        jevBody: {
+          answers: {
+            effort: { choice: "high", confidence: 0.7 },
+            team: { choice: "team", confidence: 0.9 },
+          },
+        },
+      },
+      ({ service, haikuQuestions }) =>
+        Effect.gen(function* () {
+          expect(yield* service.judgeTeam(teamRequest())).toBe(true);
+          expect(yield* Ref.get(haikuQuestions)).toEqual([]);
+        }),
+    ),
+  );
+
+  it.effect("shows the team verdict on the first turn only, never on a follow-up", () =>
+    run(
+      haikuSays('{"effort":"high","sure":0.9,"why":"big job","team":true,"teamSure":0.8}'),
+      ({ service }) =>
+        Effect.gen(function* () {
+          yield* service.judgeTeam(teamRequest());
+          const first = yield* service.resolve(request({ firstTurn: true }));
+          expect(first.notice).toContain("team: Strong team");
+          const later = yield* service.resolve(
+            request({ text: "now add tests for refunds", firstTurn: false }),
+          );
+          expect(later.notice).not.toContain("team");
+          expect(yield* service.judgeTeam(teamRequest())).toBe(true);
+        }),
+    ),
+  );
+
+  it.effect("shows the team verdict alone while Auto effort is off", () =>
+    run(
+      haikuSays('{"effort":"high","sure":0.9,"why":"big job","team":true,"teamSure":0.8}'),
+      ({ service }) =>
+        Effect.gen(function* () {
+          yield* service.judgeTeam(teamRequest());
+          const resolution = yield* service.resolve(
+            request({ modelSelection: selection(CLAUDE, "effort", false), firstTurn: true }),
+          );
+          expect(resolution.notice).toBe("Team: Strong team, 80% sure");
+          expect(effortOf(resolution)).toBe("medium");
+        }),
+    ),
+  );
+});

@@ -16,6 +16,7 @@ import * as Schema from "effect/Schema";
 import { McpSchema, McpServer, Tool, Toolkit } from "effect/ai";
 
 import { OrchestratorProjectionError } from "../orchestration-v2/Orchestrator.ts";
+import { DispatchModeLimit } from "../orchestration-v2/DispatchModeLimit.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
@@ -140,6 +141,10 @@ const ProbeToolkit = Toolkit.make(
     ...probe,
     parameters: Schema.Struct({ threadId: Schema.optional(ThreadId) }),
   }),
+  Tool.make("main_chat_limit", {
+    ...probe,
+    parameters: Schema.Struct({ threadId: Schema.optional(ThreadId) }),
+  }),
   Tool.make("starts_threads", {
     ...probe,
     parameters: Schema.Struct({
@@ -163,6 +168,15 @@ const probeHandlers: McpToolAccess.Handlers<typeof ProbeToolkit.tools> = {
   sends_to_main_chat: McpToolAccess.writesThreads(
     (input) => [input.threadId],
     () => ran,
+    { sideChatMain: "allowed" },
+  ),
+  main_chat_limit: McpToolAccess.writesThreads(
+    (input) => [input.threadId],
+    () =>
+      Effect.gen(function* () {
+        const limit = yield* DispatchModeLimit;
+        return { ran: `${limit?.runtimeMode}/${limit?.interactionMode}` };
+      }),
     { sideChatMain: "allowed" },
   ),
   starts_threads: McpToolAccess.startsThreads(
@@ -209,6 +223,7 @@ export const refusedAtCompileTime = () => {
       writes_with_capability: unchecked,
       writes_threads: unchecked,
       sends_to_main_chat: unchecked,
+      main_chat_limit: unchecked,
       starts_threads: unchecked,
       writes_environment: unchecked,
     }),
@@ -344,6 +359,10 @@ it.effect.each([
     { threadId: fullAccessThreadId },
     "runtime_mode_escalation_denied",
   ],
+
+  ["main_chat_limit", sideChat, { threadId: supervisedThreadId }, "approval-required/default"],
+  ["main_chat_limit", sideChat, { threadId: fullAccessThreadId }, "full-access/default"],
+  ["main_chat_limit", sideChat, { threadId: planThreadId }, "approval-required/default"],
 
   ["starts_threads", supervised, {}, "approval-required/default"],
   ["starts_threads", supervised, { runtimeMode: "full-access" }, "runtime_mode_escalation_denied"],

@@ -18,6 +18,8 @@ import type { Tool, Toolkit } from "effect/ai";
 
 import {
   DispatchModeLimit,
+  joinDispatchModes,
+  type DispatchModes,
   type DispatchModeRefusal,
 } from "../orchestration-v2/DispatchModeLimit.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
@@ -204,13 +206,15 @@ export const writesThreads = <P, A, E, R>(
           targets.every(
             (threadId) => threadId !== undefined && isSideChatMainThread(caller.caller, threadId),
           );
+        let limits: DispatchModes = caller.limits;
         for (const threadId of targets) {
           if (threadId === undefined || threadId === caller.scope.thread?.threadId) continue;
           const target = yield* caller.threads
             .getThreadShell(threadId)
             .pipe(Effect.mapError(unavailable));
           if (target !== null && target.deletedAt === null) {
-            if (!toMainChat) yield* assertTargetWithinLimits(caller.limits, target);
+            if (toMainChat) limits = joinDispatchModes(limits, target);
+            else yield* assertTargetWithinLimits(caller.limits, target);
             yield* assertSameLink(caller, target);
           }
         }
@@ -218,9 +222,6 @@ export const writesThreads = <P, A, E, R>(
         // orchestrator checks again under the thread's lock and records its
         // refusal here, since handlers wrap dispatch errors their own way.
         const refused = yield* Ref.make<DispatchModeRefusal | undefined>(undefined);
-        const limits = toMainChat
-          ? { runtimeMode: "full-access" as const, interactionMode: "default" as const }
-          : caller.limits;
         return yield* handle(params).pipe(
           Effect.provideService(DispatchModeLimit, { ...limits, refused }),
           Effect.catch((error) =>

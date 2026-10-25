@@ -21,6 +21,15 @@ export function subagentGroupSummary(
   };
 }
 
+export function startedThreadsLabel(
+  members: ReadonlyArray<{ readonly origin: "provider_native" | "app_owned" }>,
+): string {
+  const count = members.length;
+  return members.every(({ origin }) => origin === "app_owned")
+    ? `Started ${count} ${count === 1 ? "thread" : "threads"}`
+    : `${count} ${count === 1 ? "subagent" : "subagents"}`;
+}
+
 export function summarizeSubagentStatuses(
   statuses: ReadonlyArray<OrchestrationV2TurnItemStatus>,
 ): string {

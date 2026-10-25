@@ -19,7 +19,9 @@ import {
   type RunId,
   type RuntimeMode,
   type ScheduledTaskId,
+  type TeamSetup,
   ThreadId,
+  type TokenSaverConfig,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -104,6 +106,8 @@ export interface ThreadLaunchInput {
   /** The parent there, when that environment's agent delegated this as a task. */
   readonly delegatedFrom?: OrchestrationV2DelegatedFrom;
   readonly fanoutGroupId?: string;
+  readonly tokenSaver?: TokenSaverConfig;
+  readonly team?: TeamSetup | null;
 }
 
 type PreparationInput = Pick<
@@ -953,6 +957,17 @@ const make = Effect.gen(function* () {
             .threadId ?? candidateThreadId;
         if (project.id !== input.projectId) {
           return yield* mapError(input, "resolve-project", threadId)("Project identity changed.");
+        }
+        if (input.tokenSaver !== undefined || input.team !== undefined) {
+          yield* threads
+            .dispatch({
+              type: "thread.metadata.update",
+              commandId: CommandId.make(`${input.commandId}:composer-settings`),
+              threadId,
+              ...(input.tokenSaver === undefined ? {} : { tokenSaver: input.tokenSaver }),
+              ...(input.team === undefined ? {} : { team: input.team }),
+            })
+            .pipe(Effect.mapError(mapError(input, "update-thread", threadId)));
         }
         let runId: RunId | null = null;
         let messageWasAlreadyAccepted = false;

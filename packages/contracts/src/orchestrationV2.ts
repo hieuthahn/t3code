@@ -3609,6 +3609,9 @@ export const OrchestrationV2ThreadLaunchInput = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy,
   fanoutGroupId: Schema.optional(TrimmedNonEmptyString),
+  /** Chosen on the draft and applied before its first turn; a null team keeps a single agent. */
+  tokenSaver: Schema.optional(TokenSaverConfig),
+  team: Schema.optional(Schema.NullOr(TeamSetup)),
   initialMessage: Schema.optional(
     Schema.Struct({
       messageId: Schema.optional(MessageId),

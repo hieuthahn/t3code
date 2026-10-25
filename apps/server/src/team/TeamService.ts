@@ -103,6 +103,13 @@ export const layerWith = (options: { readonly tickEvery: Duration.Duration | nul
           Effect.logWarning("Could not message the architect", { cause }),
         ),
       );
+      const closeOpenCards = (run: TeamRunRow, reason: string) =>
+        teamCardsOf(threads, run.thread_id, run.run_id).pipe(
+          Effect.flatMap((cards) =>
+            Effect.forEach(cards, (card) => closeCard(threads, card, reason), { discard: true }),
+          ),
+          Effect.catchCause((cause) => Effect.logWarning("Could not close a team card", { cause })),
+        );
       const watchRun = makeTeamWatch({ store, work, threads, tell, wokeAfter, awaitedMerges });
 
       const view: TeamService["Service"]["view"] = Effect.fn("Team.view")(function* (threadId) {
@@ -324,6 +331,7 @@ export const layerWith = (options: { readonly tickEvery: Duration.Duration | nul
                   yield* store.updateAssignment(run, row, { status: "cancelled" });
                 }
                 yield* store.updateRun(run, { status: "finished", summary: input.summary });
+                yield* closeOpenCards(run, teamMessage.teamFinished);
               }),
             )
             .pipe(
@@ -401,16 +409,7 @@ export const layerWith = (options: { readonly tickEvery: Duration.Duration | nul
               status: "stopped",
               report: teamMessage.stoppedByUser,
             });
-            const cards = yield* teamCardsOf(threads, run.thread_id, run.run_id).pipe(
-              Effect.orElseSucceed(() => []),
-            );
-            for (const card of cards) {
-              yield* closeCard(threads, card, teamMessage.stoppedByUser).pipe(
-                Effect.catchCause((cause) =>
-                  Effect.logWarning("Could not close a team card", { cause }),
-                ),
-              );
-            }
+            yield* closeOpenCards(run, teamMessage.stoppedByUser);
           }),
         );
         yield* threads

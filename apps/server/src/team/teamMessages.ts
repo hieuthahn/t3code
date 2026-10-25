@@ -49,6 +49,7 @@ export const teamMessage = {
   mergesSettled: (merges: ReadonlyArray<TeamMerge>) =>
     `Team: ${merges.map(mergeOutcome).join("; ")}. Assign the next round with team_assign, or call team_finish if the work is done.`,
   replacedByNewerRound: "Replaced by a newer proposal.",
+  teamFinished: "The team finished.",
   roundDeclined: (keys: ReadonlyArray<string>) =>
     `Team: the user declined ${listKeys(keys)}. Assign another round with team_assign, or call team_finish if the work is done.`,
   roundRefused: (problems: ReadonlyArray<string>) =>

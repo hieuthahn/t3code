@@ -366,6 +366,20 @@ it.effect("closes the waiting card and starts nothing when the user stops the te
   }),
 );
 
+it.effect("closes a card still waiting when the team finishes", () =>
+  Effect.gen(function* () {
+    const fixture = makeFixture(team({ autonomous: false }));
+    yield* withTeam(fixture, (service) =>
+      Effect.gen(function* () {
+        yield* assign(service, [work("api")]);
+        yield* service.finish(scope, { summary: "Nothing left to do." });
+        assert.equal(fixture.cards[0]?.planStatus, "cancelled");
+        assert.equal(fixture.cards[0]?.closedReason, "The team finished.");
+      }),
+    );
+  }),
+);
+
 it.effect("replaces a card still waiting with the next round", () =>
   Effect.gen(function* () {
     const fixture = makeFixture(team({ autonomous: false }));

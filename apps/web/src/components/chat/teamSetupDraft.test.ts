@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   canAddTeamWorker,
+  decidedTeam,
   draftTeam,
   initialTeamSetup,
   leadGuidanceBytesLeft,
@@ -96,13 +97,29 @@ describe("team setup helpers", () => {
 });
 
 describe("draftTeam", () => {
-  const off = { newThreads: false, defaultSetup: saved };
-  const on = { newThreads: true, defaultSetup: saved };
+  const off = { newThreads: false, autoNewThreads: false, defaultSetup: saved };
+  const on = { newThreads: true, autoNewThreads: false, defaultSetup: saved };
+  const auto = { newThreads: true, autoNewThreads: true, defaultSetup: saved };
 
   it("follows the new-thread default until the draft chooses", () => {
     expect(draftTeam(undefined, off)).toBeNull();
     expect(draftTeam(undefined, on)).toEqual(saved);
-    expect(draftTeam(undefined, { newThreads: true, defaultSetup: null })).toBeNull();
+    expect(
+      draftTeam(undefined, { newThreads: true, autoNewThreads: false, defaultSetup: null }),
+    ).toBeNull();
+  });
+
+  it("leaves the choice to the judge while Auto is the new-thread default", () => {
+    expect(draftTeam(undefined, auto)).toBe("auto");
+    expect(decidedTeam(draftTeam(undefined, auto))).toBeNull();
+    expect(draftTeam(undefined, { ...auto, defaultSetup: null })).toBeNull();
+    expect(teamControlName("auto")).toBe("Team, auto");
+  });
+
+  it("lets an explicit team or single agent win over Auto", () => {
+    const own: TeamSetup = { ...saved, architect };
+    expect(draftTeam(own, auto)).toEqual(own);
+    expect(draftTeam(null, auto)).toBeNull();
   });
 
   it("keeps the draft's own choice, a single agent included", () => {

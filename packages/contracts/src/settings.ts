@@ -1065,6 +1065,8 @@ export const TeamSettings = Schema.Struct({
   /** The setup the Team popover opens with, and the one new threads copy when `newThreads` is on. */
   defaultSetup: Schema.NullOr(TeamSetup).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   newThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** New threads let the effort judge choose `defaultSetup` or a single agent from the first message. */
+  autoNewThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
 }).pipe(Schema.withDecodingDefault(Effect.succeed({})));
 export type TeamSettings = typeof TeamSettings.Type;
 
@@ -1751,6 +1753,7 @@ export const ServerSettingsPatch = Schema.Struct({
       ),
       defaultSetup: Schema.optionalKey(Schema.NullOr(TeamSetup)),
       newThreads: Schema.optionalKey(Schema.Boolean),
+      autoNewThreads: Schema.optionalKey(Schema.Boolean),
     }),
   ),
   tokenSaver: Schema.optionalKey(

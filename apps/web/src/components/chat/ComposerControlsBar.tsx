@@ -8,7 +8,7 @@ import { ComposerControl, ComposerControlSeparator } from "./ComposerControl";
 import { ComposerTeamControl } from "./ComposerTeamControl";
 import { ComposerTokenSaverControl, supportsTokenSaver } from "./ComposerTokenSaverControl";
 import { TeamModelsTooltip } from "./TeamModelsTooltip";
-import { draftTeam, teamModelSuffix } from "./teamSetupDraft";
+import { decidedTeam, draftTeam, teamModelSuffix } from "./teamSetupDraft";
 import {
   ComposerFooterModeControls,
   ComposerModelPicker,
@@ -145,7 +145,9 @@ export function ComposerControlsBar(props: {
   ).team;
   const teamSettings = useEnvironmentSettings(environmentId, (value) => value.team);
   const team =
-    routeKind === "server" ? (serverTeam ?? null) : draftTeam(draftTeamChoice, teamSettings);
+    routeKind === "server"
+      ? (serverTeam ?? null)
+      : decidedTeam(draftTeam(draftTeamChoice, teamSettings));
   const teamPickerProps =
     team === null || multipleModelSelections !== null
       ? {}

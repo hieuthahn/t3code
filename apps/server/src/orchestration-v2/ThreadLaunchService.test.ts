@@ -7,7 +7,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as ServerConfig from "../config.ts";
 import { createPendingAttachmentId, resolveAttachmentPath } from "../attachmentStore.ts";
 import * as ThreadMessageIntake from "./ThreadMessageIntake.ts";
-import { assert, it, vi } from "@effect/vitest";
+import { assert, describe, it, vi } from "@effect/vitest";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import {
   ChatAttachmentId,
@@ -41,6 +41,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as TestClock from "effect/testing/TestClock";
 
+import * as AutoEffort from "../autoEffort/AutoEffortService.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectStore from "./ProjectStore.ts";
@@ -129,6 +130,7 @@ interface HarnessOptions {
   readonly serverSettings?: Parameters<typeof ServerSettings.layerTest>[0];
   readonly providers?: ReadonlyArray<ServerProvider>;
   readonly git?: Partial<GitWorkflow.GitWorkflowService["Service"]>;
+  readonly judgeTeam?: AutoEffort.AutoEffortServiceShape["judgeTeam"];
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -216,6 +218,9 @@ function makeHarness(options: HarnessOptions = {}) {
     }),
     layerServerSettings,
     ProviderRegistryMock.layer(options.providers),
+    options.judgeTeam === undefined
+      ? Layer.empty
+      : Layer.mock(AutoEffort.AutoEffortService)({ judgeTeam: options.judgeTeam }),
     options.managedFolders ??
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
         namedProjectsRoot: "/projects",
@@ -734,6 +739,115 @@ it.effect("applies a draft's token saver and team before its first message", () 
     }
   }).pipe(Effect.provide(makeHarness().layer)),
 );
+
+describe("Team Auto", () => {
+  const worker = { instanceId: ProviderInstanceId.make("claudeAgent_dung"), model: "sonnet" };
+  const strongTeam = {
+    architect: { instanceId: ProviderInstanceId.make("claudeAgent"), model: "opus" },
+    workers: [worker],
+    limits: DEFAULT_TEAM_LIMITS,
+  };
+  const teamSettings = (overrides: { newThreads?: boolean; autoNewThreads?: boolean } = {}) => ({
+    team: {
+      profiles: [{ id: "strong", name: "Strong team", setup: strongTeam }],
+      defaultSetup: strongTeam,
+      newThreads: overrides.newThreads ?? false,
+      autoNewThreads: overrides.autoNewThreads ?? false,
+    },
+  });
+  const judged = (team: boolean) => {
+    const asked: Array<AutoEffort.AutoTeamRequest> = [];
+    const judgeTeam = (request: AutoEffort.AutoTeamRequest) =>
+      Effect.sync(() => {
+        asked.push(request);
+        return team;
+      });
+    return { asked, judgeTeam };
+  };
+  const launchAuto = (name: string, team?: ThreadLaunch.ThreadLaunchInput["team"]) =>
+    Effect.gen(function* () {
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      const launched = yield* launches.launch({
+        ...launchInput({
+          command: `command:launch:${name}`,
+          thread: `thread:launch:${name}`,
+          message: "Build billing across server, web and the database",
+        }),
+        ...(team === undefined ? {} : { team }),
+      });
+      return (yield* threads.getThreadProjection(launched.threadId)).thread.team;
+    });
+
+  it.effect("starts the default saved team, led by the thread's model, when the judge says team", () => {
+    const judge = judged(true);
+    return Effect.gen(function* () {
+      const team = yield* launchAuto("auto-team", "auto");
+      assert.deepStrictEqual(team, { ...strongTeam, architect: modelSelection });
+      assert.equal(judge.asked.length, 1);
+      assert.equal(judge.asked[0]?.teamName, "Strong team");
+      assert.equal(judge.asked[0]?.text, "Build billing across server, web and the database");
+    }).pipe(
+      Effect.provide(
+        makeHarness({ serverSettings: teamSettings(), judgeTeam: judge.judgeTeam }).layer,
+      ),
+    );
+  });
+
+  it.effect("runs a single agent when the judge says single, even with a new-thread team", () => {
+    const judge = judged(false);
+    return Effect.gen(function* () {
+      assert.isUndefined(yield* launchAuto("auto-single", "auto"));
+      assert.equal(judge.asked.length, 1);
+    }).pipe(
+      Effect.provide(
+        makeHarness({
+          serverSettings: teamSettings({ newThreads: true }),
+          judgeTeam: judge.judgeTeam,
+        }).layer,
+      ),
+    );
+  });
+
+  it.effect("runs a single agent when no judge is available", () =>
+    Effect.gen(function* () {
+      assert.isUndefined(yield* launchAuto("auto-no-judge", "auto"));
+    }).pipe(Effect.provide(makeHarness({ serverSettings: teamSettings() }).layer)),
+  );
+
+  it.effect("judges a new thread with no choice while Auto is the new-thread default", () => {
+    const judge = judged(true);
+    return Effect.gen(function* () {
+      const team = yield* launchAuto("auto-default");
+      assert.deepStrictEqual(team, { ...strongTeam, architect: modelSelection });
+      assert.equal(judge.asked.length, 1);
+    }).pipe(
+      Effect.provide(
+        makeHarness({
+          serverSettings: teamSettings({ autoNewThreads: true }),
+          judgeTeam: judge.judgeTeam,
+        }).layer,
+      ),
+    );
+  });
+
+  it.effect("lets the user's explicit team or single agent win over Auto", () => {
+    const judge = judged(true);
+    const own = { architect: modelSelection, workers: [modelSelection], limits: DEFAULT_TEAM_LIMITS };
+    return Effect.gen(function* () {
+      assert.isUndefined(yield* launchAuto("explicit-single", null));
+      assert.deepStrictEqual(yield* launchAuto("explicit-team", own), own);
+      assert.equal(judge.asked.length, 0);
+    }).pipe(
+      Effect.provide(
+        makeHarness({
+          serverSettings: teamSettings({ autoNewThreads: true }),
+          judgeTeam: judge.judgeTeam,
+        }).layer,
+      ),
+    );
+  });
+});
 
 it.effect("launches without touching token saver or team when the draft set neither", () =>
   Effect.gen(function* () {

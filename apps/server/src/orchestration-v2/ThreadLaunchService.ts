@@ -45,6 +45,7 @@ import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
+import * as AutoEffort from "../autoEffort/AutoEffortService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
@@ -107,7 +108,8 @@ export interface ThreadLaunchInput {
   readonly delegatedFrom?: OrchestrationV2DelegatedFrom;
   readonly fanoutGroupId?: string;
   readonly tokenSaver?: TokenSaverConfig;
-  readonly team?: TeamSetup | null;
+  /** "auto" lets the effort judge pick team or single agent from the first message. */
+  readonly team?: TeamSetup | null | "auto";
 }
 
 type PreparationInput = Pick<
@@ -220,6 +222,7 @@ const make = Effect.gen(function* () {
   const ids = yield* IdAllocator.IdAllocatorV2;
   const threads = yield* ThreadManagement.ThreadManagementService;
   const managedFolders = yield* ManagedProjectFolders.ManagedProjectFolders;
+  const autoEffort = yield* Effect.serviceOption(AutoEffort.AutoEffortService);
   const preparationScope = yield* Scope.make("sequential");
   const scheduledLaunches = yield* Ref.make<ReadonlySet<CommandId>>(new Set());
   yield* Effect.addFinalizer(() => Scope.close(preparationScope, Exit.void));
@@ -234,6 +237,51 @@ const make = Effect.gen(function* () {
         ...(threadId === undefined ? {} : { threadId }),
         cause,
       });
+
+  /** "auto" for a user's new thread while Team Auto is the new-thread default. */
+  const defaultLaunchTeam = (input: ThreadLaunchInput) =>
+    input.createdBy !== "user" ||
+    input.reuseExistingThread === true ||
+    input.linkOrigin !== undefined ||
+    input.importedNativeThread !== undefined
+      ? Effect.succeed(undefined)
+      : serverSettings.getSettings.pipe(
+          Effect.map((settings) => (settings.team.autoNewThreads ? ("auto" as const) : undefined)),
+          Effect.orElseSucceed(() => undefined),
+        );
+
+  /** The saved default team when the judge says team; a single agent when unsure or unavailable. */
+  const resolveAutoTeam = Effect.fn("ThreadLaunchService.resolveAutoTeam")(function* (
+    input: ThreadLaunchInput,
+    threadId: ThreadId,
+  ) {
+    const message = input.initialMessage;
+    if (message === undefined || Option.isNone(autoEffort)) return null;
+    const teamSettings = yield* serverSettings.getSettings.pipe(
+      Effect.map((settings) => settings.team),
+      Effect.orElseSucceed(() => undefined),
+    );
+    const defaultSetup = teamSettings?.defaultSetup ?? null;
+    if (defaultSetup === null) return null;
+    const savedAs = teamSettings?.profiles.find(
+      (profile) => JSON.stringify(profile.setup) === JSON.stringify(defaultSetup),
+    );
+    const team = yield* autoEffort.value.judgeTeam({
+      threadId,
+      modelSelection: input.modelSelection,
+      text: message.text,
+      attachmentCount: message.attachments.length,
+      teamName: savedAs?.name,
+    });
+    if (!team) return null;
+    const { instanceId, model, options } = input.modelSelection;
+    const architect = {
+      instanceId,
+      model,
+      ...(options === undefined || options.length === 0 ? {} : { options: [...options] }),
+    };
+    return { ...defaultSetup, architect } satisfies TeamSetup;
+  });
 
   const readReceipt = (input: ThreadLaunchInput, commandId: CommandId) =>
     receipts
@@ -958,14 +1006,24 @@ const make = Effect.gen(function* () {
         if (project.id !== input.projectId) {
           return yield* mapError(input, "resolve-project", threadId)("Project identity changed.");
         }
-        if (input.tokenSaver !== undefined || input.team !== undefined) {
+        const requestedTeam =
+          input.team === undefined ? yield* defaultLaunchTeam(input) : input.team;
+        const settingsCommandId = CommandId.make(`${input.commandId}:composer-settings`);
+        // A replayed launch keeps the verdict it already applied rather than asking the judge again.
+        const team =
+          requestedTeam !== "auto"
+            ? requestedTeam
+            : Option.isSome(yield* readReceipt(input, settingsCommandId))
+              ? undefined
+              : yield* resolveAutoTeam(input, threadId);
+        if (input.tokenSaver !== undefined || team !== undefined) {
           yield* threads
             .dispatch({
               type: "thread.metadata.update",
-              commandId: CommandId.make(`${input.commandId}:composer-settings`),
+              commandId: settingsCommandId,
               threadId,
               ...(input.tokenSaver === undefined ? {} : { tokenSaver: input.tokenSaver }),
-              ...(input.team === undefined ? {} : { team: input.team }),
+              ...(team === undefined ? {} : { team }),
             })
             .pipe(Effect.mapError(mapError(input, "update-thread", threadId)));
         }

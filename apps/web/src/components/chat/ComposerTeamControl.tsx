@@ -45,6 +45,7 @@ import { TeamMemberPicker } from "./TeamMemberPicker";
 import { TeamProfileBar } from "./TeamProfileBar";
 import {
   canAddTeamWorker,
+  decidedTeam,
   draftTeam,
   initialTeamSetup,
   leadGuidanceBytesLeft,
@@ -94,7 +95,9 @@ export function ComposerTeamControl(props: {
   );
 
   if ((!isDraft && thread === null) || !SUPPORTED_DRIVERS.has(props.driver)) return null;
-  const team = isDraft ? draftTeam(draftSettings.team, settings) : (thread?.team ?? null);
+  const choice = isDraft ? draftTeam(draftSettings.team, settings) : (thread?.team ?? null);
+  const team = decidedTeam(choice);
+  const isAuto = choice === "auto";
   const setup =
     draft ??
     initialTeamSetup({
@@ -142,6 +145,16 @@ export function ComposerTeamControl(props: {
     if (next !== null && canWriteSettings) updateSettings({ team: { defaultSetup: next } });
     setOpen(false);
   };
+  const setAuto = (on: boolean) => {
+    updateDraftComposerSettings(threadKey, { team: on ? "auto" : undefined });
+    if (canWriteSettings) updateSettings({ team: { autoNewThreads: on } });
+  };
+  const autoTeamName =
+    settings.defaultSetup === null
+      ? undefined
+      : settings.profiles.find(
+          (profile) => JSON.stringify(profile.setup) === JSON.stringify(settings.defaultSetup),
+        )?.name;
   const saveProfiles = (profiles: ReadonlyArray<TeamProfile>) =>
     updateSettings({ team: { profiles: [...profiles] } });
 
@@ -161,8 +174,8 @@ export function ComposerTeamControl(props: {
           <ComposerControl
             size={size}
             type="button"
-            aria-label={teamControlName(team)}
-            aria-pressed={team !== null}
+            aria-label={teamControlName(choice)}
+            aria-pressed={choice !== null}
             className="aria-pressed:font-semibold"
           />
         }
@@ -170,12 +183,19 @@ export function ComposerTeamControl(props: {
         <ComposerControlIcon
           icon={UsersIcon}
           size={size}
-          {...(team === null ? {} : { className: "text-foreground" })}
+          {...(choice === null ? {} : { className: "text-foreground" })}
         />
         <span data-composer-control-label className="sr-only sm:not-sr-only">
           Team
         </span>
-        {team === null ? null : (
+        {isAuto ? (
+          <span
+            aria-hidden="true"
+            className="rounded-full border border-foreground/40 px-1.5 text-2xs text-foreground"
+          >
+            Auto
+          </span>
+        ) : team === null ? null : (
           <span
             aria-hidden="true"
             className="min-w-4 rounded-full bg-foreground px-1 text-center text-2xs text-background tabular-nums"
@@ -192,6 +212,25 @@ export function ComposerTeamControl(props: {
               <XIcon className="size-3.5" />
             </PopoverClose>
           </div>
+
+          {isDraft ? (
+            <label className="flex items-center justify-between gap-3 text-sm">
+              <span className="grid gap-0.5">
+                <span>Auto</span>
+                <span className="text-xs text-muted-foreground">
+                  {settings.defaultSetup === null
+                    ? "Start a team once to give Auto a default team."
+                    : `The first message decides: ${autoTeamName ?? "the default team"} or a single agent.`}
+                </span>
+              </span>
+              <Switch
+                size="sm"
+                checked={isAuto}
+                disabled={settings.defaultSetup === null}
+                onCheckedChange={(checked) => setAuto(Boolean(checked))}
+              />
+            </label>
+          ) : null}
 
           <TeamProfileBar
             profiles={settings.profiles}
@@ -390,7 +429,7 @@ export function ComposerTeamControl(props: {
           </label>
 
           <div className="flex items-center justify-between gap-3 border-t pt-3">
-            {team === null ? (
+            {choice === null ? (
               <span />
             ) : (
               <Button

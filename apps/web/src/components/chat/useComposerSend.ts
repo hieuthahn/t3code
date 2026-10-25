@@ -1297,8 +1297,8 @@ export function useComposerSend(input: ComposerSendInput) {
                         ? {}
                         : {
                             team:
-                              draftSettings.team === null
-                                ? null
+                              draftSettings.team === null || draftSettings.team === "auto"
+                                ? draftSettings.team
                                 : teamWithArchitect(draftSettings.team, ctxSelectedModelSelection),
                           }),
                     },

@@ -20,6 +20,7 @@ import {
   useThreadContextDrop,
   useThreadContextDragGhost,
 } from "./chat/threadContextDrag";
+import { SplitPaneFocusContext } from "./chat/splitPaneFocusContext";
 import { ThreadRouteView } from "./ThreadRouteView";
 import { Button } from "./ui/button";
 import { SidebarInset } from "./ui/sidebar";
@@ -114,12 +115,14 @@ function SplitPane(props: {
           </Tooltip>
         </div>
       ) : null}
-      <ThreadRouteView
-        target={target}
-        background={props.background}
-        reserveTitleBarControlInset={props.trailing}
-        {...(isSplit ? { onMissing: close } : {})}
-      />
+      <SplitPaneFocusContext value={focused}>
+        <ThreadRouteView
+          target={target}
+          background={props.background}
+          reserveTitleBarControlInset={props.trailing}
+          {...(isSplit ? { onMissing: close } : {})}
+        />
+      </SplitPaneFocusContext>
     </div>
   );
 }

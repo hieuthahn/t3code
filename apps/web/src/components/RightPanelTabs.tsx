@@ -89,6 +89,7 @@ import { PreviewPanelShell, type PreviewPanelMode } from "./preview/PreviewPanel
 import { FaviconImage } from "./preview/PreviewFaviconIcon";
 import { previewBridge } from "./preview/previewBridge";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
+import { useSplitPaneFocused } from "./chat/splitPaneFocusContext";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { observeResize } from "~/lib/observeResize";
@@ -379,7 +380,9 @@ function RightPanelEmptyState(props: {
   const highlightIndex =
     availableActions.length === 0 ? -1 : Math.min(highlight, availableActions.length - 1);
 
+  const paneFocused = useSplitPaneFocused();
   const handleShortcut = useEffectEvent((event: KeyboardEvent) => {
+    if (!paneFocused) return;
     const action = surfaceShortcutActionForKey(availableActions, event);
     if (!action) return;
     if (document.querySelector(LAUNCHER_SHORTCUT_BLOCKING_LAYERS)) return;
@@ -959,8 +962,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
 
   if (props.open === false && addSurfaceMenuOpen) setAddSurfaceMenuOpen(false);
 
+  const paneFocused = useSplitPaneFocused();
   const onNewSurfaceKeyDown = useEffectEvent((event: KeyboardEvent) => {
-    if (event.defaultPrevented || event.isComposing) return;
+    if (!paneFocused || event.defaultPrevented || event.isComposing) return;
     if (
       resolveShortcutCommand(event, props.keybindings, {
         context: { ...props.getShortcutContext(), rightPanelOpen: true },

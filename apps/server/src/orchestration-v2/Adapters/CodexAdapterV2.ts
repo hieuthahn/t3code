@@ -3,6 +3,11 @@ import { revertCodexThread } from "../../provider/CodexThreadRevert.ts";
 import { historyResponseItems } from "@t3tools/provider-core/server/handoffBudget";
 import { makeProviderTextDeltaCoalescer } from "./ProviderTextDeltaCoalescer.ts";
 import {
+  applyCodexMcpStartupStatus,
+  codexMcpServersEqual,
+  codexMcpServersFromStartupStatuses,
+} from "./codexMcpServers.ts";
+import {
   mcpToolPresentation,
   type McpToolPresentation,
 } from "../../provider/CodexToolPresentation.ts";
@@ -31,6 +36,7 @@ import {
   CodexSettings,
   defaultInstanceIdForDriver,
   isOrchestrationV2WorkActive,
+  type OrchestrationV2McpServerStatus,
   OrchestrationV2ProviderGoal,
   ProviderDriverKind,
   type ProviderSetupError,
@@ -1855,6 +1861,10 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
         // Serialize native completion and interrupt timeout so only one publishes terminal events.
         const turnTerminalizationPermit = yield* Semaphore.make(1);
         const goalsByNativeThread = new Map<string, OrchestrationV2ProviderGoal | null>();
+        const mcpServersByNativeThread = new Map<
+          string,
+          Map<string, OrchestrationV2McpServerStatus["status"]>
+        >();
         const rootProviderThreads = new Map<string, OrchestrationV2ProviderThread>();
         const goalHolds = new Map<string, CodexGoalHold>();
         const goalRuns = new Map<ProviderTurnId, Array<ActiveCodexTurnContext>>();
@@ -1881,6 +1891,21 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           });
         });
 
+        const emitMcpServersUpdate = Effect.fnUntraced(function* (nativeThreadId: string) {
+          const providerThread = rootProviderThreads.get(nativeThreadId);
+          const statuses = mcpServersByNativeThread.get(nativeThreadId);
+          if (providerThread === undefined || statuses === undefined) return;
+          const mcpServers = codexMcpServersFromStartupStatuses(statuses);
+          if (codexMcpServersEqual(providerThread.mcpServers ?? [], mcpServers)) return;
+          const updated = { ...providerThread, mcpServers, updatedAt: yield* DateTime.now };
+          rootProviderThreads.set(nativeThreadId, updated);
+          yield* emitProviderEvent({
+            type: "provider_thread.updated",
+            driver: CODEX_PROVIDER,
+            providerThread: updated,
+          });
+        });
+
         const rememberRootProviderThread = Effect.fnUntraced(function* (
           providerThread: OrchestrationV2ProviderThread,
         ) {
@@ -1888,6 +1913,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           if (nativeThreadId == null) return;
           rootProviderThreads.set(nativeThreadId, providerThread);
           yield* emitGoalUpdate(nativeThreadId);
+          yield* emitMcpServersUpdate(nativeThreadId);
         });
 
         // Only new model output proves recovery; local item/completed can arrive during upstream retries.
@@ -4452,6 +4478,15 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           }).pipe(Effect.orDie, turnTerminalizationPermit.withPermits(1)),
         );
 
+        yield* client.handleServerNotification("mcpServer/startupStatus/updated", (payload) =>
+          Effect.gen(function* () {
+            if (payload.threadId == null) return;
+            const statuses = mcpServersByNativeThread.get(payload.threadId) ?? new Map();
+            mcpServersByNativeThread.set(payload.threadId, statuses);
+            applyCodexMcpStartupStatus(statuses, payload.name, payload.status);
+            yield* emitMcpServersUpdate(payload.threadId);
+          }),
+        );
         yield* client.handleServerNotification("thread/goal/updated", (payload) =>
           Effect.gen(function* () {
             goalsByNativeThread.set(payload.threadId, providerGoalFromCodex(payload.goal));

@@ -1,6 +1,7 @@
 import type {
   EditorId,
   EnvironmentId,
+  OrchestrationV2McpServerStatus,
   ProjectId,
   ProjectScript,
   ResolvedKeybindingsConfig,
@@ -8,6 +9,8 @@ import type {
 } from "@t3tools/contracts";
 
 import type { DraftId } from "../../composerDraftStore";
+import type { ContextWindowSnapshot } from "../../lib/contextWindow";
+import type { ThreadOutput } from "../../lib/threadOutputs";
 import { useT3ProjectFileScripts } from "../../hooks/useT3ProjectFileScripts";
 import { type EnvMode, type EnvironmentOption } from "../BranchToolbar.logic";
 import { BranchToolbar } from "../BranchToolbar";
@@ -25,6 +28,9 @@ import { ThreadAutomationsPanel } from "./ThreadAutomationsPanel";
 import { ThreadMergeQueuePanel } from "./ThreadMergeQueuePanel";
 import { ThreadTeamPanel } from "./ThreadTeamPanel";
 import { ThreadRelationshipsPanel } from "./ThreadRelationshipsControl";
+import { ThreadConnectorsPanel } from "./ThreadConnectorsPanel";
+import { ThreadContextPanel } from "./ThreadContextPanel";
+import { ThreadOutputsPanel } from "./ThreadOutputsPanel";
 
 const GitActionsControl = memo(BaseGitActionsControl);
 
@@ -69,6 +75,14 @@ export interface ThreadDetailsPanelProps extends Pick<
     input: NewProjectScriptInput,
   ) => Promise<ProjectScriptActionResult>;
   onDeleteProjectScript: (scriptId: string) => Promise<ProjectScriptActionResult>;
+  contextWindow: ContextWindowSnapshot | null;
+  onCompactContext?: (() => void) | undefined;
+  compactDisabled: boolean;
+  compactDisabledReason: string | null;
+  mcpServers: ReadonlyArray<OrchestrationV2McpServerStatus>;
+  outputs: ReadonlyArray<ThreadOutput>;
+  workspaceRoot: string | null;
+  onOpenFile: (relativePath: string) => void;
 }
 
 export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
@@ -185,6 +199,25 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                   ) : null}
                 </div>
               </ThreadDetailsSection>
+            ) : null}
+
+            {panels.context ? (
+              <ThreadContextPanel
+                usage={props.contextWindow}
+                onCompact={props.onCompactContext}
+                compactDisabled={props.compactDisabled}
+                compactDisabledReason={props.compactDisabledReason}
+              />
+            ) : null}
+
+            {panels.connectors ? <ThreadConnectorsPanel servers={props.mcpServers} /> : null}
+
+            {panels.outputs ? (
+              <ThreadOutputsPanel
+                outputs={props.outputs}
+                workspaceRoot={props.workspaceRoot}
+                onOpenFile={props.onOpenFile}
+              />
             ) : null}
 
             {panels.automations ? (

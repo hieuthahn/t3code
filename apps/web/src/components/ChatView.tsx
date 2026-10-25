@@ -64,6 +64,7 @@ import {
   type ModelSelection,
   type PreviewAnnotationPayload,
   ProviderInstanceId,
+  type OrchestrationV2McpServerStatus,
   type ServerProvider,
   type ScopedThreadRef,
   type ThreadId,
@@ -327,6 +328,7 @@ import {
   deriveLatestContextWindowSnapshot,
   latestProviderTurnTokenUsage,
 } from "../lib/contextWindow";
+import { deriveThreadOutputs } from "../lib/threadOutputs";
 import {
   MOBILE_COMPOSER_VIEW_TRANSITION_NAME,
   MOBILE_DRAFT_HEADLINE_VIEW_TRANSITION_NAME,
@@ -378,6 +380,7 @@ import {
   makeThreadErrorSetter,
 } from "./ChatView.logic";
 
+const EMPTY_MCP_SERVERS: ReadonlyArray<OrchestrationV2McpServerStatus> = [];
 const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_PROVIDER_MODELS: ServerProvider["models"] = [];
 const EMPTY_USAGE_LIMIT_SOURCES: UsageLimitSourceSnapshots = [];
@@ -1488,6 +1491,7 @@ export default function ChatView(props: ChatViewProps) {
     activeThreadLiveTokenUsage,
     activeProviderThread,
   );
+  const activeThreadOutputs = deriveThreadOutputs(serverVisibleTurnItems.map((entry) => entry.item));
   const pendingBackgroundTasks = deriveThreadPendingBackgroundTasks(serverProjection);
   const activeWorkStartedAt =
     deriveActiveWorkStartedAt(activeActivityRun, activeRuntime, localDispatchStartedAt) ??
@@ -3947,6 +3951,14 @@ export default function ChatView(props: ChatViewProps) {
               onAddProjectScript={saveProjectScriptStable}
               onUpdateProjectScript={updateProjectScriptStable}
               onDeleteProjectScript={deleteProjectScriptStable}
+              contextWindow={activeContextWindow}
+              onCompactContext={onComposerCompactContextStable}
+              compactDisabled={compactDisabled}
+              compactDisabledReason={compactDisabledReason}
+              mcpServers={activeProviderThread?.mcpServers ?? EMPTY_MCP_SERVERS}
+              outputs={activeThreadOutputs}
+              workspaceRoot={activeWorkspaceRoot ?? null}
+              onOpenFile={openFileSurfaceStable}
             />
 
             <PullRequestThreadDialogHost

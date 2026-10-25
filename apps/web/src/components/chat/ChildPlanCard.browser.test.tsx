@@ -94,6 +94,19 @@ describe("ChildPlanCard", () => {
     });
   });
 
+  it("offers a single child as a separate thread the user can start or keep here", async () => {
+    state.decide.mockReset().mockResolvedValue(AsyncResult.success({ sequence: 1 }));
+    const offer = { ...pending, children: [proposal("api", "Draft the LinkedIn post")] };
+    await using screen = await render(timelineRow(offer as unknown as ChildPlanItem));
+
+    await expect.element(screen.getByText("Start this in a separate thread?")).toBeVisible();
+    await screen.getByRole("button", { name: "Do it here" }).click();
+    expect(state.decide.mock.calls[0]?.[0].input.approvedKeys).toEqual([]);
+
+    await screen.getByRole("button", { name: "Start", exact: true }).click();
+    expect(state.decide.mock.calls[1]?.[0].input.approvedKeys).toEqual(["api"]);
+  });
+
   it("declines every child and shows why the server refused", async () => {
     state.decide
       .mockReset()

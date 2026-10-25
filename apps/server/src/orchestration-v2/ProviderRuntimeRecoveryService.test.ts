@@ -418,7 +418,7 @@ it.effect("cancels a stale waiting run when no checkpoint capture can finish it"
   }).pipe(Effect.provide(layer));
 });
 
-it.effect("recovery closes secret and proposal cards but leaves a link card open", () => {
+it.effect("recovery closes secret and proposal cards but leaves link and team cards open", () => {
   const threadId = ThreadId.make("thread_secret_recovery");
   const runId = RunId.make("run_secret_recovery");
   let committedInput: Parameters<EventSink.EventSinkV2["Service"]["commitCommand"]>[0] | null =
@@ -470,6 +470,20 @@ it.effect("recovery closes secret and proposal cards but leaves a link card open
         children: [],
         planDecision: null,
       },
+      {
+        id: "turn-item:child-plan:team-recovery",
+        threadId,
+        runId,
+        nodeId: null,
+        type: "child_plan_request",
+        status: "waiting",
+        planId: "child-plan:team-recovery",
+        revision: 1,
+        planStatus: "pending",
+        children: [],
+        planDecision: null,
+        waitsAfterRun: true,
+      },
     ],
   } as unknown as OrchestrationV2ThreadProjection;
   const layer = ProviderRuntimeRecovery.layer.pipe(
@@ -513,6 +527,10 @@ it.effect("recovery closes secret and proposal cards but leaves a link card open
     // Nothing in memory waits on a link card; the user can still answer it.
     assert.equal(
       cards.some((card) => card.type === "link_request"),
+      false,
+    );
+    assert.equal(
+      cards.some((card) => card.id === "turn-item:child-plan:team-recovery"),
       false,
     );
   }).pipe(Effect.provide(layer));

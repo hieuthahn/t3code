@@ -48,6 +48,12 @@ export const teamMessage = {
     "Continuing the plan: no worker is running and no assignment is waiting to start. Assign the next round with team_assign, or call team_finish if the work is done.",
   mergesSettled: (merges: ReadonlyArray<TeamMerge>) =>
     `Team: ${merges.map(mergeOutcome).join("; ")}. Assign the next round with team_assign, or call team_finish if the work is done.`,
+  replacedByNewerRound: "Replaced by a newer proposal.",
+  teamFinished: "The team finished.",
+  roundDeclined: (keys: ReadonlyArray<string>) =>
+    `Team: the user declined ${listKeys(keys)}. Assign another round with team_assign, or call team_finish if the work is done.`,
+  roundRefused: (problems: ReadonlyArray<string>) =>
+    `Team: the user approved the round, but it could not join the team. ${problems.join(" ")} Assign it again with team_assign.`,
   resumed: "The user resumed the team. Continue the plan from where it stopped.",
   restarted: (interrupted: ReadonlyArray<string>) =>
     interrupted.length === 0

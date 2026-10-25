@@ -904,9 +904,12 @@ export const OrchestratorMcpTeamAssignInput = Schema.Struct({
 export type OrchestratorMcpTeamAssignInput = typeof OrchestratorMcpTeamAssignInput.Type;
 
 export const OrchestratorMcpTeamAssignResult = Schema.Struct({
-  status: Schema.Literals(["queued", "declined", "cancelled", "timed_out"]).annotate({
+  status: Schema.Literals(["proposed", "queued", "declined", "cancelled", "timed_out"]).annotate({
     description:
-      "queued: the approved assignments joined the team. declined, cancelled, timed_out: the user's card ended without any.",
+      "proposed: the round waits on the user's card; end your turn, and the decision wakes you. queued: the approved assignments joined the team. declined, cancelled, timed_out: the user's card ended without any.",
+  }),
+  turnItemId: Schema.optional(TurnItemId).annotate({
+    description: "The card a proposed round waits on.",
   }),
   started: Schema.Array(
     Schema.Struct({ key: Schema.String, taskId: NodeId, childThreadId: Schema.NullOr(ThreadId) }),

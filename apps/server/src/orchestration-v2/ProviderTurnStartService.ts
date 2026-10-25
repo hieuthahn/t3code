@@ -167,6 +167,7 @@ export const layer: Layer.Layer<
           attachmentCount: input.attachmentCount,
           previousUserText: lastText("user_message"),
           previousAssistantText: lastText("assistant_message"),
+          firstTurn: previousRun === undefined,
         });
       },
     );

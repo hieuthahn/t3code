@@ -15,6 +15,16 @@ export interface EffortVerdict {
   readonly effort: EffortLevel;
   readonly sure?: number | undefined;
   readonly why?: string | undefined;
+  /** Asked only on a thread's first message: whether it should run as a team. */
+  readonly team?: boolean | undefined;
+  readonly teamSure?: number | undefined;
+}
+
+/** Below this a team verdict counts as unsure, and the thread runs as a single agent. */
+export const TEAM_SURE_THRESHOLD = 0.6;
+
+export function wantsTeam(verdict: EffortVerdict | undefined): boolean {
+  return verdict?.team === true && (verdict.teamSure ?? 0) >= TEAM_SURE_THRESHOLD;
 }
 
 const isEffortLevel = (value: unknown): value is EffortLevel =>
@@ -148,7 +158,9 @@ A message that pushes back on, corrects or adds to a plan or claim under discuss
 
 If the person asks for deep thought ("think hard", "ultrathink", "be thorough"), pick at least high; if they ask for a quick answer, pick low.
 
-Reply with JSON only: {"effort":"low|medium|high|xhigh|max","sure":0.0-1.0 how sure you are,"why":"at most 6 words, in the user's language"}`;
+Reply with JSON only: {"effort":"low|medium|high|xhigh|max","sure":0.0-1.0 how sure you are,"why":"at most 6 words, in the user's language"}
+
+Only when the question ends by asking about a team, also decide whether the work should run as a team: an architect that plans and reviews while worker agents carry out parts in parallel. A team pays off for a large job that splits into independent parts (a feature across several modules, a broad review, a migration). A question, a small fix, a single-file change or a conversation runs as a single agent. Then add "team":true|false and "teamSure":0.0-1.0 to the JSON.`;
 
 export interface JudgeInput {
   readonly model: string;
@@ -157,7 +169,11 @@ export interface JudgeInput {
   readonly attachmentCount: number;
   readonly previousUserText: string | undefined;
   readonly previousAssistantText: string | undefined;
+  /** Also ask whether the thread should run as a team. */
+  readonly askTeam?: boolean | undefined;
 }
+
+const TEAM_QUESTION = "Team: should this thread run as a team or as a single agent?";
 
 function recentConversation(input: JudgeInput): string {
   return [
@@ -186,10 +202,14 @@ export function judgeQuestion(input: JudgeInput): string {
     `Current: ${input.model} / ${input.currentEffort ?? "default"}`,
     context === "" ? undefined : `Recent conversation:\n${context}`,
     `Next message:\n${nextMessage(input, 2000)}`,
+    input.askTeam === true ? TEAM_QUESTION : undefined,
   ]
     .filter((part) => part !== undefined)
     .join("\n\n");
 }
+
+const isProbability = (value: unknown): value is number =>
+  typeof value === "number" && value >= 0 && value <= 1;
 
 export function parseJudgeVerdict(text: string): EffortVerdict | undefined {
   const json = /\{[\s\S]*\}/.exec(text)?.[0];
@@ -203,12 +223,17 @@ export function parseJudgeVerdict(text: string): EffortVerdict | undefined {
   if (typeof parsed !== "object" || parsed === null) return undefined;
   const record = parsed as Record<string, unknown>;
   if (!isEffortLevel(record.effort)) return undefined;
-  const sure =
-    typeof record.sure === "number" && record.sure >= 0 && record.sure <= 1
-      ? record.sure
-      : undefined;
+  const sure = isProbability(record.sure) ? record.sure : undefined;
   const why = typeof record.why === "string" ? record.why.slice(0, 60) : undefined;
-  return { effort: record.effort, sure, why };
+  const team = typeof record.team === "boolean" ? record.team : undefined;
+  const teamSure = isProbability(record.teamSure) ? record.teamSure : undefined;
+  return {
+    effort: record.effort,
+    sure,
+    why,
+    ...(team === undefined ? {} : { team }),
+    ...(teamSure === undefined ? {} : { teamSure }),
+  };
 }
 
 const JEV_TASK = `Choose the reasoning effort an agentic assistant should use for the next user message. It reads files, runs tools and edits things, not only code. Pick the cheapest that still does the job well. Judge the scope and the amount of work, not whether it is code: "go through my whole drive and clean it up" is a big tool-heavy job. Effort is relative to current_model: a stronger model needs less for the same job. A short follow-up ("yes", "go", "ok", in any language) keeps the current effort. When the message answers a question in the assistant's last reply, judge only the work that answer starts: yes/no to one small action is low; picking which way to build something starts that build, so judge the build; approving a whole plan takes the effort of that plan. Pushing back on or adding to a plan under discussion continues that work: keep its effort, never low. Thanks or a closing remark with no new request is low. A question about how to do something that needs no tools is low. "think hard", "ultrathink" or "be thorough" means at least high; "quick question" means low.`;
@@ -219,6 +244,11 @@ const JEV_EFFORTS = {
   high: "hard or large multi-step job: many tool calls, costly mistakes",
   xhigh: "very hard: a long investigation",
   max: "the hardest research-level work",
+};
+
+const JEV_TEAM = {
+  team: "a large job that splits into independent parts workers can run in parallel",
+  single: "a question, a small fix, a single-file change or a conversation",
 };
 
 export function jevRequestBody(input: JudgeInput): string {
@@ -237,6 +267,16 @@ export function jevRequestBody(input: JudgeInput): string {
         instructions: "Which effort fits the next message?",
         criteria: JEV_EFFORTS,
       },
+      ...(input.askTeam === true
+        ? {
+            team: {
+              type: "choice",
+              instructions:
+                "Should the thread run as a team (an architect planning and reviewing, workers doing parts in parallel) or as a single agent?",
+              criteria: JEV_TEAM,
+            },
+          }
+        : {}),
     },
   });
 }
@@ -250,10 +290,14 @@ export function parseJevAnswer(body: unknown): EffortVerdict | undefined {
   if (!isEffortLevel(choice)) return undefined;
   const sure = answers.effort.confidence ?? answers.effort.probabilities?.[choice];
   if (typeof sure === "number" && sure < 0.5) return undefined;
+  const teamChoice = answers.team?.choice;
+  const teamSure = answers.team?.confidence ?? answers.team?.probabilities?.[teamChoice];
   return {
     effort: choice,
     sure: typeof sure === "number" ? sure : undefined,
     why: typeof sure === "number" ? `${Math.round(sure * 100)}% sure` : undefined,
+    ...(teamChoice === "team" || teamChoice === "single" ? { team: teamChoice === "team" } : {}),
+    ...(isProbability(teamSure) ? { teamSure } : {}),
   };
 }
 

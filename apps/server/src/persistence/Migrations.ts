@@ -78,6 +78,7 @@ import Migration0072 from "./Migrations/072_WaitingLinkRequestIndex.ts";
 import Migration0073 from "./Migrations/071_TokenSaverAttempts.ts";
 import Migration0074 from "./Migrations/072_MergeQueueItems.ts";
 import Migration0075 from "./Migrations/073_TeamRuns.ts";
+import Migration0076 from "./Migrations/074_ProjectMemory.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -156,6 +157,7 @@ const migrationEntries = [
   [73, "TokenSaverAttempts", Migration0073],
   [74, "MergeQueueItems", Migration0074],
   [75, "TeamRuns", Migration0075],
+  [76, "ProjectMemory", Migration0076],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

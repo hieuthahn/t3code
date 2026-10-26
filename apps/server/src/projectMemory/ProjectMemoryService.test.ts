@@ -1,6 +1,11 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import { PROJECT_MEMORY_MAX_TEXT_CHARS, ProjectId, ThreadId } from "@t3tools/contracts";
+import {
+  PROJECT_MEMORY_MAX_ENTRIES,
+  PROJECT_MEMORY_MAX_TEXT_CHARS,
+  ProjectId,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
@@ -136,4 +141,28 @@ it.effect("tells a subscriber the new list after each change", () =>
     yield* memory.delete({ projectId, entryId: newest.id });
     assert.deepEqual(yield* Queue.take(lists), ["before"]);
   }).pipe(Effect.scoped, Effect.provide(serviceLayer)),
+);
+
+it.effect("refuses an exact duplicate of an entry the project already holds", () =>
+  Effect.gen(function* () {
+    const memory = yield* ProjectMemoryService.ProjectMemoryService;
+    yield* memory.append({ projectId, text: "use pnpm" });
+    const error = yield* memory.append({ projectId, text: "  use pnpm " }).pipe(Effect.flip);
+    assert.include(error.message, "already holds that exact entry");
+    yield* memory.append({ projectId: otherProjectId, text: "use pnpm" });
+    assert.lengthOf(yield* memory.list(projectId), 1);
+  }).pipe(Effect.provide(serviceLayer)),
+);
+
+it.effect("refuses a new entry once the project holds the most it keeps", () =>
+  Effect.gen(function* () {
+    const memory = yield* ProjectMemoryService.ProjectMemoryService;
+    for (let index = 0; index < PROJECT_MEMORY_MAX_ENTRIES; index += 1) {
+      yield* memory.append({ projectId, text: `entry ${index}` });
+    }
+    const error = yield* memory.append({ projectId, text: "one too many" }).pipe(Effect.flip);
+    assert.include(error.message, `${PROJECT_MEMORY_MAX_ENTRIES} memory entries`);
+    assert.lengthOf(yield* memory.list(projectId), PROJECT_MEMORY_MAX_ENTRIES);
+    yield* memory.append({ projectId: otherProjectId, text: "unaffected" });
+  }).pipe(Effect.provide(serviceLayer)),
 );

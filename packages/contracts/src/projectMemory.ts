@@ -5,6 +5,9 @@ import { IsoDateTime, ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseS
 /** Longest memory entry, in characters; a longer one is refused so the digest stays small. */
 export const PROJECT_MEMORY_MAX_TEXT_CHARS = 500;
 
+/** Most entries one project keeps; a fuller memory refuses new entries so the digest stays useful. */
+export const PROJECT_MEMORY_MAX_ENTRIES = 200;
+
 export const ProjectMemoryEntryId = TrimmedNonEmptyString;
 export type ProjectMemoryEntryId = typeof ProjectMemoryEntryId.Type;
 
@@ -13,6 +16,7 @@ export const ProjectMemoryEntry = Schema.Struct({
   projectId: ProjectId,
   text: Schema.String,
   authorThreadId: Schema.optional(ThreadId),
+  authorThreadTitle: Schema.optional(Schema.String),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });

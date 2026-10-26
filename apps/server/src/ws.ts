@@ -2365,7 +2365,7 @@ const makeWsRpcLayer = (
           ),
         [WS_METHODS.projectMemoryAppend]: (input) =>
           Effect.annotateCurrentSpan({ "project.id": input.projectId }).pipe(
-            Effect.andThen(projectMemory.append(input)),
+            Effect.andThen(projectMemory.append({ projectId: input.projectId, text: input.text })),
           ),
         [WS_METHODS.projectMemoryEdit]: (input) =>
           Effect.annotateCurrentSpan({ "project.id": input.projectId }).pipe(

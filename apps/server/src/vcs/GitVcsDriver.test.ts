@@ -949,6 +949,31 @@ it.effect("captures, restores and deletes checkpoints of gitignored inner reposi
     );
     assert.isFalse(yield* fileSystem.exists(path.join(inner, "added.txt")));
 
+    const second = path.join(root, "web");
+    yield* fileSystem.makeDirectory(second);
+    yield* runGit(second, ["init"]);
+    yield* runGit(second, ["config", "user.email", "test@test.com"]);
+    yield* runGit(second, ["config", "user.name", "Test"]);
+    yield* fileSystem.writeFileString(path.join(second, "file.txt"), "original\n");
+    yield* runGit(second, ["add", "."]);
+    yield* runGit(second, ["commit", "-m", "initial"]);
+    yield* fileSystem.writeFileString(path.join(root, ".gitignore"), "/backend/\n/web/\n");
+    yield* runGit(root, ["commit", "-am", "ignore web"]);
+    yield* driver.checkpoints.captureCheckpoint({ cwd: root, checkpointRef });
+    yield* fileSystem.writeFileString(path.join(inner, "file.txt"), "turn edit\n");
+    yield* fileSystem.writeFileString(path.join(second, "file.txt"), "turn edit\n");
+    const backendLock = path.join(inner, ".git", "index.lock");
+    yield* fileSystem.writeFileString(backendLock, "");
+    const failed = yield* Effect.result(
+      driver.checkpoints.restoreCheckpoint({ cwd: root, checkpointRef, fallbackToHead: false }),
+    );
+    yield* fileSystem.remove(backendLock);
+    assert.strictEqual(failed._tag, "Failure");
+    assert.strictEqual(
+      yield* fileSystem.readFileString(path.join(second, "file.txt")),
+      "original\n",
+    );
+
     yield* driver.checkpoints.deleteCheckpointRefs({ cwd: root, checkpointRefs: [checkpointRef] });
     assert.isFalse(yield* driver.checkpoints.hasCheckpointRef({ cwd: inner, checkpointRef }));
   }).pipe(Effect.scoped, Effect.provide(layerGitContract)),

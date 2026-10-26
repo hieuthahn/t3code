@@ -32,6 +32,7 @@ import {
   type VcsStatusInput,
   type VcsStatusResult,
   type VcsRemoveWorktreeResult,
+  type VcsError,
   type WorktreeNestedRepositories,
   type WorktreeSubmodules,
 } from "@t3tools/contracts";
@@ -1457,14 +1458,28 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
     }),
     restoreCheckpoint: Effect.fn("GitVcsDriver.checkpoints.restoreWithInner")(function* (input) {
       if (!(yield* repositoryCheckpoints.restoreCheckpoint(input))) return false;
+      // Every inner repository is attempted before a failure is reported, so
+      // one broken repository does not leave the others unrestored.
+      const failures: Array<VcsError> = [];
       for (const root of yield* innerRepositoryRoots(input.cwd)) {
-        if (!(yield* repositoryCheckpoints.hasCheckpointRef({ ...input, cwd: root }))) continue;
-        yield* repositoryCheckpoints.restoreCheckpoint({
-          cwd: root,
-          checkpointRef: input.checkpointRef,
-          fallbackToHead: false,
-        });
+        yield* Effect.gen(function* () {
+          if (!(yield* repositoryCheckpoints.hasCheckpointRef({ ...input, cwd: root }))) return;
+          yield* repositoryCheckpoints.restoreCheckpoint({
+            cwd: root,
+            checkpointRef: input.checkpointRef,
+            fallbackToHead: false,
+          });
+        }).pipe(
+          Effect.catch((error) => {
+            failures.push(error);
+            return Effect.logWarning("inner repository checkpoint restore failed", {
+              root,
+              error,
+            });
+          }),
+        );
       }
+      if (failures[0] !== undefined) return yield* Effect.fail(failures[0]);
       return true;
     }),
     deleteCheckpointRefs: Effect.fn("GitVcsDriver.checkpoints.deleteWithInner")(function* (input) {

@@ -1,4 +1,5 @@
 import {
+  PROJECT_MEMORY_MAX_ENTRIES,
   PROJECT_MEMORY_MAX_TEXT_CHARS,
   ProjectMemoryError,
   type ProjectId,
@@ -29,7 +30,7 @@ export class ProjectMemoryService extends Context.Service<
       projectId: ProjectId,
     ) => Stream.Stream<ReadonlyArray<ProjectMemoryEntry>, ProjectMemoryError>;
     readonly append: (
-      input: ProjectMemoryAppendInput,
+      input: ProjectMemoryAppendInput & { readonly authorThreadTitle?: string },
     ) => Effect.Effect<ProjectMemoryEntry, ProjectMemoryError>;
     readonly edit: (
       input: ProjectMemoryEditInput,
@@ -87,11 +88,23 @@ export const layer = Layer.effect(
     const append: ProjectMemoryService["Service"]["append"] = Effect.fn("ProjectMemory.append")(
       function* (input) {
         const text = yield* checkMemoryText(input.text);
+        const existing = yield* store.list(input.projectId);
+        if (existing.length >= PROJECT_MEMORY_MAX_ENTRIES) {
+          return yield* new ProjectMemoryError({
+            message: `This project already holds ${PROJECT_MEMORY_MAX_ENTRIES} memory entries, the most it keeps. Delete or edit an old entry first.`,
+          });
+        }
+        if (existing.some((entry) => entry.text === text)) {
+          return yield* new ProjectMemoryError({
+            message: "This project memory already holds that exact entry.",
+          });
+        }
         return yield* store.insert({
           id: `memory:${yield* newId}`,
           projectId: input.projectId,
           text,
           authorThreadId: input.authorThreadId,
+          authorThreadTitle: input.authorThreadTitle,
         });
       },
     );

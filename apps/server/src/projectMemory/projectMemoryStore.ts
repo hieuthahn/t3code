@@ -15,6 +15,7 @@ interface EntryRow {
   readonly project_id: string;
   readonly text: string;
   readonly author_thread_id: string | null;
+  readonly author_title: string | null;
   readonly created_at: string;
   readonly updated_at: string;
 }
@@ -25,6 +26,7 @@ const entryOf = (row: EntryRow): ProjectMemoryEntry =>
     projectId: row.project_id,
     text: row.text,
     ...(row.author_thread_id === null ? {} : { authorThreadId: row.author_thread_id }),
+    ...(row.author_title === null ? {} : { authorThreadTitle: row.author_title }),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }) as ProjectMemoryEntry;
@@ -60,6 +62,7 @@ export const makeProjectMemoryStore = (
     readonly projectId: ProjectId;
     readonly text: string;
     readonly authorThreadId: ThreadId | undefined;
+    readonly authorThreadTitle: string | undefined;
   }) {
     const at = yield* now;
     const rows = yield* write(
@@ -68,6 +71,7 @@ export const makeProjectMemoryStore = (
         project_id: input.projectId,
         text: input.text,
         author_thread_id: input.authorThreadId ?? null,
+        author_title: input.authorThreadTitle ?? null,
         created_at: at,
         updated_at: at,
       })} RETURNING *`,

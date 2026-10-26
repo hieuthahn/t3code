@@ -21,11 +21,15 @@ const projectOfCaller = Effect.gen(function* () {
   if (threadId === undefined) {
     return yield* failure("Project memory needs an agent running inside a T3 thread.");
   }
-  const shell = yield* threads.getThreadShell(threadId).pipe(Effect.orElseSucceed(() => null));
+  const shell = yield* threads
+    .getThreadShell(threadId)
+    .pipe(
+      Effect.mapError(() => failure("Could not look up this thread's project. Try again shortly.")),
+    );
   if (shell === null) {
     return yield* failure("This thread belongs to no project, so it has no project memory.");
   }
-  return { threadId, projectId: shell.projectId };
+  return { threadId, projectId: shell.projectId, threadTitle: shell.title };
 });
 
 export const readProjectMemory: Effect.Effect<
@@ -47,9 +51,14 @@ export const readProjectMemory: Effect.Effect<
 
 export const appendProjectMemory = Effect.fn("ProjectMemory.mcpAppend")(
   function* (input: OrchestratorMcpProjectMemoryAppendInput) {
-    const { projectId, threadId } = yield* projectOfCaller;
+    const { projectId, threadId, threadTitle } = yield* projectOfCaller;
     const memory = yield* ProjectMemoryService.ProjectMemoryService;
-    const entry = yield* memory.append({ projectId, text: input.text, authorThreadId: threadId });
+    const entry = yield* memory.append({
+      projectId,
+      text: input.text,
+      authorThreadId: threadId,
+      authorThreadTitle: threadTitle,
+    });
     return { entry } satisfies OrchestratorMcpProjectMemoryAppendResult;
   },
   Effect.mapError((error) =>

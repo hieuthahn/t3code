@@ -20,6 +20,7 @@ const projectId = ProjectId.make("project:mcp");
 const callerId = ThreadId.make("thread:caller");
 const siblingId = ThreadId.make("thread:sibling");
 const ghostId = ThreadId.make("thread:ghost");
+const brokenId = ThreadId.make("thread:broken");
 
 const scopeFor = (threadId: ThreadId | undefined): McpInvocationContext.McpInvocationScope => ({
   environmentId: EnvironmentId.make("environment:mcp"),
@@ -42,8 +43,10 @@ const layer = Layer.mergeAll(
   Layer.mock(ThreadManagementService.ThreadManagementService)({
     getThreadShell: (threadId) =>
       threadId === ghostId
-        ? Effect.fail(new Error("missing") as never)
-        : Effect.succeed({ id: threadId, projectId } as unknown as OrchestrationV2ThreadShell),
+        ? Effect.succeed(null)
+        : threadId === brokenId
+          ? Effect.fail(new Error("db down") as never)
+          : Effect.succeed({ id: threadId, projectId } as unknown as OrchestrationV2ThreadShell),
   }),
 ).pipe(Layer.provideMerge(Layer.mergeAll(SqlitePersistence.layerMemory, NodeServices.layer)));
 
@@ -94,5 +97,13 @@ it.effect("reports an over-cap append as an invalid request with the limit", () 
     );
     assert.equal(error.code, "invalid_request");
     assert.include(error.message, "at most 500 characters");
+  }).pipe(Effect.provide(layer)),
+);
+
+it.effect("reports a failed thread lookup as an error, not as a missing project", () =>
+  Effect.gen(function* () {
+    const read = yield* as(brokenId, readProjectMemory).pipe(Effect.flip);
+    assert.include(read.message, "Could not look up");
+    assert.notInclude(read.message, "belongs to no project");
   }).pipe(Effect.provide(layer)),
 );

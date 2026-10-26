@@ -10,6 +10,7 @@ export default Effect.gen(function* () {
       project_id TEXT NOT NULL,
       text TEXT NOT NULL,
       author_thread_id TEXT,
+      author_title TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )

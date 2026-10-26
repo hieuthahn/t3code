@@ -18,19 +18,22 @@ export async function resolveWithin<T>(
   }
 }
 
-function describeDirtyInnerRepositories(count: number): string {
+function describeDirtyInnerRepositories(count: number | null): string {
+  if (count === null)
+    return "Inner repositories could not be checked. Any uncommitted changes in them will be lost.";
   return `${count} inner ${count === 1 ? "repository has" : "repositories have"} uncommitted changes that will be lost.`;
 }
 
 /** Builds the confirm text shown before deleting the only worktree a thread uses. */
 export function buildWorktreeDeleteMessage(input: {
   readonly worktreePath: string;
-  readonly dirtyNestedRepositories: number;
+  /** Null when the lookup failed or timed out, so the changes are unknown. */
+  readonly dirtyNestedRepositories: number | null;
 }): string {
   return [
     "This thread is the only one linked to this worktree:",
     input.worktreePath,
-    ...(input.dirtyNestedRepositories > 0
+    ...(input.dirtyNestedRepositories !== 0
       ? ["", describeDirtyInnerRepositories(input.dirtyNestedRepositories)]
       : []),
     "",

@@ -53,6 +53,17 @@ describe("buildWorktreeDeleteMessage", () => {
     ).toContain("3 inner repositories have uncommitted changes that will be lost.");
   });
 
+  it("warns when the inner repositories could not be checked", () => {
+    const message = buildWorktreeDeleteMessage({
+      worktreePath: "~/w/feature",
+      dirtyNestedRepositories: null,
+    });
+    expect(message).toContain(
+      "Inner repositories could not be checked. Any uncommitted changes in them will be lost.",
+    );
+    expect(message.endsWith("Delete the worktree too?")).toBe(true);
+  });
+
   it("explains an unwarned removal after the fact", () => {
     expect(buildRemovedDirtyNestedRepositoriesNotice(2)).toBe(
       "2 inner repositories had uncommitted changes that were deleted with the worktree.",

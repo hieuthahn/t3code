@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
@@ -161,3 +162,45 @@ it.effect("allows a write at a project root that sits inside a larger repo", () 
     }).pipe(Effect.provide(layer(packageRoot, baseDir)));
   }).pipe(Effect.provide(NodeServices.layer)),
 );
+
+const wsSource = NodeFS.readFileSync(new URL("../ws.ts", import.meta.url), "utf8");
+
+const handlerBody = (method: string) => {
+  const start = wsSource.indexOf(`[WS_METHODS.${method}]:`);
+  assert.isAbove(start, -1, `${method} handler exists`);
+  const next = wsSource.indexOf("\n        [WS_METHODS.", start + 1);
+  return wsSource.slice(start, next === -1 ? undefined : next);
+};
+
+it("keeps the cwd guard off project creation, clone, scheduled task, Claude Desktop sync and environment flows", () => {
+  for (const method of [
+    "projectsCreateNew",
+    "projectsEnsureScratch",
+    "projectsMutate",
+    "projectCloneStart",
+    "projectCloneRetry",
+    "sourceControlCloneRepository",
+    "sourceControlPublishRepository",
+    "scheduledTasksUpsert",
+    "scheduledTasksRunNow",
+    "claudeDesktopSyncRun",
+    "serverGetConfig",
+  ]) {
+    assert.notInclude(handlerBody(method), "gitCwdGuard", `${method} stays unguarded`);
+  }
+});
+
+it("guards every git and vcs write handler, vcs.init included, so only known folders reach git", () => {
+  for (const method of [
+    "vcsInit",
+    "vcsPull",
+    "vcsCreateWorktree",
+    "vcsRemoveWorktree",
+    "vcsCreateRef",
+    "vcsSwitchRef",
+    "gitRunStackedAction",
+    "gitPreparePullRequestThread",
+  ]) {
+    assert.include(handlerBody(method), "gitCwdGuard", `${method} is guarded`);
+  }
+});

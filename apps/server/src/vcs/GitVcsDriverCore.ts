@@ -3862,6 +3862,14 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           { discard: true },
         ),
       ),
+      Effect.ensuring(
+        Effect.forEach(
+          included,
+          (repository) =>
+            invalidateListRefsSnapshot(path.join(input.root, repository.path)).pipe(Effect.ignore),
+          { discard: true },
+        ),
+      ),
     );
   });
 
@@ -4549,7 +4557,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         executeGit("GitVcsDriver.removeWorktree.pruneNested", root, ["worktree", "prune"], {
           allowNonZeroExit: true,
           timeoutMs: 15_000,
-        }).pipe(Effect.ignoreCause({ log: true })),
+        }).pipe(
+          Effect.ignoreCause({ log: true }),
+          Effect.andThen(invalidateListRefsSnapshot(root).pipe(Effect.ignore)),
+        ),
       { discard: true },
     );
     return { dirtyNestedRepositories: dirty.length };
@@ -4604,6 +4615,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           ["branch", "-m", "--", input.oldBranch, target],
           { timeoutMs: 10_000, fallbackErrorDetail: "git branch rename failed" },
         );
+        yield* invalidateListRefsSnapshot(directory).pipe(Effect.ignore);
+        yield* invalidateStatusStaticCaches(directory).pipe(Effect.ignore);
       }).pipe(
         Effect.catch(() => {
           failed.push(repository.path);

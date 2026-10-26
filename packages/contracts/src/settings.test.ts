@@ -468,3 +468,26 @@ describe("Token Saver settings", () => {
     ).toEqual({ newThreads: { leanCode: true } });
   });
 });
+
+describe("sidebarCompactGroupBy forward compatibility", () => {
+  it("falls back to the default for this key only when persisted settings hold an unknown value", () => {
+    const decoded = decodeClientSettings({
+      sidebarCompactGroupBy: "from-the-future",
+      chatWidth: "wide",
+    });
+    expect(decoded.sidebarCompactGroupBy).toBe("time");
+    expect(decoded.chatWidth).toBe("wide");
+  });
+
+  it("keeps a known value", () => {
+    expect(
+      decodeClientSettings({ sidebarCompactGroupBy: "coordinator" }).sidebarCompactGroupBy,
+    ).toBe("coordinator");
+  });
+
+  it("drops an unknown value from a patch and keeps its other keys", () => {
+    expect(
+      decodeClientSettingsPatch({ sidebarCompactGroupBy: "from-the-future", chatWidth: "wide" }),
+    ).toEqual({ chatWidth: "wide" });
+  });
+});

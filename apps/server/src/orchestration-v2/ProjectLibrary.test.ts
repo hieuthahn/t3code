@@ -502,26 +502,28 @@ it.layer(layerTest)("ProjectLibrary", (it) => {
     }),
   );
 
-  it.effect("keeps absolute dot-directory files under the project root in the outer repository", () =>
-    Effect.gen(function* () {
-      const project = ProjectId.make("project:dot-directory");
-      const threadId = ThreadId.make("thread:dot-directory");
-      yield* createProject(project);
-      yield* seed([
-        thread(threadId, project),
-        fileChange(threadId, "item:hora-1", 1, [
-          { operation: "edit", path: `${rootOf(project)}/.hora/acceptance/1.3.0/learning.md` },
-        ]),
-        fileChange(threadId, "item:hora-2", 2, [
-          { operation: "edit", path: `${rootOf(project)}/.hora/acceptance/1.3.0/learning.md` },
-        ]),
-      ]);
+  it.effect(
+    "keeps absolute dot-directory files under the project root in the outer repository",
+    () =>
+      Effect.gen(function* () {
+        const project = ProjectId.make("project:dot-directory");
+        const threadId = ThreadId.make("thread:dot-directory");
+        yield* createProject(project);
+        yield* seed([
+          thread(threadId, project),
+          fileChange(threadId, "item:hora-1", 1, [
+            { operation: "edit", path: `${rootOf(project)}/.hora/acceptance/1.3.0/learning.md` },
+          ]),
+          fileChange(threadId, "item:hora-2", 2, [
+            { operation: "edit", path: `${rootOf(project)}/.hora/acceptance/1.3.0/learning.md` },
+          ]),
+        ]);
 
-      const result = yield* list(project, { scope: "outer" });
-      assert.deepEqual(
-        result.entries.map((entry) => [entry.path, entry.repository, entry.outsideProject]),
-        [[".hora/acceptance/1.3.0/learning.md", null, false]],
-      );
-    }),
+        const result = yield* list(project, { scope: "outer" });
+        assert.deepEqual(
+          result.entries.map((entry) => [entry.path, entry.repository, entry.outsideProject]),
+          [[".hora/acceptance/1.3.0/learning.md", null, false]],
+        );
+      }),
   );
 });

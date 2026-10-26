@@ -4443,36 +4443,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     });
   });
 
-  /** Whether `directory` is a linked worktree of the repository at `repositoryRoot`. */
-  const isLinkedWorktreeOf = Effect.fn("isLinkedWorktreeOf")(function* (
-    repositoryRoot: string,
-    directory: string,
-  ) {
-    const pointer = (yield* fileSystem
-      .readFileString(path.join(directory, ".git"))
-      .pipe(Effect.orElseSucceed(() => ""))).match(/^gitdir:\s*(.+?)\s*$/m)?.[1];
-    if (pointer === undefined) return false;
-    const adminDirectory = path.resolve(directory, pointer);
-    const real = (target: string) =>
-      fileSystem.realPath(target).pipe(Effect.orElseSucceed(() => target));
-    return (
-      (yield* real(path.dirname(adminDirectory))) ===
-      path.join(yield* real(path.join(repositoryRoot, ".git")), "worktrees")
-    );
-  });
-
-  const nestedWorktreeCandidates = Effect.fn("nestedWorktreeCandidates")(function* (input: {
-    readonly cwd: string;
-    readonly path: string;
-  }) {
-    const target = path.resolve(input.cwd, input.path);
-    return (yield* discoverNested(input.cwd)).map((repository) => ({
-      path: repository.path,
-      root: path.join(input.cwd, repository.path),
-      worktree: path.join(target, repository.path),
-    }));
-  });
-
   const readCurrentBranch = (directory: string) =>
     executeGit(
       "GitVcsDriver.readCurrentBranch",
@@ -4487,22 +4457,49 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       Effect.orElseSucceed(() => false),
     );
 
+  /** Reads the main checkout of the repository that owns the linked worktree at `directory`. */
+  const resolveWorktreeOwner = Effect.fn("resolveWorktreeOwner")(function* (directory: string) {
+    const result = yield* executeGit(
+      "GitVcsDriver.resolveWorktreeOwner",
+      directory,
+      ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+      { allowNonZeroExit: true, timeoutMs: 5_000 },
+    );
+    if (result.exitCode !== 0) return null;
+    const commonDirectory = result.stdout.trim();
+    return path.basename(commonDirectory) === ".git"
+      ? path.dirname(commonDirectory)
+      : commonDirectory;
+  });
+
+  // Scanning the worktree itself, rather than the main checkout, also finds inner
+  // repositories added after the worktree was made and ones whose `.git` is a file.
   const listNestedWorktrees: GitVcsDriver.GitVcsDriver["Service"]["listNestedWorktrees"] =
     Effect.fn("listNestedWorktrees")(function* (input) {
-      const linked = yield* Effect.filter(yield* nestedWorktreeCandidates(input), (entry) =>
-        isLinkedWorktreeOf(entry.root, entry.worktree),
-      );
-      return yield* Effect.forEach(linked, (entry) =>
-        readCurrentBranch(entry.worktree).pipe(Effect.map((branch) => ({ ...entry, branch }))),
+      const target = path.resolve(input.cwd, input.path);
+      if (!(yield* fileSystem.exists(target).pipe(Effect.orElseSucceed(() => false)))) return [];
+      return yield* Effect.forEach(
+        yield* discoverNested(target),
+        Effect.fn("listNestedWorktrees.entry")(function* (repository) {
+          const worktree = path.join(target, repository.path);
+          return {
+            path: repository.path,
+            worktree,
+            root: (yield* isLinkedWorktreeDirectory(worktree))
+              ? yield* resolveWorktreeOwner(worktree)
+              : null,
+            branch: yield* readCurrentBranch(worktree),
+          };
+        }),
       );
     });
 
   const removeWorktree: GitVcsDriver.GitVcsDriver["Service"]["removeWorktree"] = Effect.fn(
     "removeWorktree",
   )(function* (input) {
-    const nested = yield* nestedWorktreeCandidates(input);
-    const linked = yield* Effect.filter(nested, (entry) =>
-      isLinkedWorktreeOf(entry.root, entry.worktree),
+    const inner = yield* listNestedWorktrees(input);
+    const linked = inner.flatMap((entry) =>
+      entry.root === null ? [] : [{ ...entry, root: entry.root }],
     );
     const hasLocalChanges = (directory: string) =>
       executeGit(
@@ -4511,7 +4508,11 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         ["-c", "status.showUntrackedFiles=normal", "status", "--porcelain"],
         { allowNonZeroExit: true, timeoutMs: 30_000 },
       ).pipe(Effect.map((result) => result.exitCode !== 0 || result.stdout !== ""));
-    const dirty = yield* Effect.filter(linked, (entry) => hasLocalChanges(entry.worktree));
+    // A repository that is not a worktree exists only here, so removal loses all of it.
+    const dirty = [
+      ...inner.filter((entry) => entry.root === null),
+      ...(yield* Effect.filter(linked, (entry) => hasLocalChanges(entry.worktree))),
+    ];
     // Git would refuse the outer removal after the inner worktrees were gone.
     const outer = path.resolve(input.cwd, input.path);
     const blocking =
@@ -4525,7 +4526,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       return yield* new GitCommandError({
         ...gitCommandContext({
           operation: "GitVcsDriver.removeWorktree",
-          cwd: blocking.root,
+          cwd: blocking.root ?? input.cwd,
           args: ["worktree", "remove", "--", blocking.worktree],
         }),
         detail: `'${blocking.worktree}' contains modified or untracked files, use --force to delete it`,
@@ -4536,10 +4537,16 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     }
     yield* removeSingleWorktree(input);
     // Also covers a worktree that was deleted by hand, which leaves only stale metadata.
+    const roots = new Set([
+      ...(yield* discoverNested(input.cwd)).map((repository) =>
+        path.join(input.cwd, repository.path),
+      ),
+      ...linked.map((entry) => entry.root),
+    ]);
     yield* Effect.forEach(
-      nested,
-      (entry) =>
-        executeGit("GitVcsDriver.removeWorktree.pruneNested", entry.root, ["worktree", "prune"], {
+      roots,
+      (root) =>
+        executeGit("GitVcsDriver.removeWorktree.pruneNested", root, ["worktree", "prune"], {
           allowNonZeroExit: true,
           timeoutMs: 15_000,
         }).pipe(Effect.ignoreCause({ log: true })),

@@ -269,7 +269,7 @@ const make = Effect.gen(function* () {
           yield* Effect.forEach(
             nested,
             (entry) =>
-              entry.branch === null
+              entry.branch === null || entry.root === null
                 ? Effect.void
                 : gitWorkflow
                     .deleteLocalBranch({ cwd: entry.root, refName: entry.branch, force: true })

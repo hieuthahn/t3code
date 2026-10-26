@@ -446,6 +446,91 @@ describe("nested repository worktrees", () => {
       }),
     );
 
+    it.effect("removes an inner worktree whose main checkout is itself a worktree", () =>
+      Effect.gen(function* () {
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const project = yield* makeProject(["alpha"]);
+        const external = path.join(path.dirname(project.root), "external");
+        yield* initRepository(external);
+        yield* git(external, [
+          "worktree",
+          "add",
+          "-q",
+          "-b",
+          "linked",
+          path.join(project.root, "beta"),
+        ]);
+        yield* fileSystem.writeFileString(
+          path.join(project.root, ".git", "info", "exclude"),
+          "/beta/\n",
+        );
+        const target = project.worktreePath("linked-inner");
+        yield* driver.createWorktree({
+          cwd: project.root,
+          path: target,
+          refName: yield* baseRef(project.root),
+          newRefName: "feature/linked-inner",
+        });
+        assert.isTrue(yield* fileSystem.exists(path.join(target, "beta", "README.md")));
+        yield* fileSystem.writeFileString(path.join(target, "beta", "README.md"), "edited\n");
+
+        const refused = yield* Effect.result(
+          driver.removeWorktree({ cwd: project.root, path: target }),
+        );
+        assert.equal(refused._tag, "Failure");
+        assert.equal(
+          yield* fileSystem.readFileString(path.join(target, "beta", "README.md")),
+          "edited\n",
+        );
+
+        const removed = yield* driver.removeWorktree({
+          cwd: project.root,
+          path: target,
+          force: true,
+        });
+        assert.equal(removed.dirtyNestedRepositories, 1);
+        assert.notInclude(yield* git(external, ["worktree", "list"]), target);
+      }),
+    );
+
+    it.effect("refuses to remove a repository that lives only inside the worktree", () =>
+      Effect.gen(function* () {
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const project = yield* makeProject(["alpha"]);
+        yield* fileSystem.writeFileString(
+          path.join(project.root, ".git", "info", "exclude"),
+          "/scratch/\n",
+        );
+        const target = project.worktreePath("standalone");
+        yield* driver.createWorktree({
+          cwd: project.root,
+          path: target,
+          refName: yield* baseRef(project.root),
+          newRefName: "feature/standalone",
+        });
+        yield* initRepository(path.join(target, "scratch"));
+
+        const refused = yield* Effect.result(
+          driver.removeWorktree({ cwd: project.root, path: target }),
+        );
+        assert.equal(refused._tag, "Failure");
+        assert.isTrue(yield* fileSystem.exists(path.join(target, "scratch", "README.md")));
+        assert.isTrue(yield* fileSystem.exists(path.join(target, "alpha", "README.md")));
+
+        const removed = yield* driver.removeWorktree({
+          cwd: project.root,
+          path: target,
+          force: true,
+        });
+        assert.equal(removed.dirtyNestedRepositories, 1);
+        assert.isFalse(yield* fileSystem.exists(target));
+      }),
+    );
+
     it.effect("lists the inner worktrees with their branches", () =>
       Effect.gen(function* () {
         const driver = yield* GitVcsDriver.GitVcsDriver;
@@ -468,8 +553,10 @@ describe("nested repository worktrees", () => {
           ],
         );
         assert.deepEqual(
-          yield* driver.listNestedWorktrees({ cwd: project.root, path: project.root }),
-          [],
+          (yield* driver.listNestedWorktrees({ cwd: project.root, path: project.root })).map(
+            (entry) => entry.root,
+          ),
+          [null, null],
         );
       }),
     );

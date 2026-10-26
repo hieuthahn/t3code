@@ -306,9 +306,10 @@ export interface GitRemoteStatusOptions {
 }
 
 export interface GitNestedWorktree {
-  /** Path of the inner repository relative to the workspace root. */
+  /** Path of the inner repository relative to the worktree. */
   readonly path: string;
-  readonly root: string;
+  /** Main checkout that owns this worktree, or null for a repository that is not a worktree. */
+  readonly root: string | null;
   readonly worktree: string;
   readonly branch: string | null;
 }
@@ -417,7 +418,7 @@ export class GitVcsDriver extends Context.Service<
     readonly pruneWorktrees: (input: {
       readonly cwd: string;
     }) => Effect.Effect<void, GitCommandError>;
-    /** Lists the inner repository worktrees linked under the worktree at `path`. */
+    /** Lists the inner repositories under the worktree at `path`. */
     readonly listNestedWorktrees: (input: {
       readonly cwd: string;
       readonly path: string;

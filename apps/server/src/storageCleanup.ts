@@ -1015,6 +1015,8 @@ const make = Effect.gen(function* () {
         const finalChanges = yield* localChangesReason(worktreePath, settings, nestedPaths);
         if (finalChanges !== null) return keep(finalChanges);
         for (const nested of nestedWorktrees) {
+          if (nested.root === null)
+            return keep(`inner repository ${nested.path} is not a worktree`);
           const changes = yield* localChangesReason(nested.worktree, settings);
           if (changes !== null) return keep(`inner repository ${nested.path} ${changes}`);
         }
@@ -1044,15 +1046,17 @@ const make = Effect.gen(function* () {
           if (changes !== null) return keep(changes);
         }
         for (const nested of nestedWorktrees) {
+          const owner = nested.root;
+          if (owner === null) continue;
           if (settings.worktreeKeepWhen === "tracked-changes")
             yield* cleanupGit(nested.worktree, ["clean", "-ffdx"], "git clean");
           yield* removeLinkedWorktree({
             operation: "StorageCleanup.cleanupGit",
-            cwd: nested.root,
+            cwd: owner,
             worktreePath: nested.worktree,
             force: false,
             execute: git.execute,
-            run: (args) => cleanupGit(nested.root, [...args], "git worktree remove"),
+            run: (args) => cleanupGit(owner, [...args], "git worktree remove"),
           });
         }
         yield* removeLinkedWorktree({

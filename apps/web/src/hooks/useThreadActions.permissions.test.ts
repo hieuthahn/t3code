@@ -35,6 +35,8 @@ const state = vi.hoisted(() => ({
   toasts: [] as string[],
   afterRequest: undefined as ((action: string) => void) | undefined,
   sessionLookupFails: false,
+  nestedRepositories: [] as string[],
+  dirtyCwds: new Set<string>(),
 }));
 
 vi.mock("react", () => ({
@@ -61,18 +63,31 @@ vi.mock("../state/use-atom-command", () => ({
         return AsyncResult.failure(Cause.fail(new Error("Server denied the request")));
       }
       state.afterRequest?.(action);
+      if (action === "refreshStatus") {
+        const { cwd } = request.input as unknown as { cwd: string };
+        return AsyncResult.success({ hasWorkingTreeChanges: state.dirtyCwds.has(cwd) });
+      }
       return AsyncResult.success(undefined);
     },
 }));
 vi.mock("../state/use-atom-query-runner", () => ({
-  useAtomQueryRunner: () => async (environmentId: string) =>
-    state.sessionLookupFails
+  useAtomQueryRunner: (family: string) => async (target: unknown) => {
+    if (family === "nestedRepositories") {
+      return AsyncResult.success({
+        repositories: state.nestedRepositories.map((path) => ({ path })),
+      });
+    }
+    return state.sessionLookupFails
       ? AsyncResult.failure(Cause.fail(new Error("Session lookup failed")))
       : AsyncResult.success({
           authenticated: true,
-          scopes: [...(state.scopes.get(environmentId) ?? [])],
+          scopes: [...(state.scopes.get(target as string) ?? [])],
           auth: { serverUpdateScope: "environment:maintain" },
-        }),
+        });
+  },
+}));
+vi.mock("../state/orchestration", () => ({
+  orchestrationEnvironment: { nestedRepositories: "nestedRepositories" },
 }));
 vi.mock("../state/threads", () => ({
   threadEnvironment: Object.fromEntries(
@@ -92,7 +107,10 @@ vi.mock("../state/threads", () => ({
   ),
 }));
 vi.mock("../state/vcs", () => ({
-  vcsEnvironment: { removeWorktree: "removeWorktree", refreshStatus: "refreshStatus" },
+  vcsEnvironment: {
+    removeWorktree: "removeWorktree",
+    refreshStatus: "refreshStatus",
+  },
 }));
 vi.mock("../state/entities", () => ({
   readEnvironmentSupportsPinning: () => true,
@@ -232,6 +250,8 @@ beforeEach(() => {
   state.requests = [];
   state.localEffects = [];
   state.confirm.mockReset().mockResolvedValue(true);
+  state.nestedRepositories = [];
+  state.dirtyCwds = new Set();
   state.toasts = [];
   state.afterRequest = undefined;
   state.sessionLookupFails = false;
@@ -324,6 +344,34 @@ describe("thread action permissions", () => {
     expect(state.requests.map((request) => request.action)).toEqual(["stopSession", "delete"]);
     expect(state.localEffects).toContain("clear-terminal-ui");
     expect(state.localEffects).toContain("clear-repository-selection");
+  });
+
+  describe("worktree removal confirmation with inner repositories", () => {
+    const arrangeWorktreeThread = () => {
+      state.scopes
+        .get(secondary)!
+        .add(AuthOrchestrationOperateScope)
+        .add(AuthSourceControlWriteScope);
+      state.threads[0]!.worktreePath = "/worktrees/thread";
+      state.nestedRepositories = ["backend", "ios"];
+    };
+
+    it("names inner repositories with uncommitted changes in the confirmation", async () => {
+      arrangeWorktreeThread();
+      state.dirtyCwds = new Set(["/worktrees/thread/backend", "/worktrees/thread/ios"]);
+      await useThreadActions().deleteThread(target);
+      expect(state.confirm).toHaveBeenCalledOnce();
+      expect(state.confirm.mock.calls[0]![0]).toContain(
+        "2 inner repositories have uncommitted changes that will be lost.",
+      );
+    });
+
+    it("keeps the plain confirmation when every inner repository is clean", async () => {
+      arrangeWorktreeThread();
+      await useThreadActions().deleteThread(target);
+      expect(state.confirm).toHaveBeenCalledOnce();
+      expect(state.confirm.mock.calls[0]![0]).not.toContain("inner repositor");
+    });
   });
 
   it("does not request worktree removal after its grant is revoked during delete", async () => {

@@ -550,18 +550,22 @@ const innerRepositoryCleanupFixture = () =>
     return { ...fixture, inner, innerWorktrees };
   });
 
-it.live("removes inner repository worktrees together with the outer worktree", () =>
-  runCleanupTest(
-    Effect.gen(function* () {
-      const { service, fs, worktree, innerWorktrees } = yield* innerRepositoryCleanupFixture();
-      const report = yield* service.runNow;
-      expect(report.entries.find((entry) => entry.path === worktree)).toMatchObject({
-        outcome: "removed",
-      });
-      expect(yield* fs.exists(worktree)).toBe(false);
-      expect(yield* innerWorktrees()).toBe(1);
-    }),
-  ),
+it.live.each(["any-local-files", "uncommitted-changes", "tracked-changes"] as const)(
+  "removes inner repository worktrees together with the outer worktree (%s)",
+  (policy) =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const { service, fs, worktree, innerWorktrees, setPolicy } =
+          yield* innerRepositoryCleanupFixture();
+        setPolicy(policy);
+        const report = yield* service.runNow;
+        expect(report.entries.find((entry) => entry.path === worktree)).toMatchObject({
+          outcome: "removed",
+        });
+        expect(yield* fs.exists(worktree)).toBe(false);
+        expect(yield* innerWorktrees()).toBe(1);
+      }),
+    ),
 );
 
 it.live.each(["tracked-changes", "uncommitted-changes"] as const)(

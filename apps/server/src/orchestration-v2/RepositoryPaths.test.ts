@@ -30,3 +30,68 @@ it("finds repositories in absolute paths and cd targets, but not in look-alike n
     ["apps/admin"],
   );
 });
+
+const roots = ["/work/project"];
+const repositories = ["backend", "apps/admin", "wt"];
+
+it("ignores paths inside quoted commit messages and echo arguments", () => {
+  assert.deepEqual(
+    repositoriesInCommand(
+      'git commit -m "fix /work/project/backend/a.ts; cd wt"',
+      roots,
+      repositories,
+    ),
+    [],
+  );
+  assert.deepEqual(
+    repositoriesInCommand(
+      "git commit -am 'cd backend' && echo \"/work/project/wt/x\" && cd apps/admin",
+      roots,
+      repositories,
+    ),
+    ["apps/admin"],
+  );
+});
+
+it("resolves a relative cd against the directory an earlier cd reached", () => {
+  assert.deepEqual(repositoriesInCommand("cd apps && cd admin && ls", roots, repositories), [
+    "apps/admin",
+  ]);
+  assert.deepEqual(repositoriesInCommand("cd backend && cd ../wt", roots, repositories), [
+    "backend",
+    "wt",
+  ]);
+  assert.deepEqual(repositoriesInCommand("cd /etc && cd wt", roots, repositories), []);
+  assert.deepEqual(repositoriesInCommand("cd wt", roots, repositories), ["wt"]);
+});
+
+it("ends an absolute path at : , = and >", () => {
+  for (const suffix of [":12", ",x", "=1", ">out.log"]) {
+    assert.deepEqual(
+      repositoriesInCommand(`grep foo /work/project/backend${suffix}`, roots, repositories),
+      ["backend"],
+    );
+  }
+  assert.deepEqual(
+    repositoriesInCommand("ls /work/project/backend-notes", roots, repositories),
+    [],
+  );
+});
+
+it("strips the /private prefix only on darwin", () => {
+  const darwin = { platform: "darwin" } as const;
+  const linux = { platform: "linux" } as const;
+  assert.equal(
+    relativeToWorkspace("/private/work/project/backend/a.ts", roots, darwin),
+    "backend/a.ts",
+  );
+  assert.deepEqual(
+    repositoriesInCommand("cat /private/work/project/backend/a.ts", roots, repositories, darwin),
+    ["backend"],
+  );
+  assert.equal(relativeToWorkspace("/private/work/project/backend/a.ts", roots, linux), null);
+  assert.deepEqual(
+    repositoriesInCommand("cat /private/work/project/backend/a.ts", roots, repositories, linux),
+    [],
+  );
+});

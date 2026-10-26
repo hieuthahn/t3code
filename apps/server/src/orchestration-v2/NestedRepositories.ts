@@ -1,14 +1,8 @@
 import * as NodeOS from "node:os";
 
-import {
-  OrchestrationV2FileChangeDetail,
-  ProjectId,
-  ThreadId,
-  type OrchestrationNestedRepository,
-} from "@t3tools/contracts";
+import { ProjectId, ThreadId, type OrchestrationNestedRepository } from "@t3tools/contracts";
 import { fileChangeEntries } from "@t3tools/shared/fileChangeOutputs";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
-import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -19,6 +13,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlSchema from "effect/sql/SqlSchema";
 
+import { makeCoalescedCache } from "./CoalescedCache.ts";
 import {
   relativeToWorkspace,
   repositoriesInCommand,
@@ -39,9 +34,22 @@ export class NestedRepositoriesError extends Schema.TaggedError<NestedRepositori
 }
 
 const MAX_SCAN_DEPTH = 2;
+const SCAN_CONCURRENCY = 16;
 const CACHE_TTL_MILLIS = 10_000;
+const CACHE_MAX_ENTRIES = 64;
+const BUILD_OUTPUT_NAMES: ReadonlySet<string> = new Set([
+  "dist",
+  "build",
+  "target",
+  "vendor",
+  "Pods",
+  "DerivedData",
+]);
 
-const isScannableName = (name: string) => !name.startsWith(".") && name !== "node_modules";
+const isScannableName = (name: string, depth: number) =>
+  !name.startsWith(".") &&
+  name !== "node_modules" &&
+  !(depth >= MAX_SCAN_DEPTH && BUILD_OUTPUT_NAMES.has(name));
 
 /** Reads the repositories under a workspace root; unreadable entries are skipped. */
 const discover = Effect.fn("NestedRepositories.discover")(function* (workspaceRoot: string) {
@@ -99,28 +107,54 @@ const discover = Effect.fn("NestedRepositories.discover")(function* (workspaceRo
     } satisfies OrchestrationNestedRepository;
   });
 
-  const found: string[] = [];
+  type Entry = {
+    readonly relativePath: string;
+    readonly kind: "repository" | "directory" | "skip";
+  };
+  const classify = Effect.fn("NestedRepositories.classify")(function* (
+    relativeDirectory: string,
+    name: string,
+    depth: number,
+  ) {
+    const relativePath = relativeDirectory === "" ? name : `${relativeDirectory}/${name}`;
+    if (
+      !isScannableName(name, depth) ||
+      !(yield* isDirectory(path.join(workspaceRoot, relativePath)))
+    ) {
+      return { relativePath, kind: "skip" } satisfies Entry;
+    }
+    const hasGit = yield* fs
+      .exists(path.join(workspaceRoot, relativePath, ".git"))
+      .pipe(Effect.orElseSucceed(() => false));
+    return { relativePath, kind: hasGit ? "repository" : "directory" } satisfies Entry;
+  });
+
   const walk = Effect.fn("NestedRepositories.walk")(function* (
     relativeDirectory: string,
     depth: number,
-  ): Effect.fn.Return<void> {
+  ): Effect.fn.Return<ReadonlyArray<string>> {
     const names = yield* fs
       .readDirectory(path.join(workspaceRoot, relativeDirectory))
       .pipe(Effect.orElseSucceed(() => []));
-    for (const name of names.toSorted()) {
-      const relativePath = relativeDirectory === "" ? name : `${relativeDirectory}/${name}`;
-      if (!isScannableName(name) || !(yield* isDirectory(path.join(workspaceRoot, relativePath)))) {
-        continue;
-      }
-      const hasGit = yield* fs
-        .exists(path.join(workspaceRoot, relativePath, ".git"))
-        .pipe(Effect.orElseSucceed(() => false));
-      if (hasGit) found.push(relativePath);
-      else if (depth < MAX_SCAN_DEPTH) yield* walk(relativePath, depth + 1);
-    }
+    const entries = yield* Effect.forEach(
+      names.toSorted(),
+      (name) => classify(relativeDirectory, name, depth),
+      { concurrency: SCAN_CONCURRENCY },
+    );
+    const nested = yield* Effect.forEach(
+      entries.filter((entry) => entry.kind === "directory" && depth < MAX_SCAN_DEPTH),
+      (entry) => walk(entry.relativePath, depth + 1),
+      { concurrency: SCAN_CONCURRENCY },
+    );
+    return [
+      ...entries.filter((entry) => entry.kind === "repository").map((entry) => entry.relativePath),
+      ...nested.flat(),
+    ];
   });
-  yield* walk("", 1);
-  return yield* Effect.forEach(found.toSorted(), describeRepository);
+  const found = yield* walk("", 1);
+  return yield* Effect.forEach(found.toSorted(), describeRepository, {
+    concurrency: SCAN_CONCURRENCY,
+  });
 });
 
 const ProjectRootRequest = Schema.Struct({ projectId: ProjectId });
@@ -130,14 +164,33 @@ const TagRow = Schema.Struct({
   worktreePath: Schema.NullOr(Schema.String),
   type: Schema.String,
   fileName: Schema.NullOr(Schema.String),
-  changesJson: Schema.NullOr(Schema.String),
+  changePathsJson: Schema.NullOr(Schema.String),
   commandInput: Schema.NullOr(Schema.String),
   toolFilePath: Schema.NullOr(Schema.String),
 });
 
-const decodeChanges = Schema.decodeUnknownOption(
-  Schema.fromJsonString(Schema.Array(OrchestrationV2FileChangeDetail)),
+const decodeChangePaths = Schema.decodeUnknownOption(
+  Schema.fromJsonString(
+    Schema.Array(
+      Schema.Struct({
+        path: Schema.String,
+        oldPath: Schema.optional(Schema.NullOr(Schema.String)),
+      }),
+    ),
+  ),
 );
+
+/** Normalized names (lowercase, no separators) of tools whose `file_path` input is a file they modify. */
+const WRITE_TOOL_NAMES = [
+  "edit",
+  "multiedit",
+  "write",
+  "editfile",
+  "writefile",
+  "createfile",
+  "strreplaceeditor",
+  "strreplacebasededittool",
+];
 
 export class NestedRepositories extends Context.Service<
   NestedRepositories,
@@ -156,10 +209,14 @@ export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const services = yield* Effect.context<FileSystem.FileSystem | Path.Path>();
   const home = NodeOS.homedir();
-  const cache = new Map<
-    string,
-    { readonly at: number; readonly repositories: ReadonlyArray<OrchestrationNestedRepository> }
-  >();
+  const scanCache = makeCoalescedCache<
+    ReadonlyArray<OrchestrationNestedRepository>,
+    NestedRepositoriesError
+  >({ ttlMillis: CACHE_TTL_MILLIS, maxEntries: CACHE_MAX_ENTRIES });
+  const tagCache = makeCoalescedCache<
+    Readonly<Record<string, ReadonlyArray<string>>>,
+    NestedRepositoriesError
+  >({ ttlMillis: CACHE_TTL_MILLIS, maxEntries: CACHE_MAX_ENTRIES });
 
   const projectRoot = SqlSchema.findOneOption({
     Request: ProjectRootRequest,
@@ -171,7 +228,7 @@ export const make = Effect.gen(function* () {
     `,
   });
 
-  // json_extract keeps diff and output bodies inside SQLite; only the text we scan comes out.
+  // Only paths leave SQLite, because json_each reduces `changes` to path pairs and diff bodies stay behind.
   const tagRows = SqlSchema.findAll({
     Request: ProjectRootRequest,
     Result: TagRow,
@@ -181,10 +238,17 @@ export const make = Effect.gen(function* () {
         json_extract(threads.payload_json, '$.worktreePath') AS "worktreePath",
         items.type AS "type",
         json_extract(items.payload_json, '$.fileName') AS "fileName",
-        json_extract(items.payload_json, '$.changes') AS "changesJson",
+        CASE WHEN items.type = 'file_change' THEN (
+          SELECT json_group_array(json_object(
+            'path', json_extract(change.value, '$.path'),
+            'oldPath', json_extract(change.value, '$.oldPath')
+          ))
+          FROM json_each(items.payload_json, '$.changes') AS change
+        ) END AS "changePathsJson",
         CASE WHEN items.type = 'command_execution'
           THEN json_extract(items.payload_json, '$.input') END AS "commandInput",
         CASE WHEN items.type = 'dynamic_tool'
+          AND replace(replace(replace(lower(json_extract(items.payload_json, '$.toolName')), '_', ''), '-', ''), ' ', '') IN ${sql.in(WRITE_TOOL_NAMES)}
           THEN json_extract(items.payload_json, '$.input.file_path') END AS "toolFilePath"
       FROM orchestration_v2_projection_turn_items AS items
       INNER JOIN orchestration_v2_projection_threads AS threads
@@ -204,14 +268,8 @@ export const make = Effect.gen(function* () {
       cause,
     });
 
-  const scan = Effect.fn("NestedRepositories.scan")(function* (workspaceRoot: string) {
-    const now = yield* Clock.currentTimeMillis;
-    const cached = cache.get(workspaceRoot);
-    if (cached !== undefined && now - cached.at < CACHE_TTL_MILLIS) return cached.repositories;
-    const repositories = yield* discover(workspaceRoot).pipe(Effect.provideContext(services));
-    cache.set(workspaceRoot, { at: now, repositories });
-    return repositories;
-  });
+  const scan = (workspaceRoot: string) =>
+    scanCache(workspaceRoot, discover(workspaceRoot).pipe(Effect.provideContext(services)));
 
   const rootOf = (projectId: ProjectId) =>
     sql
@@ -229,12 +287,11 @@ export const make = Effect.gen(function* () {
     },
   );
 
-  const threadTags: NestedRepositories["Service"]["threadTags"] = Effect.fn(
-    "NestedRepositories.threadTags",
-  )(function* (projectId) {
-    const root = yield* rootOf(projectId);
-    if (Option.isNone(root)) return {};
-    const repositoryPaths = (yield* scan(root.value)).map((repository) => repository.path);
+  const computeThreadTags = Effect.fn("NestedRepositories.computeThreadTags")(function* (
+    projectId: ProjectId,
+    workspaceRoot: string,
+  ) {
+    const repositoryPaths = (yield* scan(workspaceRoot)).map((repository) => repository.path);
     if (repositoryPaths.length === 0) return {};
     const rows = yield* sql
       .withTransaction(tagRows({ projectId }))
@@ -242,7 +299,7 @@ export const make = Effect.gen(function* () {
 
     const tags = new Map<string, Set<string>>();
     for (const row of rows) {
-      const roots = [row.worktreePath, root.value].filter((value) => value !== null);
+      const roots = [row.worktreePath, workspaceRoot].filter((value) => value !== null);
       const touched = new Set<string>();
       const addPath = (path: string) => {
         const relative = relativeToWorkspace(path, roots);
@@ -251,9 +308,12 @@ export const make = Effect.gen(function* () {
       };
       if (row.type === "file_change") {
         const changes =
-          row.changesJson === null
+          row.changePathsJson === null
             ? undefined
-            : Option.getOrUndefined(decodeChanges(row.changesJson));
+            : Option.getOrUndefined(decodeChangePaths(row.changePathsJson))?.map((change) => ({
+                path: change.path,
+                oldPath: change.oldPath ?? undefined,
+              }));
         for (const change of fileChangeEntries({ fileName: row.fileName ?? "", changes })) {
           for (const path of [change.path, change.oldPath]) {
             if (path !== undefined) addPath(toWorkspaceRelativePath(path, roots, home));
@@ -274,6 +334,14 @@ export const make = Effect.gen(function* () {
     return Object.fromEntries(
       [...tags].map(([threadId, repositories]) => [threadId, [...repositories].toSorted()]),
     );
+  });
+
+  const threadTags: NestedRepositories["Service"]["threadTags"] = Effect.fn(
+    "NestedRepositories.threadTags",
+  )(function* (projectId) {
+    const root = yield* rootOf(projectId);
+    if (Option.isNone(root)) return {};
+    return yield* tagCache(projectId, computeThreadTags(projectId, root.value));
   });
 
   return NestedRepositories.of({ list, threadTags });

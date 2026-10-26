@@ -122,8 +122,8 @@ const turnItem = (
 const command = (threadId: ThreadId, id: string, minute: number, input: string) =>
   turnItem(threadId, id, minute, { type: "command_execution", input });
 
-const tool = (threadId: ThreadId, id: string, minute: number, input: unknown) =>
-  turnItem(threadId, id, minute, { type: "dynamic_tool", toolName: "Edit", input });
+const tool = (threadId: ThreadId, id: string, minute: number, input: unknown, toolName = "Edit") =>
+  turnItem(threadId, id, minute, { type: "dynamic_tool", toolName, input });
 
 const fileChange = (
   threadId: ThreadId,
@@ -179,6 +179,9 @@ const makeWorkspace = Effect.fn("test.makeWorkspace")(function* () {
   yield* gitDirectory(path.join(root, ".claude/worktrees/x/.git"), "main");
   yield* gitDirectory(path.join(root, ".hidden/.git"), "main");
   yield* gitDirectory(path.join(root, "deep/a/b/.git"), "main");
+  yield* gitDirectory(path.join(root, "apps/vendor/.git"), "main");
+  yield* gitDirectory(path.join(root, "apps/Pods/.git"), "main");
+  yield* gitDirectory(path.join(root, "vendor/.git"), "main");
   return root;
 });
 
@@ -216,6 +219,7 @@ it.layer(layerTest)("NestedRepositories", (it) => {
           branch: "develop",
           originUrl: "git@host:org/backend.git",
         },
+        { path: "vendor", name: "vendor", branch: "main", originUrl: null },
         { path: "wt", name: "wt", branch: "wt-branch", originUrl: "git@host:org/wt.git" },
       ]);
     }),
@@ -253,7 +257,7 @@ it.layer(layerTest)("NestedRepositories", (it) => {
         thread(outside, project),
         command(absolute, "a1", 1, `cd "${root}/backend" && git status`),
         command(relative, "r1", 2, "cd apps/admin/src && ls"),
-        command(chained, "ch1", 3, "cd ./wt/ ; git -C backend log"),
+        command(chained, "ch1", 3, "cd ./wt/ ; cd ../backend && git log"),
         command(outside, "o1", 4, "cd /etc && cat /tmp/backend/file ; cd ../backend"),
         tool(outside, "o2", 5, { file_path: "/somewhere/else/backend/a.ts" }),
       ]);
@@ -282,6 +286,41 @@ it.layer(layerTest)("NestedRepositories", (it) => {
       ]);
 
       assert.deepEqual(yield* tags(project), { [threadId]: ["wt"] });
+    }),
+  );
+
+  it.effect("counts dynamic_tool items only for write and edit tools", () =>
+    Effect.gen(function* () {
+      const root = yield* makeWorkspace();
+      const project = ProjectId.make("project:tools");
+      const reader = ThreadId.make("thread:reader");
+      const writer = ThreadId.make("thread:writer");
+      yield* createProject(project, root);
+      yield* seed([
+        thread(reader, project),
+        thread(writer, project),
+        tool(reader, "r1", 1, { file_path: `${root}/backend/a.ts` }, "Read"),
+        tool(writer, "w1", 2, { file_path: `${root}/backend/a.ts` }, "write_file"),
+      ]);
+
+      assert.deepEqual(yield* tags(project), { [writer]: ["backend"] });
+    }),
+  );
+
+  it.effect("tags file_change items from stored paths including old paths", () =>
+    Effect.gen(function* () {
+      const root = yield* makeWorkspace();
+      const project = ProjectId.make("project:rename");
+      const threadId = ThreadId.make("thread:rename");
+      yield* createProject(project, root);
+      yield* seed([
+        thread(threadId, project),
+        fileChange(threadId, "f1", 1, [
+          { operation: "rename", path: `${root}/wt/new.ts`, oldPath: `${root}/backend/old.ts` },
+        ]),
+      ]);
+
+      assert.deepEqual(yield* tags(project), { [threadId]: ["backend", "wt"] });
     }),
   );
 });

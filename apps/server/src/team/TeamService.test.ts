@@ -16,6 +16,7 @@ import {
   type OrchestratorMcpTeamAssignment,
   type TeamSetup,
 } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -65,6 +66,7 @@ interface Fixture {
   readonly sent: Array<string>;
   readonly interrupted: Array<ThreadId>;
   readonly stopped: Array<ThreadId>;
+  readonly settled: Array<ThreadId>;
   /** Each proposed task's key and the worker number the card shows. */
   readonly proposed: Array<{ readonly key: string; readonly worker: number | undefined }>;
   /** The team's cards, as the thread records them. */
@@ -91,6 +93,7 @@ const makeFixture = (setup: TeamSetup = team()): Fixture => ({
   sent: [],
   interrupted: [],
   stopped: [],
+  settled: [],
   proposed: [],
   cards: [],
 });
@@ -175,6 +178,11 @@ const dependenciesFor = (fixture: Fixture) =>
         Effect.sync(() => {
           fixture.interrupted.push(input.threadId);
           return {} as never;
+        }),
+      settleThread: (input) =>
+        Effect.sync(() => {
+          fixture.settled.push(input.threadId);
+          return { sequence: 1 };
         }),
       stopDelegatedTasks: (input) =>
         Effect.sync(() => {
@@ -788,6 +796,39 @@ it.effect("keeps a team with no worker in flight running across a restart", () =
         assert.isNull(view?.report ?? null);
       }).pipe(Effect.provide(serviceLayer));
     }).pipe(Effect.provide(dependenciesFor(fixture)));
+  }),
+);
+
+it.effect("settles the finished workers of a team that finishes, not a pinned one", () =>
+  Effect.gen(function* () {
+    const fixture = makeFixture();
+    yield* withTeam(fixture, (service) =>
+      Effect.gen(function* () {
+        yield* assign(service, [work("api"), work("ui", { worker: 2 })]);
+        fixture.tasks.set("api", { status: "completed", result: "Built it." });
+        fixture.tasks.set("ui", { status: "completed", result: "Styled it." });
+        const finished = {
+          deletedAt: null,
+          archivedAt: null,
+          settledOverride: null,
+          pendingRuntimeRequest: null,
+          activeRunId: null,
+          status: "completed" as const,
+        };
+        fixture.shells.set(ThreadId.make("thread:api"), {
+          ...fixture.shells.get(ThreadId.make("thread:api")),
+          ...finished,
+        });
+        fixture.shells.set(ThreadId.make("thread:ui"), {
+          ...fixture.shells.get(ThreadId.make("thread:ui")),
+          ...finished,
+          pinnedAt: DateTime.makeUnsafe(0),
+        });
+        yield* service.tick;
+        yield* service.finish(scope, { summary: "Shipped." });
+        assert.deepEqual(fixture.settled, [ThreadId.make("thread:api")]);
+      }),
+    );
   }),
 );
 

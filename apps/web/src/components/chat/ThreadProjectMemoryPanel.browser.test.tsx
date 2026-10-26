@@ -1,9 +1,12 @@
 import { EnvironmentId, ProjectId, type ProjectMemoryEntry } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import { expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
 const state = vi.hoisted(() => ({
   allowed: true,
+  loading: false,
+  failEdit: null as string | null,
   entries: [] as ProjectMemoryEntry[],
   queryAtoms: [] as unknown[],
   calls: [] as Array<{ readonly action: string; readonly input: unknown }>,
@@ -23,6 +26,9 @@ vi.mock(import("../../state/use-atom-command"), async (importOriginal) => {
   const { serverEnvironment } = await import("../../state/server");
   const run = (action: string, input: unknown) => {
     state.calls.push({ action, input });
+    if (action === "edit" && state.failEdit !== null) {
+      return { _tag: "Failure", cause: Cause.fail(new Error(state.failEdit)) };
+    }
     const { input: body } = input as {
       input: { entryId?: string; text?: string; projectId: string };
     };
@@ -61,7 +67,7 @@ vi.mock(import("../../state/query"), async (importOriginal) => ({
   ...(await importOriginal()),
   useEnvironmentQuery: ((atom: unknown) => {
     state.queryAtoms.push(atom);
-    return { data: atom === null ? null : state.entries, error: null };
+    return { data: atom === null || state.loading ? null : state.entries, error: null };
   }) as never,
 }));
 
@@ -80,8 +86,14 @@ const entry = (id: string, text: string): ProjectMemoryEntry =>
     updatedAt: "2026-10-25T00:00:00.000Z",
   }) as ProjectMemoryEntry;
 
-async function setup(entries: ProjectMemoryEntry[], project: ProjectId | null = projectId) {
+async function setup(
+  entries: ProjectMemoryEntry[],
+  project: ProjectId | null = projectId,
+  options: { readonly loading?: boolean; readonly failEdit?: string } = {},
+) {
   state.allowed = true;
+  state.loading = options.loading ?? false;
+  state.failEdit = options.failEdit ?? null;
   state.entries = entries;
   state.queryAtoms = [];
   state.calls = [];
@@ -197,4 +209,41 @@ it("disables every control without the operate grant", async () => {
   for (const label of ["Add to memory", "Edit memory: Use pnpm", "Delete memory: Use pnpm"]) {
     expect((fixture.byLabel(label) as HTMLButtonElement | HTMLInputElement).disabled).toBe(true);
   }
+});
+
+it("does not claim the memory is empty while it is still loading", async () => {
+  await using fixture = await setup([], projectId, { loading: true });
+  expect(fixture.container.textContent).not.toContain("Nothing saved yet.");
+  state.loading = false;
+  await fixture.show(projectId);
+  expect(fixture.container.textContent).toContain("Nothing saved yet.");
+});
+
+it("keeps Enter for the IME while a composition is open", async () => {
+  await using fixture = await setup([entry("memory:1", "Use pnpm")]);
+  const field = fixture.byLabel("Add to memory") as HTMLInputElement;
+  await userEvent.click(field);
+  await userEvent.keyboard("xin chao");
+  const composing = new KeyboardEvent("keydown", { key: "Enter", bubbles: true });
+  Object.defineProperty(composing, "isComposing", { value: true });
+  await act(async () => void field.dispatchEvent(composing));
+  expect(state.calls).toEqual([]);
+  await act(
+    async () =>
+      void field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
+  expect(state.calls).toHaveLength(1);
+});
+
+it("keeps the draft and shows the error when an edit fails, and survives a blur", async () => {
+  await using fixture = await setup([entry("memory:1", "Use pnpm")], projectId, {
+    failEdit: "Disk full",
+  });
+  await act(async () => fixture.byLabel("Edit memory: Use pnpm")!.click());
+  await userEvent.keyboard(" via vp{Enter}");
+  const field = fixture.byLabel("Edit memory") as HTMLInputElement;
+  expect(field.value).toBe("Use pnpm via vp");
+  expect(fixture.container.textContent).toContain("Disk full");
+  await act(async () => void field.blur());
+  expect(fixture.byLabel("Edit memory")).not.toBeNull();
 });

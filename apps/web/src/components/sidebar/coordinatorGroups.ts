@@ -10,17 +10,24 @@ export interface CoordinatorGroup<T> {
   readonly childCount: number;
 }
 
-/** Keep only the children that are themselves listed in the section, so a thread shown elsewhere never joins a group twice. */
+/**
+ * Keep the children listed in this section plus those no section lists, so a child never joins two groups
+ * but a nested child that has no row of its own still renders under its parent.
+ * Without `listedKeys`, only the section's own items qualify.
+ */
 export function restrictChildrenToItems<T>(
   items: readonly T[],
   childrenByParentKey: ReadonlyMap<string, readonly T[]>,
   keyOf: (thread: T) => string,
+  listedKeys?: ReadonlySet<string>,
 ): ReadonlyMap<string, readonly T[]> {
-  const listedKeys = new Set(items.map(keyOf));
+  const sectionKeys = new Set(items.map(keyOf));
+  const keeps = (child: T) =>
+    sectionKeys.has(keyOf(child)) || (listedKeys !== undefined && !listedKeys.has(keyOf(child)));
   const restricted = new Map<string, readonly T[]>();
   for (const [parentKey, children] of childrenByParentKey) {
-    const listed = children.filter((child) => listedKeys.has(keyOf(child)));
-    if (listed.length > 0) restricted.set(parentKey, listed);
+    const kept = children.filter(keeps);
+    if (kept.length > 0) restricted.set(parentKey, kept);
   }
   return restricted;
 }
@@ -35,10 +42,16 @@ export function groupByCoordinator<T>(
     readonly keyOf: (thread: T) => string;
     readonly titleOf: (thread: T) => string;
     readonly childrenByParentKey: ReadonlyMap<string, readonly T[]>;
+    readonly listedKeys?: ReadonlySet<string>;
   },
 ): CoordinatorGroup<T>[] {
   const { keyOf, titleOf } = input;
-  const childrenByParentKey = restrictChildrenToItems(items, input.childrenByParentKey, keyOf);
+  const childrenByParentKey = restrictChildrenToItems(
+    items,
+    input.childrenByParentKey,
+    keyOf,
+    input.listedKeys,
+  );
   const groups: CoordinatorGroup<T>[] = [];
   const standalone: T[] = [];
   const descendantsOf = (parentKey: string, seen: Set<string>): T[] =>

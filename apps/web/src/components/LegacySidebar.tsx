@@ -1676,6 +1676,15 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         };
       };
 
+      actionHandlers.set("project-library", () => {
+        const projectRef = project.memberProjectRefs[0];
+        if (!projectRef) return;
+        if (isMobile) setOpenMobile(false);
+        void router.navigate({
+          to: "/library",
+          search: { environmentId: projectRef.environmentId, projectId: projectRef.projectId },
+        });
+      });
       actionHandlers.set("project-settings", () => {
         if (isMobile) setOpenMobile(false);
         void router.navigate({
@@ -1692,6 +1701,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           }),
           buildTargetedItem("grouping", "Group into..."),
           buildTargetedItem("copy-path", "Copy Path"),
+          { id: "project-library", label: "Library" },
           { id: "project-settings", label: "Project settings", icon: "settings" },
           buildTargetedItem("delete", "Remove", {
             destructive: true,

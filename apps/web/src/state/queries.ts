@@ -13,7 +13,9 @@ import type {
   EnvironmentId,
   ProjectContentMatch,
   ProjectEntry,
+  OrchestrationProjectLibraryCursor,
   ProjectEntryKind,
+  ProjectId,
   ThreadId,
   TurnItemId,
   VcsListRefsResult,
@@ -381,6 +383,22 @@ export function useCheckpointDiff(
     turnTarget === null ? null : orchestrationEnvironment.turnDiff(turnTarget),
   );
   return fullThreadTarget === null ? turn : fullThread;
+}
+
+export function useProjectLibraryPage(target: {
+  readonly environmentId: EnvironmentId;
+  readonly projectId: ProjectId;
+  readonly cursor: OrchestrationProjectLibraryCursor | null;
+}) {
+  return useEnvironmentQuery(
+    orchestrationEnvironment.projectLibrary({
+      environmentId: target.environmentId,
+      input:
+        target.cursor === null
+          ? { projectId: target.projectId }
+          : { projectId: target.projectId, cursor: target.cursor },
+    }),
+  );
 }
 
 export function useTurnItemDetail(

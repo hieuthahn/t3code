@@ -166,6 +166,11 @@ import {
 } from "./review.ts";
 import { KeybindingsConfigError } from "./keybindings.ts";
 import {
+  OrchestrationListProjectLibraryError,
+  OrchestrationListProjectLibraryInput,
+  OrchestrationListProjectLibraryResult,
+} from "./projectLibrary.ts";
+import {
   OrchestrationSearchThreadsError,
   OrchestrationSearchThreadsInput,
   OrchestrationSearchThreadsResult,
@@ -1743,6 +1748,15 @@ const WsOrchestrationV2SearchThreadsRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.s
   error: Schema.Union([OrchestrationSearchThreadsError, EnvironmentAuthorizationError]),
 });
 
+const WsOrchestrationV2ListProjectLibraryRpc = Rpc.make(
+  ORCHESTRATION_V2_WS_METHODS.listProjectLibrary,
+  {
+    payload: OrchestrationListProjectLibraryInput,
+    success: OrchestrationListProjectLibraryResult,
+    error: Schema.Union([OrchestrationListProjectLibraryError, EnvironmentAuthorizationError]),
+  },
+);
+
 const WsOrchestrationV2GetArchivedShellSnapshotRpc = Rpc.make(
   ORCHESTRATION_V2_WS_METHODS.getArchivedShellSnapshot,
   {
@@ -2043,6 +2057,7 @@ export const WsOrchestrationV2RpcGroup = RpcGroup.make(
   WsOrchestrationV2GetTurnDiffRpc,
   WsOrchestrationV2GetFullThreadDiffRpc,
   WsOrchestrationV2SearchThreadsRpc,
+  WsOrchestrationV2ListProjectLibraryRpc,
   WsOrchestrationV2SearchThreadRpc,
   WsOrchestrationV2SearchThreadStreamRpc,
   WsOrchestrationV2GetArchivedShellSnapshotRpc,

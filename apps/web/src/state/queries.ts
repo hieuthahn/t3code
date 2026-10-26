@@ -389,14 +389,41 @@ export function useProjectLibraryPage(target: {
   readonly environmentId: EnvironmentId;
   readonly projectId: ProjectId;
   readonly cursor: OrchestrationProjectLibraryCursor | null;
+  readonly repository?: string | null;
 }) {
+  const { environmentId, projectId, cursor, repository } = target;
   return useEnvironmentQuery(
     orchestrationEnvironment.projectLibrary({
+      environmentId,
+      input: {
+        projectId,
+        ...(cursor === null ? {} : { cursor }),
+        ...(repository == null ? {} : { repository }),
+      },
+    }),
+  );
+}
+
+export function useNestedRepositories(target: {
+  readonly environmentId: EnvironmentId;
+  readonly projectId: ProjectId;
+}) {
+  return useEnvironmentQuery(
+    orchestrationEnvironment.nestedRepositories({
       environmentId: target.environmentId,
-      input:
-        target.cursor === null
-          ? { projectId: target.projectId }
-          : { projectId: target.projectId, cursor: target.cursor },
+      input: { projectId: target.projectId },
+    }),
+  );
+}
+
+export function useThreadRepositoryTags(target: {
+  readonly environmentId: EnvironmentId;
+  readonly projectId: ProjectId;
+}) {
+  return useEnvironmentQuery(
+    orchestrationEnvironment.threadRepositoryTags({
+      environmentId: target.environmentId,
+      input: { projectId: target.projectId },
     }),
   );
 }

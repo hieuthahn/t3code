@@ -154,6 +154,18 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
       staleTimeMs: 10_000,
       idleTtlMs: 60_000,
     }),
+    nestedRepositories: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:orchestration:nested-repositories",
+      tag: ORCHESTRATION_V2_WS_METHODS.listNestedRepositories,
+      staleTimeMs: 10_000,
+      idleTtlMs: 60_000,
+    }),
+    threadRepositoryTags: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:orchestration:thread-repository-tags",
+      tag: ORCHESTRATION_V2_WS_METHODS.listThreadRepositoryTags,
+      staleTimeMs: 10_000,
+      idleTtlMs: 60_000,
+    }),
     archivedShellSnapshot: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:orchestration:archived-shell-snapshot",
       tag: ORCHESTRATION_V2_WS_METHODS.getArchivedShellSnapshot,

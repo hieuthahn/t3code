@@ -297,6 +297,7 @@ describe("threadDetailsPanels", () => {
         context: false,
         connectors: false,
         outputs: false,
+        memory: false,
       });
     }
     expect(threadDetailsPanels("full", false)).toEqual({
@@ -307,6 +308,7 @@ describe("threadDetailsPanels", () => {
       context: true,
       connectors: true,
       outputs: true,
+      memory: true,
     });
   });
 
@@ -319,6 +321,7 @@ describe("threadDetailsPanels", () => {
       context: false,
       connectors: false,
       outputs: false,
+      memory: false,
     });
   });
 });

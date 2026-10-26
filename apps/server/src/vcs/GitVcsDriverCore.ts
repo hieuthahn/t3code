@@ -4445,6 +4445,12 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       { allowNonZeroExit: true, timeoutMs: 5_000 },
     ).pipe(Effect.map((result) => (result.exitCode === 0 ? result.stdout.trim() : null)));
 
+  const isLinkedWorktreeDirectory = (directory: string) =>
+    fileSystem.stat(path.join(directory, ".git")).pipe(
+      Effect.map((info) => info.type === "File"),
+      Effect.orElseSucceed(() => false),
+    );
+
   const listNestedWorktrees: GitVcsDriver.GitVcsDriver["Service"]["listNestedWorktrees"] =
     Effect.fn("listNestedWorktrees")(function* (input) {
       const linked = yield* Effect.filter(yield* nestedWorktreeCandidates(input), (entry) =>
@@ -4521,6 +4527,48 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     );
   });
 
+  /** Renames the branch of each inner repository worktree that followed the outer branch. */
+  const renameNestedBranches = Effect.fn("renameNestedBranches")(function* (input: {
+    readonly cwd: string;
+    readonly oldBranch: string;
+    readonly newBranch: string;
+    readonly exactName?: boolean | undefined;
+  }) {
+    const failed: string[] = [];
+    for (const repository of yield* discoverNested(input.cwd)) {
+      const directory = path.join(input.cwd, repository.path);
+      if (
+        !(yield* isLinkedWorktreeDirectory(directory)) ||
+        (yield* readCurrentBranch(directory)) !== input.oldBranch
+      ) {
+        continue;
+      }
+      yield* Effect.gen(function* () {
+        const target = input.exactName
+          ? input.newBranch
+          : yield* resolveAvailableBranchName(directory, input.newBranch);
+        yield* executeGit(
+          "GitVcsDriver.renameBranch.nested",
+          directory,
+          ["branch", "-m", "--", input.oldBranch, target],
+          { timeoutMs: 10_000, fallbackErrorDetail: "git branch rename failed" },
+        );
+      }).pipe(
+        Effect.catch(() => {
+          failed.push(repository.path);
+          return Effect.void;
+        }),
+      );
+    }
+    if (failed.length > 0) {
+      yield* Effect.logWarning("GitVcsDriver.renameBranch: inner repository branches kept", {
+        cwd: input.cwd,
+        oldBranch: input.oldBranch,
+        repositories: failed,
+      });
+    }
+  });
+
   const renameBranch: GitVcsDriver.GitVcsDriver["Service"]["renameBranch"] = Effect.fn(
     "renameBranch",
   )(function* (input) {
@@ -4540,6 +4588,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         fallbackErrorDetail: "git branch rename failed",
       },
     );
+    if (yield* isLinkedWorktreeDirectory(input.cwd)) {
+      yield* renameNestedBranches({ ...input, newBranch: targetBranch });
+    }
 
     return { branch: targetBranch };
   });

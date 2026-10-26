@@ -1011,6 +1011,28 @@ const make = Effect.gen(function* () {
           )
         )
           return keep("settings changed since check");
+        const nestedWorktrees = yield* git.listNestedWorktrees({
+          cwd: project.workspaceRoot,
+          path: worktreePath,
+        });
+        for (const nested of nestedWorktrees) {
+          const changes = yield* localChangesReason(nested.worktree, settings);
+          if (changes !== null) return keep(`inner repository ${nested.path} ${changes}`);
+        }
+        // Inner worktrees go first: `git clean -ffdx` below would delete them
+        // as untracked repositories and leave their metadata behind.
+        for (const nested of nestedWorktrees) {
+          if (settings.worktreeKeepWhen === "tracked-changes")
+            yield* cleanupGit(nested.worktree, ["clean", "-ffdx"], "git clean");
+          yield* removeLinkedWorktree({
+            operation: "StorageCleanup.cleanupGit",
+            cwd: nested.root,
+            worktreePath: nested.worktree,
+            force: false,
+            execute: git.execute,
+            run: (args) => cleanupGit(nested.root, [...args], "git worktree remove"),
+          });
+        }
         // Clean only untracked files. Ordinary worktrees retain Git's final tracked-edit check.
         if (settings.worktreeKeepWhen === "tracked-changes")
           yield* cleanupGit(worktreePath, ["clean", "-ffdx"], "git clean");

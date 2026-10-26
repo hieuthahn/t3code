@@ -524,6 +524,66 @@ it.live("removes clean submodules recursively, including deinitialized repositor
   ),
 );
 
+const innerRepositoryCleanupFixture = () =>
+  Effect.gen(function* () {
+    const fixture = yield* cleanupFixture();
+    const { command, fs, repo, worktree } = fixture;
+    const innerRoot = `${repo}/backend`;
+    const inner = `${worktree}/backend`;
+    yield* fs.makeDirectory(innerRoot);
+    yield* command(innerRoot, ["init", "-b", "main"]);
+    yield* command(innerRoot, ["config", "user.email", "cleanup@example.test"]);
+    yield* command(innerRoot, ["config", "user.name", "Cleanup test"]);
+    yield* fs.writeFileString(`${innerRoot}/server.txt`, "original\n");
+    yield* command(innerRoot, ["add", "."]);
+    yield* command(innerRoot, ["commit", "-m", "initial"]);
+    const exclude = `${repo}/.git/info/exclude`;
+    yield* fs.writeFileString(exclude, `${yield* fs.readFileString(exclude)}backend/\n`);
+    yield* command(innerRoot, ["worktree", "add", "-b", "feature", inner]);
+    const innerWorktrees = () =>
+      command(innerRoot, ["worktree", "list", "--porcelain"]).pipe(
+        Effect.map(
+          (result) =>
+            result.stdout.split("\n").filter((line) => line.startsWith("worktree ")).length,
+        ),
+      );
+    return { ...fixture, inner, innerWorktrees };
+  });
+
+it.live("removes inner repository worktrees together with the outer worktree", () =>
+  runCleanupTest(
+    Effect.gen(function* () {
+      const { service, fs, worktree, innerWorktrees } = yield* innerRepositoryCleanupFixture();
+      const report = yield* service.runNow;
+      expect(report.entries.find((entry) => entry.path === worktree)).toMatchObject({
+        outcome: "removed",
+      });
+      expect(yield* fs.exists(worktree)).toBe(false);
+      expect(yield* innerWorktrees()).toBe(1);
+    }),
+  ),
+);
+
+it.live.each(["tracked-changes", "uncommitted-changes"] as const)(
+  "keeps a worktree whose inner repository has changes (%s)",
+  (policy) =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const { service, fs, worktree, inner, innerWorktrees, setPolicy } =
+          yield* innerRepositoryCleanupFixture();
+        setPolicy(policy);
+        yield* fs.writeFileString(`${inner}/server.txt`, "local edit\n");
+        const report = yield* service.runNow;
+        expect(report.entries.find((entry) => entry.path === worktree)).toMatchObject({
+          outcome: "kept",
+          reason: expect.stringContaining("backend"),
+        });
+        expect(yield* fs.readFileString(`${inner}/server.txt`)).toBe("local edit\n");
+        expect(yield* innerWorktrees()).toBe(2);
+      }),
+    ),
+);
+
 it.live("keeps nested submodule files protected by the current keep rule", () =>
   runCleanupTest(
     Effect.gen(function* () {

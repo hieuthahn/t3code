@@ -4425,14 +4425,40 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     );
   });
 
-  const removeWorktree: GitVcsDriver.GitVcsDriver["Service"]["removeWorktree"] = Effect.fn(
-    "removeWorktree",
-  )(function* (input) {
+  const nestedWorktreeCandidates = Effect.fn("nestedWorktreeCandidates")(function* (input: {
+    readonly cwd: string;
+    readonly path: string;
+  }) {
     const target = path.resolve(input.cwd, input.path);
-    const nested = (yield* discoverNested(input.cwd)).map((repository) => ({
+    return (yield* discoverNested(input.cwd)).map((repository) => ({
+      path: repository.path,
       root: path.join(input.cwd, repository.path),
       worktree: path.join(target, repository.path),
     }));
+  });
+
+  const readCurrentBranch = (directory: string) =>
+    executeGit(
+      "GitVcsDriver.readCurrentBranch",
+      directory,
+      ["symbolic-ref", "--quiet", "--short", "HEAD"],
+      { allowNonZeroExit: true, timeoutMs: 5_000 },
+    ).pipe(Effect.map((result) => (result.exitCode === 0 ? result.stdout.trim() : null)));
+
+  const listNestedWorktrees: GitVcsDriver.GitVcsDriver["Service"]["listNestedWorktrees"] =
+    Effect.fn("listNestedWorktrees")(function* (input) {
+      const linked = yield* Effect.filter(yield* nestedWorktreeCandidates(input), (entry) =>
+        isLinkedWorktreeOf(entry.root, entry.worktree),
+      );
+      return yield* Effect.forEach(linked, (entry) =>
+        readCurrentBranch(entry.worktree).pipe(Effect.map((branch) => ({ ...entry, branch }))),
+      );
+    });
+
+  const removeWorktree: GitVcsDriver.GitVcsDriver["Service"]["removeWorktree"] = Effect.fn(
+    "removeWorktree",
+  )(function* (input) {
+    const nested = yield* nestedWorktreeCandidates(input);
     const linked = yield* Effect.filter(nested, (entry) =>
       isLinkedWorktreeOf(entry.root, entry.worktree),
     );
@@ -4743,6 +4769,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     setBranchUpstream: (input) => withListRefsInvalidation(input.cwd, setBranchUpstream(input)),
     removeWorktree: (input) => withListRefsInvalidation(input.cwd, removeWorktree(input)),
     pruneWorktrees: (input) => withListRefsInvalidation(input.cwd, pruneWorktrees(input)),
+    listNestedWorktrees,
     deleteLocalBranch: (input) => withListRefsInvalidation(input.cwd, deleteLocalBranch(input)),
     renameBranch: (input) => withListRefsInvalidation(input.cwd, renameBranch(input)),
     createRef: (input) => withListRefsInvalidation(input.cwd, createRef(input)),

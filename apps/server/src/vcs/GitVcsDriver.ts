@@ -305,6 +305,14 @@ export interface GitRemoteStatusOptions {
   readonly refreshUpstream?: boolean;
 }
 
+export interface GitNestedWorktree {
+  /** Path of the inner repository relative to the workspace root. */
+  readonly path: string;
+  readonly root: string;
+  readonly worktree: string;
+  readonly branch: string | null;
+}
+
 export class GitVcsDriver extends Context.Service<
   GitVcsDriver,
   {
@@ -409,6 +417,11 @@ export class GitVcsDriver extends Context.Service<
     readonly pruneWorktrees: (input: {
       readonly cwd: string;
     }) => Effect.Effect<void, GitCommandError>;
+    /** Lists the inner repository worktrees linked under the worktree at `path`. */
+    readonly listNestedWorktrees: (input: {
+      readonly cwd: string;
+      readonly path: string;
+    }) => Effect.Effect<ReadonlyArray<GitNestedWorktree>, GitCommandError>;
     readonly listWorktreePaths: (cwd: string) => Effect.Effect<string[], GitCommandError>;
     readonly deleteLocalBranch: (
       input: GitDeleteLocalBranchInput,

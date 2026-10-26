@@ -249,19 +249,27 @@ const make = Effect.gen(function* () {
             }).pipe(Effect.as({ status: "failed", detail } as const));
           });
 
-        const removeCreatedWorktree = Effect.suspend(() =>
-          gitWorkflow.removeWorktree({ cwd: projectCwd, path: worktreePath, force: true }).pipe(
-            Effect.andThen(
-              Effect.suspend(() =>
-                gitWorkflow.deleteLocalBranch({
-                  cwd: projectCwd,
-                  refName: worktree.worktree.refName,
-                  force: true,
-                }),
-              ),
-            ),
-          ),
-        ).pipe(Effect.ignoreCause({ log: true }));
+        const removeCreatedWorktree = Effect.gen(function* () {
+          const nested = yield* gitWorkflow
+            .listNestedWorktrees({ cwd: projectCwd, path: worktreePath })
+            .pipe(Effect.orElseSucceed(() => []));
+          yield* gitWorkflow.removeWorktree({ cwd: projectCwd, path: worktreePath, force: true });
+          yield* gitWorkflow.deleteLocalBranch({
+            cwd: projectCwd,
+            refName: worktree.worktree.refName,
+            force: true,
+          });
+          yield* Effect.forEach(
+            nested,
+            (entry) =>
+              entry.branch === null
+                ? Effect.void
+                : gitWorkflow
+                    .deleteLocalBranch({ cwd: entry.root, refName: entry.branch, force: true })
+                    .pipe(Effect.ignoreCause({ log: true })),
+            { discard: true },
+          );
+        }).pipe(Effect.ignoreCause({ log: true }));
 
         const recheckAndBind = Effect.gen(function* () {
           // A concurrent UI binding may have landed during git work; do not orphan a second worktree.

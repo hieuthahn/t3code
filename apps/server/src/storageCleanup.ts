@@ -526,6 +526,7 @@ const make = Effect.gen(function* () {
   const localChangesReason = Effect.fn("StorageCleanup.localChangesReason")(function* (
     cwd: string,
     rules: WorktreeCleanupRules,
+    innerRepositoryPaths: ReadonlyArray<string> = [],
   ) {
     const status = yield* git.execute({
       operation: "StorageCleanup.localChanges",
@@ -557,9 +558,13 @@ const make = Effect.gen(function* () {
       maxOutputBytes: 64 * 1024,
     });
     if (ignored.stdoutTruncated) return "ignored files exceed the inspection limit";
+    const innerDirectories = new Set(innerRepositoryPaths.map((entry) => `${entry}/`));
     const file = ignored.stdout
       .split("\0")
-      .find((entry) => entry !== "" && !/(^|\/)node_modules\/$/.test(entry));
+      .find(
+        (entry) =>
+          entry !== "" && !/(^|\/)node_modules\/$/.test(entry) && !innerDirectories.has(entry),
+      );
     return file === undefined ? null : `has ignored files (${file})`;
   });
 
@@ -807,7 +812,11 @@ const make = Effect.gen(function* () {
           return keep("not a linked worktree");
         if (yield* branchChanged(worktreePath, thread.branch))
           return keep("repository or branch changed");
-        const changes = yield* localChangesReason(worktreePath, settings);
+        const innerPaths = (yield* git.listNestedWorktrees({
+          cwd: project.workspaceRoot,
+          path: worktreePath,
+        })).map((nested) => nested.path);
+        const changes = yield* localChangesReason(worktreePath, settings, innerPaths);
         if (changes !== null) return keep(changes);
         if (
           group.some(
@@ -992,8 +1001,17 @@ const make = Effect.gen(function* () {
           head.commitSha
         )
           return keep("commit changed since check");
-        const finalChanges = yield* localChangesReason(worktreePath, settings);
+        const nestedWorktrees = yield* git.listNestedWorktrees({
+          cwd: project.workspaceRoot,
+          path: worktreePath,
+        });
+        const nestedPaths = nestedWorktrees.map((nested) => nested.path);
+        const finalChanges = yield* localChangesReason(worktreePath, settings, nestedPaths);
         if (finalChanges !== null) return keep(finalChanges);
+        for (const nested of nestedWorktrees) {
+          const changes = yield* localChangesReason(nested.worktree, settings);
+          if (changes !== null) return keep(`inner repository ${nested.path} ${changes}`);
+        }
         const current = resolveWorktreeCleanup(
           yield* settingsService.getSettings,
           thread.projectId,
@@ -1005,16 +1023,20 @@ const make = Effect.gen(function* () {
           )
         )
           return keep("settings changed since check");
-        const nestedWorktrees = yield* git.listNestedWorktrees({
-          cwd: project.workspaceRoot,
-          path: worktreePath,
-        });
-        for (const nested of nestedWorktrees) {
-          const changes = yield* localChangesReason(nested.worktree, settings);
-          if (changes !== null) return keep(`inner repository ${nested.path} ${changes}`);
+        // Clean only untracked files. Ordinary worktrees retain Git's final tracked-edit check.
+        // The exclusions keep -ff from deleting inner worktrees as untracked repositories.
+        if (settings.worktreeKeepWhen === "tracked-changes")
+          yield* cleanupGit(
+            worktreePath,
+            ["clean", "-ffdx", ...nestedPaths.flatMap((nested) => ["-e", `/${nested}/`])],
+            "git clean",
+          );
+        const submodules = yield* submoduleRemoval(worktreePath, settings);
+        if (submodules.reason !== null) return keep(submodules.reason);
+        if (submodules.force) {
+          const changes = yield* localChangesReason(worktreePath, settings, nestedPaths);
+          if (changes !== null) return keep(changes);
         }
-        // Inner worktrees go first: `git clean -ffdx` below would delete them
-        // as untracked repositories and leave their metadata behind.
         for (const nested of nestedWorktrees) {
           if (settings.worktreeKeepWhen === "tracked-changes")
             yield* cleanupGit(nested.worktree, ["clean", "-ffdx"], "git clean");
@@ -1026,15 +1048,6 @@ const make = Effect.gen(function* () {
             execute: git.execute,
             run: (args) => cleanupGit(nested.root, [...args], "git worktree remove"),
           });
-        }
-        // Clean only untracked files. Ordinary worktrees retain Git's final tracked-edit check.
-        if (settings.worktreeKeepWhen === "tracked-changes")
-          yield* cleanupGit(worktreePath, ["clean", "-ffdx"], "git clean");
-        const submodules = yield* submoduleRemoval(worktreePath, settings);
-        if (submodules.reason !== null) return keep(submodules.reason);
-        if (submodules.force) {
-          const changes = yield* localChangesReason(worktreePath, settings);
-          if (changes !== null) return keep(changes);
         }
         yield* removeLinkedWorktree({
           operation: "StorageCleanup.cleanupGit",

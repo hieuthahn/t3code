@@ -111,6 +111,7 @@ import { InlineButton } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { MiddleTruncate } from "../ui/middle-truncate";
+import { SidebarRepositoryChips } from "./SidebarRepositoryChips";
 import { useThreadHasUnsentDraft } from "../../composerDraftStore";
 
 // The fields thread rows show. Provider status pushes refresh `checkedAt`,
@@ -1051,6 +1052,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       </span>
     );
   const accessibleTitle = isRenaming ? null : <span className="sr-only">{thread.title}</span>;
+  const repositoryChips = (
+    <SidebarRepositoryChips
+      environmentId={thread.environmentId}
+      projectId={thread.projectId}
+      threadId={thread.id}
+      workspaceRoot={props.project?.workspaceRoot ?? null}
+    />
+  );
 
   const prBadgeShape = supportsMultiplePullRequests
     ? resolveThreadPullRequestBadge(thread.pullRequests)
@@ -1173,6 +1182,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             {accessibleTitle}
             {draftIndicator}
             {title}
+            {repositoryChips}
             {childUsageLabel === null ? null : (
               <span
                 aria-hidden
@@ -1536,8 +1546,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               )}
               {props.sweepAction !== null ? dragDestination : null}
             </div>
-            <div className="mt-1 flex min-w-0">
+            <div className="mt-1 flex min-w-0 items-center gap-1.5">
               {title}
+              {repositoryChips}
               {isRegeneratingTitle ? (
                 <span role="status" className="sr-only">
                   Regenerating title

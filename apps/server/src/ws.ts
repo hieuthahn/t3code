@@ -51,7 +51,9 @@ import {
   type AcpRegistryListSessionsInput,
   type AcpRegistrySetProviderInput,
   OrchestrationGetFullThreadDiffError,
+  OrchestrationListNestedRepositoriesError,
   OrchestrationListProjectLibraryError,
+  OrchestrationListThreadRepositoryTagsError,
   OrchestrationSearchThreadsError,
   OrchestrationV2SearchThreadError,
   OrchestrationGetTurnDiffError,
@@ -175,6 +177,7 @@ import {
 } from "./orchestration-v2/WireProjection.ts";
 import { dedupeSnapshotBodies } from "@t3tools/shared/orchestrationV2DedupedBodies";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
+import * as NestedRepositories from "./orchestration-v2/NestedRepositories.ts";
 import * as ProjectLibrary from "./orchestration-v2/ProjectLibrary.ts";
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
 import * as OrchestrationEventStore from "./persistence/OrchestrationEventStore.ts";
@@ -1326,6 +1329,7 @@ type WsRpcServices =
   | ThreadLaunchService.ThreadLaunchService
   | ThreadManagementService.ThreadManagementService
   | ProjectLibrary.ProjectLibrary
+  | NestedRepositories.NestedRepositories
   | ThreadSearch.ThreadSearch
   | TraceDiagnostics.TraceDiagnostics
   | TurnRecapHub.TurnRecapHub
@@ -1365,6 +1369,7 @@ const makeWsRpcLayer = (
       const eventLoopMonitor = yield* EventLoopMonitor.EventLoopMonitor;
       const threadSearch = yield* ThreadSearch.ThreadSearch;
       const projectLibrary = yield* ProjectLibrary.ProjectLibrary;
+      const nestedRepositories = yield* NestedRepositories.NestedRepositories;
 
       const providerSessionsV2 = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const mcpAppRequests = yield* McpAppRequests.McpAppRequests;
@@ -2139,6 +2144,28 @@ const makeWsRpcLayer = (
               (cause) =>
                 new OrchestrationListProjectLibraryError({
                   message: "Failed to load project library",
+                  cause,
+                }),
+            ),
+          ),
+        [ORCHESTRATION_V2_WS_METHODS.listNestedRepositories]: (input) =>
+          nestedRepositories.list(input.projectId).pipe(
+            Effect.map((repositories) => ({ repositories })),
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationListNestedRepositoriesError({
+                  message: "Failed to list nested repositories",
+                  cause,
+                }),
+            ),
+          ),
+        [ORCHESTRATION_V2_WS_METHODS.listThreadRepositoryTags]: (input) =>
+          nestedRepositories.threadTags(input.projectId).pipe(
+            Effect.map((threads) => ({ threads })),
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationListThreadRepositoryTagsError({
+                  message: "Failed to list thread repository tags",
                   cause,
                 }),
             ),

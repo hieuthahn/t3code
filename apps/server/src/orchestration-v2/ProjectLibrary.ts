@@ -25,6 +25,9 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlSchema from "effect/sql/SqlSchema";
 
+import * as NestedRepositories from "./NestedRepositories.ts";
+import { repositoryOfPath, toWorkspaceRelativePath } from "./RepositoryPaths.ts";
+
 export class ProjectLibraryError extends Schema.TaggedError<ProjectLibraryError>()(
   "ProjectLibraryError",
   {
@@ -51,44 +54,6 @@ const LibraryRow = Schema.Struct({
 const decodeChanges = Schema.decodeUnknownOption(
   Schema.fromJsonString(Schema.Array(OrchestrationV2FileChangeDetail)),
 );
-
-function normalizeSeparators(path: string): string {
-  return path.replaceAll("\\", "/");
-}
-
-/** macOS reports /var/... and /private/var/... for the same directory. */
-function canonicalPath(path: string): string {
-  return normalizeSeparators(path).replace(/^\/private(?=\/)/, "");
-}
-
-function stripRoot(path: string, root: string): string | null {
-  const canonicalRoot = canonicalPath(root);
-  const prefix = canonicalRoot.endsWith("/") ? canonicalRoot : `${canonicalRoot}/`;
-  const canonical = canonicalPath(path);
-  return canonical.startsWith(prefix) ? canonical.slice(prefix.length) : null;
-}
-
-function abbreviateHome(path: string, home: string): string {
-  const relative = stripRoot(path, home);
-  return relative === null ? path : `~/${relative}`;
-}
-
-/**
- * Worktree threads report absolute paths under their own checkout, so strip the
- * thread's worktree first and the project root second. Paths outside both show
- * the home directory as "~".
- */
-function toWorkspaceRelativePath(
-  path: string,
-  roots: ReadonlyArray<string | null>,
-  home: string,
-): string {
-  const relative = roots.reduce<string | null>(
-    (found, root) => found ?? (root === null ? null : stripRoot(path, root)),
-    null,
-  );
-  return (relative ?? abbreviateHome(path, home)).replace(/^(\.\/)+/, "");
-}
 
 function isAfterCursor(
   entry: { readonly changedAt: string; readonly path: string },
@@ -128,6 +93,7 @@ interface LastTouch {
 export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const home = NodeOS.homedir();
+  const nestedRepositories = yield* NestedRepositories.NestedRepositories;
 
   // Columns come from json_extract so the diff bodies in payload_json never
   // leave SQLite. Item ordinals restart per thread, so order by time first.
@@ -170,6 +136,9 @@ export const make = Effect.gen(function* () {
         ),
       );
 
+      const repositoryPaths = (yield* nestedRepositories
+        .list(input.projectId)
+        .pipe(Effect.orElseSucceed(() => []))).map((repository) => repository.path);
       const byPath = new Map<string, FileChangeOutput<LastTouch>>();
       for (const row of rows) {
         const roots = [row.worktreePath, row.workspaceRoot];
@@ -195,7 +164,13 @@ export const make = Effect.gen(function* () {
       }
 
       const ordered = [...byPath]
-        .map(([path, { status, meta }]) => ({ path, status, ...meta }))
+        .map(([path, { status, meta }]) => ({
+          path,
+          status,
+          ...meta,
+          repository: repositoryOfPath(path, repositoryPaths),
+        }))
+        .filter((entry) => input.repository === undefined || entry.repository === input.repository)
         .toSorted(compareEntries);
       const limit = input.limit ?? ORCHESTRATION_PROJECT_LIBRARY_PAGE_LIMIT;
       const cursor = input.cursor;

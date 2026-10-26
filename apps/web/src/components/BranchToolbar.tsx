@@ -46,6 +46,7 @@ import { BranchToolbarEnvironmentSelector } from "./BranchToolbarEnvironmentSele
 import { openAddProjectToMachine } from "./AddProjectToMachineDialog";
 import { type AddProjectTarget, useAddProjectTargets } from "../hooks/useAddProjectTargets";
 import { BranchToolbarEnvModeSelector } from "./BranchToolbarEnvModeSelector";
+import { IncludedRepositoriesNote } from "./IncludedRepositoriesNote";
 import { PreviousWorktreeItemContent } from "./PreviousWorktreeItemContent";
 import { ThreadDetailsControl } from "./chat/ThreadDetailsControl";
 import {
@@ -716,6 +717,16 @@ export const BranchToolbar = memo(function BranchToolbar({
 
   if (!activeProject) return null;
 
+  const renderIncludedRepositoriesNote = (displayMode: "toolbar" | "panel") => (
+    <IncludedRepositoriesNote
+      displayMode={displayMode}
+      environmentId={environmentId}
+      projectId={projectId}
+      workspaceRoot={activeProject.workspaceRoot}
+      visible={showGitControls && effectiveEnvMode === "worktree" && activeWorktreePath === null}
+    />
+  );
+
   if (layout === "panel") {
     return (
       <div className="flex w-full flex-col" data-thread-panel-run-context>
@@ -743,6 +754,7 @@ export const BranchToolbar = memo(function BranchToolbar({
             onAddToMachine={onAddToMachine}
           />
         ) : null}
+        {panelSection !== "branch" ? renderIncludedRepositoriesNote("panel") : null}
         {panelSection !== "workspace" ? (
           <BranchToolbarBranchSelector
             displayMode="panel"
@@ -797,6 +809,7 @@ export const BranchToolbar = memo(function BranchToolbar({
             addTargets={addTargets}
             onAddToMachine={onAddToMachine}
           />
+          {renderIncludedRepositoriesNote("toolbar")}
         </div>
       ) : null}
       {showGitControls || showEnvironmentIndicator ? (
@@ -839,6 +852,7 @@ export const BranchToolbar = memo(function BranchToolbar({
               onUsePreviousWorktree={onUsePreviousWorktree}
             />
           ) : null}
+          {renderIncludedRepositoriesNote("toolbar")}
         </div>
       ) : null}
 

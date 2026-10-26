@@ -268,7 +268,7 @@ import {
   fanoutRowThreads,
   resolveFanoutGroupIds,
 } from "./sidebar/fanoutGroups";
-import { groupByCoordinator } from "./sidebar/coordinatorGroups";
+import { groupByCoordinator, restrictChildrenToItems } from "./sidebar/coordinatorGroups";
 import { bucketByStatus, sidebarStatusBucketOf } from "./sidebar/sidebarStatusBuckets";
 import {
   attachLineageRows,
@@ -550,7 +550,11 @@ function useSidebarThreads(input: {
         routeThreadKey: routeRowThreadKey,
       }),
       {
-        childrenByParentKey: lineageChildrenByParentKey,
+        childrenByParentKey: restrictChildrenToItems(
+          list,
+          lineageChildrenByParentKey,
+          threadShellKey,
+        ),
         keyOf: threadShellKey,
         collapsedGroupIds: collapsedFanoutGroupIdSet,
         routeThreadKey: routeRowThreadKey,
@@ -649,6 +653,11 @@ function useSidebarThreads(input: {
       titleOf: (thread) => thread.title,
       childrenByParentKey: lineageChildrenByParentKey,
     }).map((group) => {
+      const sectionChildrenByParentKey = restrictChildrenToItems(
+        list,
+        lineageChildrenByParentKey,
+        threadShellKey,
+      );
       const marker = coordinatorBucketMarker(section, group.id);
       const collapsed = collapsedBucketMarkers.includes(marker);
       const rowsOf = (): FanoutRow<EnvironmentThreadShell>[] => {
@@ -661,7 +670,7 @@ function useSidebarThreads(input: {
           }));
         }
         return attachLineageRows([{ kind: "thread", thread: group.coordinator, nested: false }], {
-          childrenByParentKey: lineageChildrenByParentKey,
+          childrenByParentKey: sectionChildrenByParentKey,
           keyOf: threadShellKey,
           collapsedGroupIds: collapsedFanoutGroupIdSet,
           routeThreadKey: routeRowThreadKey,

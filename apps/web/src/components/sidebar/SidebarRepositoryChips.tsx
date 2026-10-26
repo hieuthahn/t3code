@@ -28,7 +28,7 @@ export function SidebarRepositoryChips(props: {
         render={
           <span
             data-testid="sidebar-repository-chips"
-            className="flex min-w-0 max-w-[45%] shrink-0 items-center gap-1"
+            className="flex min-w-0 max-w-28 shrink items-center gap-1"
           />
         }
       >

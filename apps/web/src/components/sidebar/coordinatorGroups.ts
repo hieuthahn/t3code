@@ -10,6 +10,21 @@ export interface CoordinatorGroup<T> {
   readonly childCount: number;
 }
 
+/** Keep only the children that are themselves listed in the section, so a thread shown elsewhere never joins a group twice. */
+export function restrictChildrenToItems<T>(
+  items: readonly T[],
+  childrenByParentKey: ReadonlyMap<string, readonly T[]>,
+  keyOf: (thread: T) => string,
+): ReadonlyMap<string, readonly T[]> {
+  const listedKeys = new Set(items.map(keyOf));
+  const restricted = new Map<string, readonly T[]>();
+  for (const [parentKey, children] of childrenByParentKey) {
+    const listed = children.filter((child) => listedKeys.has(keyOf(child)));
+    if (listed.length > 0) restricted.set(parentKey, listed);
+  }
+  return restricted;
+}
+
 /**
  * Split a section into one group per thread that has child sessions, then a Standalone group for the rest.
  * Descendants join their root's group; a child whose parent has no row stays its own entry, so it lands wherever its own children put it.
@@ -22,7 +37,8 @@ export function groupByCoordinator<T>(
     readonly childrenByParentKey: ReadonlyMap<string, readonly T[]>;
   },
 ): CoordinatorGroup<T>[] {
-  const { keyOf, titleOf, childrenByParentKey } = input;
+  const { keyOf, titleOf } = input;
+  const childrenByParentKey = restrictChildrenToItems(items, input.childrenByParentKey, keyOf);
   const groups: CoordinatorGroup<T>[] = [];
   const standalone: T[] = [];
   const descendantsOf = (parentKey: string, seen: Set<string>): T[] =>

@@ -1,4 +1,4 @@
-export const MAX_REPOSITORY_CHIPS = 2;
+export const MAX_REPOSITORY_CHIPS = 1;
 
 export interface RepositoryChipSummary {
   readonly labels: readonly string[];
@@ -19,7 +19,7 @@ export function repositoryShortName(path: string, projectFolder?: string | null)
     : name;
 }
 
-/** Keep the first two repositories as chips and count the rest, or return null when there is nothing to show. */
+/** Keep the first repository as a chip and count the rest, or return null when there is nothing to show. */
 export function summarizeRepositoryChips(
   repositories: readonly string[] | undefined,
   projectFolder?: string | null,

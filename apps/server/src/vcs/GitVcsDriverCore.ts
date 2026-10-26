@@ -4470,11 +4470,11 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const result = yield* executeGit(
       "GitVcsDriver.resolveWorktreeOwner",
       directory,
-      ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+      ["rev-parse", "--git-common-dir"],
       { allowNonZeroExit: true, timeoutMs: 5_000 },
     );
     if (result.exitCode !== 0) return null;
-    const commonDirectory = result.stdout.trim();
+    const commonDirectory = path.resolve(directory, result.stdout.trim());
     return path.basename(commonDirectory) === ".git"
       ? path.dirname(commonDirectory)
       : commonDirectory;
@@ -4486,7 +4486,11 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     Effect.fn("listNestedWorktrees")(function* (input) {
       const target = path.resolve(input.cwd, input.path);
       if (!(yield* fileSystem.exists(target).pipe(Effect.orElseSucceed(() => false)))) return [];
-      return yield* Effect.forEach(
+      const real = (directory: string) =>
+        fileSystem.realPath(directory).pipe(Effect.orElseSucceed(() => directory));
+      const outerOwner = yield* resolveWorktreeOwner(target);
+      const outerOwnerReal = outerOwner === null ? null : yield* real(outerOwner);
+      const entries = yield* Effect.forEach(
         yield* discoverNested(target),
         Effect.fn("listNestedWorktrees.entry")(function* (repository) {
           const worktree = path.join(target, repository.path);
@@ -4499,6 +4503,12 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             branch: yield* readCurrentBranch(worktree),
           };
         }),
+      );
+      // A worktree of the outer repository is not an inner repository of it.
+      return yield* Effect.filter(entries, (entry) =>
+        entry.root === null || outerOwnerReal === null
+          ? Effect.succeed(true)
+          : real(entry.root).pipe(Effect.map((root) => root !== outerOwnerReal)),
       );
     });
 

@@ -562,6 +562,40 @@ describe("nested repository worktrees", () => {
       }),
     );
 
+    it.effect("leaves out a worktree of the outer repository inside the worktree", () =>
+      Effect.gen(function* () {
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const project = yield* makeProject(["alpha"]);
+        yield* fileSystem.writeFileString(
+          path.join(project.root, ".git", "info", "exclude"),
+          "/agent/\n",
+        );
+        const target = project.worktreePath("outer-inside");
+        yield* driver.createWorktree({
+          cwd: project.root,
+          path: target,
+          refName: yield* baseRef(project.root),
+          newRefName: "feature/outer-inside",
+        });
+        yield* git(project.root, [
+          "worktree",
+          "add",
+          "-q",
+          "-b",
+          "agent-branch",
+          path.join(target, "agent"),
+        ]);
+
+        const listed = yield* driver.listNestedWorktrees({ cwd: project.root, path: target });
+        assert.deepEqual(
+          listed.map((entry) => entry.path),
+          ["alpha"],
+        );
+      }),
+    );
+
     it.effect("lists the inner worktrees with their branches", () =>
       Effect.gen(function* () {
         const driver = yield* GitVcsDriver.GitVcsDriver;

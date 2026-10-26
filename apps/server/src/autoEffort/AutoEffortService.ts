@@ -15,6 +15,8 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 
@@ -48,6 +50,7 @@ const JEV_TIMEOUT_MS = 1_000;
 const JEV_SURE_THRESHOLD = 0.5;
 const JEV_URL = "https://api.typesafe.ai/v1/systemone";
 const CLAUDE_DRIVER = ProviderDriverKind.make("claudeAgent");
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 /** Usage of the fullest window; an unmeasured account ranks after every measured one. */
 const fullestWindowPercent = (provider: ServerProvider): number => {
@@ -124,6 +127,9 @@ const markedLow = (verdict: EffortVerdict): EffortVerdict => ({
   why: `${verdict.why ?? "unsure"} (low)`,
 });
 
+const logJudgeMiss = (judge: "jev" | "haiku", reason: string, details: object) =>
+  Effect.logWarning("auto-effort judge miss", { judge, reason, ...details });
+
 /** The team half of the notice line. */
 function teamNoticeText(launch: LaunchJudgment): string {
   if (Option.isNone(launch.judged)) return "single agent (judge unavailable)";
@@ -156,8 +162,9 @@ const make = Effect.gen(function* () {
     return Option.fromNullishOr(parseJevKey(file));
   }).pipe(Effect.catch(() => Effect.succeed(Option.none<string>())));
 
-  const askJev = (key: string, input: JudgeInput) =>
-    httpClient
+  const askJev = Effect.fn("AutoEffortService.askJev")(function* (key: string, input: JudgeInput) {
+    const startedAt = yield* Clock.currentTimeMillis;
+    const body = yield* httpClient
       .execute(
         HttpClientRequest.post(process.env.JEV_URL ?? JEV_URL).pipe(
           HttpClientRequest.bearerToken(key),
@@ -167,11 +174,27 @@ const make = Effect.gen(function* () {
       .pipe(
         Effect.flatMap(HttpClientResponse.filterStatusOk),
         Effect.flatMap((response) => response.json),
-        Effect.map((body) => Option.fromNullishOr(parseJevAnswer(body))),
         Effect.timeoutOption(JEV_TIMEOUT_MS),
-        Effect.map(Option.flatten),
-        Effect.catch(() => Effect.succeed(Option.none<EffortVerdict>())),
+        Effect.result,
       );
+    const ms = (yield* Clock.currentTimeMillis) - startedAt;
+    if (Result.isFailure(body)) {
+      yield* logJudgeMiss("jev", "error", { ms, error: String(body.failure) });
+      return Option.none<EffortVerdict>();
+    }
+    if (Option.isNone(body.success)) {
+      yield* logJudgeMiss("jev", "deadline", { ms });
+      return Option.none<EffortVerdict>();
+    }
+    const verdict = parseJevAnswer(body.success.value);
+    if (verdict === undefined) {
+      yield* logJudgeMiss("jev", "unreadable", {
+        ms,
+        reply: encodeJson(body.success.value).slice(0, 200),
+      });
+    }
+    return Option.fromNullishOr(verdict);
+  });
 
   const judgeInstance = (
     request: AutoEffortRequest,
@@ -202,10 +225,28 @@ const make = Effect.gen(function* () {
     if (instanceId === undefined) return Option.none<EffortVerdict>();
     const instance = yield* instanceRegistry.getInstance(instanceId);
     if (instance?.judgeEffort === undefined) return Option.none<EffortVerdict>();
+    const startedAt = yield* Clock.currentTimeMillis;
     const reply = yield* instance
       .judgeEffort(judgeQuestion(input))
-      .pipe(Effect.timeoutOption(JUDGE_DEADLINE_MS), Effect.map(Option.flatten));
-    return Option.flatMap(reply, (text) => Option.fromNullishOr(parseJudgeVerdict(text)));
+      .pipe(Effect.timeoutOption(JUDGE_DEADLINE_MS));
+    const ms = (yield* Clock.currentTimeMillis) - startedAt;
+    if (Option.isNone(reply)) {
+      yield* logJudgeMiss("haiku", "deadline", { instanceId, ms });
+      return Option.none<EffortVerdict>();
+    }
+    if (Option.isNone(reply.value)) {
+      yield* logJudgeMiss("haiku", "no warm process or no answer", { instanceId, ms });
+      return Option.none<EffortVerdict>();
+    }
+    const verdict = parseJudgeVerdict(reply.value.value);
+    if (verdict === undefined) {
+      yield* logJudgeMiss("haiku", "unreadable", {
+        instanceId,
+        ms,
+        reply: reply.value.value.slice(0, 200),
+      });
+    }
+    return Option.fromNullishOr(verdict);
   });
 
   // Haiku starts with Jev so it has the whole deadline when Jev turns out unsure; each

@@ -51,6 +51,7 @@ import {
   type AcpRegistryListSessionsInput,
   type AcpRegistrySetProviderInput,
   OrchestrationGetFullThreadDiffError,
+  OrchestrationListProjectLibraryError,
   OrchestrationSearchThreadsError,
   OrchestrationV2SearchThreadError,
   OrchestrationGetTurnDiffError,
@@ -173,6 +174,7 @@ import {
 } from "./orchestration-v2/WireProjection.ts";
 import { dedupeSnapshotBodies } from "@t3tools/shared/orchestrationV2DedupedBodies";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
+import * as ProjectLibrary from "./orchestration-v2/ProjectLibrary.ts";
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
 import * as OrchestrationEventStore from "./persistence/OrchestrationEventStore.ts";
 import { userFacingDispatchErrorMessage } from "./orchestration-v2/UserFacingErrors.ts";
@@ -1321,6 +1323,7 @@ type WsRpcServices =
   | TerminalManager.TerminalManager
   | ThreadLaunchService.ThreadLaunchService
   | ThreadManagementService.ThreadManagementService
+  | ProjectLibrary.ProjectLibrary
   | ThreadSearch.ThreadSearch
   | TraceDiagnostics.TraceDiagnostics
   | TurnRecapHub.TurnRecapHub
@@ -1359,6 +1362,7 @@ const makeWsRpcLayer = (
       const managedFolders = yield* ManagedProjectFolders.ManagedProjectFolders;
       const eventLoopMonitor = yield* EventLoopMonitor.EventLoopMonitor;
       const threadSearch = yield* ThreadSearch.ThreadSearch;
+      const projectLibrary = yield* ProjectLibrary.ProjectLibrary;
 
       const providerSessionsV2 = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const mcpAppRequests = yield* McpAppRequests.McpAppRequests;
@@ -2122,6 +2126,16 @@ const makeWsRpcLayer = (
               (cause) =>
                 new OrchestrationSearchThreadsError({
                   message: "Failed to search threads",
+                  cause,
+                }),
+            ),
+          ),
+        [ORCHESTRATION_V2_WS_METHODS.listProjectLibrary]: (input) =>
+          projectLibrary.list(input).pipe(
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationListProjectLibraryError({
+                  message: "Failed to load project library",
                   cause,
                 }),
             ),

@@ -3726,6 +3726,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     readonly root: string;
     readonly worktreePath: string;
     readonly branch: string;
+    readonly reuseExistingBranch: boolean;
     readonly setting: WorktreeNestedRepositories | null;
   }) {
     const discovered = yield* discoverNested(input.root);
@@ -3765,7 +3766,12 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       (repository) => wanted === null || wanted.has(repository.path),
     );
 
-    const created: Array<{ repositoryRoot: string; path: string; branch: string }> = [];
+    const created: Array<{
+      repositoryRoot: string;
+      path: string;
+      branch: string;
+      createdBranch: boolean;
+    }> = [];
     yield* Effect.forEach(
       included,
       Effect.fn("GitVcsDriver.createWorktree.nestedRepository")(function* (repository) {
@@ -3790,6 +3796,33 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             path: repository.path,
           });
         }
+        // A thread resumed after cleanup checks out its existing outer branch,
+        // so its inner work must come back from the inner branch of that name.
+        if (input.reuseExistingBranch) {
+          const exists = yield* executeGit(
+            "GitVcsDriver.createWorktree.nestedBranchExists",
+            repositoryRoot,
+            ["show-ref", "--verify", "--quiet", `refs/heads/${input.branch}`],
+            { allowNonZeroExit: true, timeoutMs: 5_000 },
+          );
+          const added =
+            exists.exitCode === 0 &&
+            (yield* executeGit(
+              "GitVcsDriver.createWorktree.nestedExisting",
+              repositoryRoot,
+              ["worktree", "add", "--", target, input.branch],
+              { allowNonZeroExit: true, timeoutMs: WORKTREE_ADD_TIMEOUT_MS },
+            )).exitCode === 0;
+          if (added) {
+            created.push({
+              repositoryRoot,
+              path: target,
+              branch: input.branch,
+              createdBranch: false,
+            });
+            return;
+          }
+        }
         const branch = yield* resolveAvailableBranchName(repositoryRoot, input.branch);
         yield* executeGitWithStableDiagnostics(
           "GitVcsDriver.createWorktree.nested",
@@ -3800,7 +3833,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             timeoutMs: WORKTREE_ADD_TIMEOUT_MS,
           },
         );
-        created.push({ repositoryRoot, path: target, branch });
+        created.push({ repositoryRoot, path: target, branch, createdBranch: true });
       }),
       { discard: true },
     ).pipe(
@@ -3815,12 +3848,14 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
               { allowNonZeroExit: true, timeoutMs: WORKTREE_REMOVE_TIMEOUT_MS },
             ).pipe(
               Effect.andThen(
-                executeGit(
-                  "GitVcsDriver.createWorktree.rollbackNested",
-                  entry.repositoryRoot,
-                  ["branch", "-D", "--", entry.branch],
-                  { allowNonZeroExit: true, timeoutMs: 10_000 },
-                ),
+                entry.createdBranch
+                  ? executeGit(
+                      "GitVcsDriver.createWorktree.rollbackNested",
+                      entry.repositoryRoot,
+                      ["branch", "-D", "--", entry.branch],
+                      { allowNonZeroExit: true, timeoutMs: 10_000 },
+                    )
+                  : Effect.void,
               ),
               Effect.ignoreCause({ log: true }),
             ),
@@ -3963,9 +3998,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       root: input.cwd,
       worktreePath,
       branch: targetBranch,
+      reuseExistingBranch: !input.newRefName,
       setting: options?.nestedRepositories ?? null,
     }).pipe(
-      Effect.tapError(() =>
+      Effect.onError(() =>
         removeWorktree({ cwd: input.cwd, path: worktreePath, force: true }).pipe(
           Effect.andThen(
             input.newRefName

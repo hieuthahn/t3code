@@ -386,6 +386,41 @@ describe("nested repository worktrees", () => {
       }),
     );
 
+    it.effect("brings back the inner branch when a removed worktree is recreated", () =>
+      Effect.gen(function* () {
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const project = yield* makeProject(["alpha"]);
+        const target = project.worktreePath("resumed");
+        yield* driver.createWorktree({
+          cwd: project.root,
+          path: target,
+          refName: yield* baseRef(project.root),
+          newRefName: "feature/resumed",
+        });
+        const inner = path.join(target, "alpha");
+        yield* fileSystem.writeFileString(path.join(inner, "work.txt"), "work\n");
+        yield* git(inner, ["add", "."]);
+        yield* git(inner, ["commit", "-q", "-m", "inner work"]);
+        const innerHead = yield* git(inner, ["rev-parse", "HEAD"]);
+        yield* driver.removeWorktree({ cwd: project.root, path: target });
+
+        yield* driver.createWorktree({
+          cwd: project.root,
+          path: target,
+          refName: "feature/resumed",
+        });
+
+        assert.equal(yield* git(inner, ["branch", "--show-current"]), "feature/resumed");
+        assert.equal(yield* git(inner, ["rev-parse", "HEAD"]), innerHead);
+        assert.notInclude(
+          yield* git(path.join(project.root, "alpha"), ["branch", "--list"]),
+          "feature/resumed-",
+        );
+      }),
+    );
+
     it.effect("lists the inner worktrees with their branches", () =>
       Effect.gen(function* () {
         const driver = yield* GitVcsDriver.GitVcsDriver;

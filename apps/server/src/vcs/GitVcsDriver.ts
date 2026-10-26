@@ -42,6 +42,7 @@ import {
   PATCH_RENDER_PREFIX_ARGS,
   splitNullSeparatedGitStdoutPaths,
 } from "./GitVcsDriverCore.ts";
+import { discoverNestedRepositories } from "../workspace/nestedRepositoryDiscovery.ts";
 import * as VcsDriver from "./VcsDriver.ts";
 import * as VcsProcess from "./VcsProcess.ts";
 
@@ -847,7 +848,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
   // core.longpaths is disabled in the user's Git configuration.
   const longPaths = hostPlatform === "win32" ? ["-c", "core.longpaths=true"] : [];
 
-  const checkpoints: VcsDriver.VcsCheckpointOps = {
+  const repositoryCheckpoints: VcsDriver.VcsCheckpointOps = {
     captureCheckpoint: Effect.fn("GitVcsDriver.checkpoints.captureCheckpoint")(function* (input) {
       const operation = VcsProcess.CHECKPOINT_CAPTURE_OPERATION;
       // core.splitIndex governs every index Git writes, so an unguarded write to the
@@ -1414,6 +1415,66 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         );
       },
     ),
+  };
+
+  // Only gitignored repositories: the outer checkpoint already covers the rest.
+  const innerRepositoryRoots = Effect.fn("GitVcsDriver.checkpoints.innerRepositoryRoots")(
+    function* (cwd: string) {
+      const repositories = yield* discoverNestedRepositories(cwd).pipe(
+        Effect.provideService(FileSystem.FileSystem, fileSystem),
+        Effect.provideService(Path.Path, path),
+        Effect.orElseSucceed(() => []),
+      );
+      return yield* Effect.filter(repositories, (repository) =>
+        execute({
+          operation: "GitVcsDriver.checkpoints.innerRepositoryIgnored",
+          cwd,
+          args: ["check-ignore", "-q", "--", `${repository.path}/`],
+          allowNonZeroExit: true,
+        }).pipe(
+          Effect.map((result) => result.exitCode === 0),
+          Effect.orElseSucceed(() => false),
+        ),
+      ).pipe(Effect.map((ignored) => ignored.map((repository) => path.join(cwd, repository.path))));
+    },
+  );
+
+  // A restore of the outer repository never touches its gitignored inner
+  // repositories, so each one keeps a checkpoint of its own under the same ref.
+  const checkpoints: VcsDriver.VcsCheckpointOps = {
+    ...repositoryCheckpoints,
+    captureCheckpoint: Effect.fn("GitVcsDriver.checkpoints.captureWithInner")(function* (input) {
+      yield* repositoryCheckpoints.captureCheckpoint(input);
+      for (const root of yield* innerRepositoryRoots(input.cwd)) {
+        yield* repositoryCheckpoints
+          .captureCheckpoint({ ...input, cwd: root })
+          .pipe(
+            Effect.catch((cause) =>
+              Effect.logWarning("inner repository checkpoint capture failed", { root, cause }),
+            ),
+          );
+      }
+    }),
+    restoreCheckpoint: Effect.fn("GitVcsDriver.checkpoints.restoreWithInner")(function* (input) {
+      if (!(yield* repositoryCheckpoints.restoreCheckpoint(input))) return false;
+      for (const root of yield* innerRepositoryRoots(input.cwd)) {
+        if (!(yield* repositoryCheckpoints.hasCheckpointRef({ ...input, cwd: root }))) continue;
+        yield* repositoryCheckpoints.restoreCheckpoint({
+          cwd: root,
+          checkpointRef: input.checkpointRef,
+          fallbackToHead: false,
+        });
+      }
+      return true;
+    }),
+    deleteCheckpointRefs: Effect.fn("GitVcsDriver.checkpoints.deleteWithInner")(function* (input) {
+      yield* repositoryCheckpoints.deleteCheckpointRefs(input);
+      for (const root of yield* innerRepositoryRoots(input.cwd)) {
+        yield* repositoryCheckpoints
+          .deleteCheckpointRefs({ ...input, cwd: root })
+          .pipe(Effect.ignoreCause({ log: true }));
+      }
+    }),
   };
 
   return {

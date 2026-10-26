@@ -912,6 +912,48 @@ it.effect.each(["missing", "invalid"] as const)(
     }).pipe(Effect.scoped, Effect.provide(layerGitContract)),
 );
 
+it.effect("captures, restores and deletes checkpoints of gitignored inner repositories", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const driver = yield* GitVcsDriver.makeVcsDriverShape();
+    const root = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-inner-checkpoint-" });
+    const inner = path.join(root, "backend");
+    for (const cwd of [root, inner]) {
+      yield* fileSystem.makeDirectory(cwd, { recursive: true });
+      yield* runGit(cwd, ["init"]);
+      yield* runGit(cwd, ["config", "user.email", "test@test.com"]);
+      yield* runGit(cwd, ["config", "user.name", "Test"]);
+      yield* fileSystem.writeFileString(path.join(cwd, "file.txt"), "original\n");
+      if (cwd === root)
+        yield* fileSystem.writeFileString(path.join(cwd, ".gitignore"), "/backend/\n");
+      yield* runGit(cwd, ["add", "."]);
+      yield* runGit(cwd, ["commit", "-m", "initial"]);
+    }
+    const checkpointRef = CheckpointRef.make("refs/t3/checkpoints/inner");
+    yield* driver.checkpoints.captureCheckpoint({ cwd: root, checkpointRef });
+    assert.isTrue(yield* driver.checkpoints.hasCheckpointRef({ cwd: inner, checkpointRef }));
+
+    yield* fileSystem.writeFileString(path.join(inner, "file.txt"), "turn edit\n");
+    yield* fileSystem.writeFileString(path.join(inner, "added.txt"), "new\n");
+    assert.isTrue(
+      yield* driver.checkpoints.restoreCheckpoint({
+        cwd: root,
+        checkpointRef,
+        fallbackToHead: false,
+      }),
+    );
+    assert.strictEqual(
+      yield* fileSystem.readFileString(path.join(inner, "file.txt")),
+      "original\n",
+    );
+    assert.isFalse(yield* fileSystem.exists(path.join(inner, "added.txt")));
+
+    yield* driver.checkpoints.deleteCheckpointRefs({ cwd: root, checkpointRefs: [checkpointRef] });
+    assert.isFalse(yield* driver.checkpoints.hasCheckpointRef({ cwd: inner, checkpointRef }));
+  }).pipe(Effect.scoped, Effect.provide(layerGitContract)),
+);
+
 it.effect("restores empty checkpoints without changing paths outside the workspace", () =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;

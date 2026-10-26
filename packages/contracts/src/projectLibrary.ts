@@ -24,6 +24,8 @@ export const OrchestrationListProjectLibraryInput = Schema.Struct({
   offset: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   /** Keyset position: the last entry of the previous page. */
   cursor: Schema.optionalKey(OrchestrationProjectLibraryCursor),
+  /** Nested repository path (see listNestedRepositories) to keep; omitted keeps every row. */
+  repository: Schema.optionalKey(TrimmedNonEmptyString),
 });
 export type OrchestrationListProjectLibraryInput = typeof OrchestrationListProjectLibraryInput.Type;
 
@@ -34,6 +36,8 @@ export const OrchestrationProjectLibraryEntry = Schema.Struct({
   threadId: ThreadId,
   threadTitle: Schema.String,
   changedAt: IsoDateTime,
+  /** Longest matching nested repository path, or null for the outer repository. */
+  repository: Schema.NullOr(TrimmedNonEmptyString),
 });
 export type OrchestrationProjectLibraryEntry = typeof OrchestrationProjectLibraryEntry.Type;
 

@@ -3546,6 +3546,8 @@ export const ORCHESTRATION_V2_WS_METHODS = {
   getFullThreadDiff: "orchestration.getFullThreadDiff",
   searchThreads: "orchestration.searchThreads",
   listProjectLibrary: "orchestration.listProjectLibrary",
+  listNestedRepositories: "orchestration.listNestedRepositories",
+  listThreadRepositoryTags: "orchestration.listThreadRepositoryTags",
   searchThread: "orchestration.searchThread",
   searchThreadStream: "orchestration.searchThreadStream",
   getArchivedShellSnapshot: "orchestration.getArchivedShellSnapshot",

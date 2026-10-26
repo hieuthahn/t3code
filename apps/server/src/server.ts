@@ -475,6 +475,7 @@ const layerWorkspace = Layer.mergeAll(
   WorkspacePaths.layer,
   layerWorkspaceEntries,
   layerWorkspaceFileSystem,
+  layerKnownWorkspaces,
 );
 
 const layerProjectFaviconResolver = ProjectFaviconResolver.layer.pipe(

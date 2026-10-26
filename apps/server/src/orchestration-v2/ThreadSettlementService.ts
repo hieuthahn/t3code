@@ -105,6 +105,13 @@ function settlementPullRequestLinks(
   });
 }
 
+/** Whether a linked pull request still waits on its outcome, which settling would stop watching. */
+function hasUnresolvedPullRequestLink(links: ReadonlyArray<SettlementPullRequestLink>): boolean {
+  return settlementPullRequestLinks(links).some(
+    (link) => link.snapshot === null || link.snapshot.state === "open",
+  );
+}
+
 /**
  * Absolute age bounds client clock skew in both directions and stops stale
  * pre-adoption data from blocking the thread forever.
@@ -174,6 +181,7 @@ export function isSettleableChildShell(thread: OrchestrationV2ThreadShell, nowMs
   if (thread.pendingRuntimeRequest !== null || thread.blockedOnThreadWait === true) return false;
   if (backgroundWorkHoldsCompletion(thread.pendingBackgroundTasks ?? [])) return false;
   if (threadHasQueuedTurnStart(thread, nowMs)) return false;
+  if (hasUnresolvedPullRequestLink(thread.pullRequests ?? [])) return false;
   return !isSnoozed(thread, nowMs);
 }
 
@@ -255,7 +263,7 @@ export function resolveAutoSettlementAt(input: {
   const { thread } = input;
   let pullRequest = input.pullRequest;
   const links = settlementPullRequestLinks(thread.pullRequests ?? []);
-  if (links.some((link) => link.snapshot === null || link.snapshot.state === "open")) return null;
+  if (hasUnresolvedPullRequestLink(thread.pullRequests ?? [])) return null;
   if (links.length > 0) {
     const latest = links.reduce((current, candidate) =>
       linkTerminalAtMs(candidate) > linkTerminalAtMs(current) ? candidate : current,
@@ -636,31 +644,49 @@ export const make = Effect.gen(function* () {
       ),
   );
 
+  // Children the cascade settled itself, so their thread.settled events skip the cascade.
+  const cascadeSettledIds = new Set<ThreadId>();
+
+  const hasQueuedRun = (threadId: ThreadId) =>
+    projections
+      .getThreadRecords(threadId, ["runs"])
+      .pipe(Effect.map(({ runs }) => runs.some((run) => run.status === "queued")));
+
+  const settleChild = Effect.fn("ThreadSettlementServiceV2.settleChild")(
+    function* (childId: ThreadId) {
+      // Settling cancels queued runs, which can include a grandchild's notification.
+      if (yield* hasQueuedRun(childId)) return;
+      const uuid = yield* crypto.randomUUIDv4();
+      cascadeSettledIds.add(childId);
+      yield* orchestrator
+        .dispatch({
+          type: "thread.settle",
+          commandId: CommandId.make(`server:settle-child:${childId}:${uuid}`),
+          threadId: childId,
+        })
+        .pipe(Effect.onError(() => Effect.sync(() => cascadeSettledIds.delete(childId))));
+    },
+    (effect, childId) =>
+      effect.pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.failCause(cause)
+            : Effect.logWarning("settling a child thread skipped", {
+                threadId: childId,
+                cause: Cause.pretty(cause),
+              }),
+        ),
+      ),
+  );
+
   const settleChildren = Effect.fn("ThreadSettlementServiceV2.settleChildren")(
     function* (threadId: ThreadId) {
+      if (cascadeSettledIds.delete(threadId)) return;
       const snapshot = yield* projections.getShellSnapshot();
       const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
-      const childIds = settleableDescendantIds(threadId, snapshot.threads, nowMs);
       yield* Effect.forEach(
-        childIds,
-        (childId) =>
-          Effect.gen(function* () {
-            const uuid = yield* crypto.randomUUIDv4();
-            yield* orchestrator.dispatch({
-              type: "thread.settle",
-              commandId: CommandId.make(`server:settle-child:${childId}:${uuid}`),
-              threadId: childId,
-            });
-          }).pipe(
-            Effect.catchCause((cause) =>
-              Cause.hasInterruptsOnly(cause)
-                ? Effect.failCause(cause)
-                : Effect.logWarning("settling a child thread skipped", {
-                    threadId: childId,
-                    cause: Cause.pretty(cause),
-                  }),
-            ),
-          ),
+        settleableDescendantIds(threadId, snapshot.threads, nowMs),
+        settleChild,
         { discard: true },
       );
     },
@@ -670,6 +696,32 @@ export const make = Effect.gen(function* () {
           Cause.hasInterruptsOnly(cause)
             ? Effect.failCause(cause)
             : Effect.logWarning("settling child threads failed", {
+                threadId,
+                cause: Cause.pretty(cause),
+              }),
+        ),
+      ),
+  );
+
+  const settleFinishedChild = Effect.fn("ThreadSettlementServiceV2.settleFinishedChild")(
+    function* (threadId: ThreadId) {
+      const child = yield* projections.getThreadShell(threadId);
+      const parentId = child?.lineage.parentThreadId ?? null;
+      if (child === null || parentId === null) return;
+      if (child.lineage.relationshipToParent !== "subagent") return;
+      const parent = yield* projections.getThreadShell(parentId);
+      if (parent === null || parent.settledOverride !== "settled") return;
+      if (parent.projectId !== child.projectId) return;
+      const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
+      if (!isSettleableChildShell(child, nowMs)) return;
+      yield* settleChild(threadId);
+    },
+    (effect, threadId) =>
+      effect.pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.failCause(cause)
+            : Effect.logWarning("settling a finished child thread failed", {
                 threadId,
                 cause: Cause.pretty(cause),
               }),
@@ -693,7 +745,7 @@ export const make = Effect.gen(function* () {
         return ["completed", "interrupted", "failed", "cancelled", "rolled_back"].includes(
           event.payload.status,
         )
-          ? worker.enqueue(event.threadId)
+          ? Effect.andThen(worker.enqueue(event.threadId), settleFinishedChild(event.threadId))
           : Effect.void;
       default:
         return Effect.void;

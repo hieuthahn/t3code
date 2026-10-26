@@ -477,6 +477,7 @@ interface HarnessOptions {
   ) => Effect.Effect<void>;
   readonly onCloseIdle?: () => Effect.Effect<void>;
   readonly currentThreads?: ReadonlyArray<OrchestrationV2AppThread>;
+  readonly queuedRunThreadIds?: ReadonlyArray<string>;
 }
 
 const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options: HarnessOptions) {
@@ -485,6 +486,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
   const snapshotReadCount = yield* Ref.make(0);
   const snapshotReads = yield* Queue.unbounded<number>();
   const candidateReads = yield* Ref.make<ReadonlyArray<string | undefined>>([]);
+  const shellSnapshotReads = yield* Ref.make(0);
   const settings = yield* Ref.make(options.settings ?? DEFAULT_SERVER_SETTINGS);
   const settingsChanges = yield* PubSub.unbounded<ContractServerSettings>();
   const mergedPullRequests = yield* PubSub.unbounded<PullRequestService.PullRequestMergeEvent>();
@@ -584,8 +586,19 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
               : snapshot.threads.filter((thread) => thread.id === threadId),
           ),
         ),
-      getShellSnapshot: () =>
+      getThreadShell: (threadId) =>
         Ref.get(snapshots).pipe(
+          Effect.map(
+            (snapshot) => snapshot.threads.find((thread) => thread.id === threadId) ?? null,
+          ),
+        ),
+      getThreadRecords: (threadId) =>
+        Effect.succeed({
+          runs: options.queuedRunThreadIds?.includes(threadId) ? [{ status: "queued" }] : [],
+        } as never),
+      getShellSnapshot: () =>
+        Ref.update(shellSnapshotReads, (count) => count + 1).pipe(
+          Effect.andThen(Ref.get(snapshots)),
           Effect.map((snapshot) => ({
             schemaVersion: snapshot.schemaVersion,
             snapshotSequence: snapshot.snapshotSequence,
@@ -639,6 +652,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
     snapshotReadCount,
     snapshotReads,
     candidateReads,
+    shellSnapshotReads,
     commands,
     settleCommands,
     branchCalls,
@@ -1181,6 +1195,37 @@ describe("settleableDescendantIds", () => {
     expect(ids).toEqual(["free"]);
   });
 
+  it("keeps children whose pull request is open or unsynced and settles those with a closed one", () => {
+    const link = (number: number, snapshot: unknown) =>
+      ({
+        host: "example.test",
+        repository: "owner/repository",
+        number,
+        url: `https://example.test/owner/repository/pull/${number}`,
+        source: "manual",
+        linkedAt: "2026-08-20T00:00:00.000Z",
+        snapshot,
+        stack: null,
+      }) as never;
+    const snapshot = (state: "open" | "merged") => ({
+      state,
+      title: "Pull request",
+      headBranch: "feature",
+      baseBranch: "main",
+      isDraft: false,
+      updatedAt: NOW,
+      syncedAt: NOW,
+      ...(state === "merged" ? { mergedAt: NOW } : {}),
+    });
+    const ids = idsFor([
+      makeThread("parent"),
+      child("open-pr", "parent", { pullRequests: [link(1, snapshot("open"))] }),
+      child("unsynced-pr", "parent", { pullRequests: [link(2, null)] }),
+      child("merged-pr", "parent", { pullRequests: [link(3, snapshot("merged"))] }),
+    ]);
+    expect(ids).toEqual(["merged-pr"]);
+  });
+
   it("leaves forks and children in another project alone", () => {
     const ids = idsFor([
       makeThread("parent"),
@@ -1245,6 +1290,110 @@ describe("ThreadSettlementServiceV2 child settlement", () => {
       }),
     ),
   );
+
+  it.effect("keeps a child with a queued run, including an automatic one", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const parent = makeThread("parent", { settledOverride: "settled", settledAt: at(0) });
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([
+            parent,
+            subagent("queued", "parent", { status: "completed" }),
+            subagent("free", "parent", { status: "completed" }),
+          ]),
+          queuedRunThreadIds: ["queued"],
+        });
+
+        yield* Effect.gen(function* () {
+          const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+          yield* fixture.publishEvent(settledEvent(parent));
+          yield* service.drain;
+          yield* Effect.yieldNow;
+          const settled = (yield* Ref.get(fixture.settleCommands)).map(
+            (command) => command.threadId,
+          );
+          expect(settled).toEqual(["free"]);
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
+  it.effect("cascades once from the root and not again for the settles it issued", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const parent = makeThread("parent", { settledOverride: "settled", settledAt: at(0) });
+        const done = subagent("done", "parent", { status: "completed" });
+        const grandchild = subagent("grandchild", "done", { status: "completed" });
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([parent, done, grandchild]),
+        });
+
+        yield* Effect.gen(function* () {
+          const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+          yield* fixture.publishEvent(settledEvent(parent));
+          yield* fixture.publishEvent(settledEvent({ ...done, settledOverride: "settled" }));
+          yield* fixture.publishEvent(settledEvent({ ...grandchild, settledOverride: "settled" }));
+          yield* service.drain;
+          yield* Effect.yieldNow;
+          expect(yield* Ref.get(fixture.shellSnapshotReads)).toBe(1);
+          expect(
+            (yield* Ref.get(fixture.settleCommands)).map((command) => command.threadId),
+          ).toEqual(["done", "grandchild"]);
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
+  describe("a child that finishes after its parent settled", () => {
+    const runFinished = (thread: SettlementShell): OrchestrationV2DomainEvent =>
+      ({
+        type: "run.updated",
+        id: EventId.make(`event:run:${thread.id}`),
+        threadId: thread.id,
+        occurredAt: DateTime.makeUnsafe(NOW),
+        payload: { status: "completed" },
+      }) as never;
+
+    const settledChildIds = (parentOverride: "settled" | "active", childOverrides = {}) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const parent = makeThread("parent", {
+            settledOverride: parentOverride,
+            settledAt: parentOverride === "settled" ? at(0) : null,
+          });
+          const child = subagent("late", "parent", { status: "completed", ...childOverrides });
+          const fixture = yield* makeHarness({ snapshot: makeSnapshot([parent, child]) });
+          return yield* Effect.gen(function* () {
+            const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+            yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+            yield* fixture.publishEvent(runFinished(child));
+            yield* service.drain;
+            yield* Effect.yieldNow;
+            return (yield* Ref.get(fixture.settleCommands)).map((command) => command.threadId);
+          }).pipe(Effect.provide(fixture.layer));
+        }),
+      );
+
+    it.effect("settles when the parent is settled", () =>
+      Effect.gen(function* () {
+        expect(yield* settledChildIds("settled")).toEqual(["late"]);
+      }),
+    );
+
+    it.effect("does not settle when the parent is active", () =>
+      Effect.gen(function* () {
+        expect(yield* settledChildIds("active")).toEqual([]);
+      }),
+    );
+
+    it.effect("keeps the same rules, such as a pinned child", () =>
+      Effect.gen(function* () {
+        expect(yield* settledChildIds("settled", { pinnedAt: at(-1_000) })).toEqual([]);
+      }),
+    );
+  });
 
   it.effect("does not settle children when the parent is unsettled", () =>
     Effect.scoped(

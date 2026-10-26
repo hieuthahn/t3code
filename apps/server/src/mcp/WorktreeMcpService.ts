@@ -263,11 +263,9 @@ const make = Effect.gen(function* () {
             .listNestedWorktrees({ cwd: projectCwd, path: worktreePath })
             .pipe(Effect.orElseSucceed(() => []));
           yield* gitWorkflow.removeWorktree({ cwd: projectCwd, path: worktreePath, force: true });
-          yield* gitWorkflow.deleteLocalBranch({
-            cwd: projectCwd,
-            refName: worktree.worktree.refName,
-            force: true,
-          });
+          yield* gitWorkflow
+            .deleteLocalBranch({ cwd: projectCwd, refName: worktree.worktree.refName, force: true })
+            .pipe(Effect.ignoreCause({ log: true }));
           yield* Effect.forEach(
             nested,
             (entry) =>

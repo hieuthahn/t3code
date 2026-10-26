@@ -29,6 +29,14 @@ function abbreviateHome(path: string, home: string, platform: NodeJS.Platform): 
   return relative === null ? path : `~/${relative}`;
 }
 
+/** A path that toWorkspaceRelativePath left absolute or home-relative lies outside the project folder. */
+export function isOutsideProjectPath(path: string): boolean {
+  const normalized = normalizeSeparators(path);
+  return (
+    normalized.startsWith("/") || normalized.startsWith("~") || /^[A-Za-z]:\//.test(normalized)
+  );
+}
+
 /**
  * Worktree threads report absolute paths under their own checkout, so strip the
  * thread's worktree first and the project root second. Paths outside both show

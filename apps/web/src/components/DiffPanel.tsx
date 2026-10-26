@@ -1,3 +1,4 @@
+import { repositoryLabelForHeader } from "./chat/repositorySelection";
 import { useThreadRepositories } from "./chat/useThreadRepositories";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { useAtomValue } from "@effect/atom-react";
@@ -247,6 +248,7 @@ export default function DiffPanel({
         }
       : null,
   );
+  const diffRepositoryLabel = repositoryLabelForHeader(repositories.options, repositories.selected);
   const activeCwd =
     activeThread?.worktreePath ?? repositories.repositoryCwd ?? activeProject?.workspaceRoot;
   const activeRepositoryRoot = activeThread?.worktreePath
@@ -730,8 +732,16 @@ export default function DiffPanel({
         {selectedRunId === null && selectedGitScope === "branch" && selectedGitSource?.baseRef && (
           <div
             className="flex min-w-0 max-w-full items-center gap-2 overflow-hidden text-xs text-muted-foreground"
-            aria-label={`Comparing ${selectedGitSource.headRef ?? "HEAD"} against ${selectedGitSource.baseRef}`}
+            aria-label={`Comparing ${selectedGitSource.headRef ?? "HEAD"} against ${selectedGitSource.baseRef}${diffRepositoryLabel === null ? "" : ` in ${diffRepositoryLabel}`}`}
           >
+            {diffRepositoryLabel === null ? null : (
+              <span
+                className="max-w-32 shrink truncate font-medium text-foreground"
+                data-testid="diff-repository-label"
+              >
+                {diffRepositoryLabel}
+              </span>
+            )}
             <Tooltip>
               <TooltipTrigger
                 render={

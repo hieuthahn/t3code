@@ -19,6 +19,13 @@ export {
   type GitActionIconName,
 } from "@t3tools/client-runtime/state/vcs";
 
+/** Source control actions that lock the repository choice while they run. */
+export const RUNNING_SOURCE_CONTROL_ACTIONS = [
+  "runStackedAction",
+  "pull",
+  "publishRepository",
+] as const;
+
 export interface GitActionMenuItem {
   id: "commit" | "push" | "pr";
   label: string;

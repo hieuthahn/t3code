@@ -43,15 +43,45 @@ export function buildRepositoryOptions(input: {
 
 /**
  * Pick the repository for a thread: a stored choice that still exists wins (null is an explicit outer choice),
- * then the first repository the thread touched, then the outer repository.
+ * then the most touched repository (ties keep the server's tag order), then the outer repository.
  */
 export function resolveSelectedRepositoryPath(input: {
   readonly repositories: readonly OrchestrationNestedRepository[];
   readonly stored: string | null | undefined;
   readonly tagged: readonly string[] | undefined;
+  readonly touchCounts?: Readonly<Record<string, number>> | undefined;
 }): string | null {
   const known = new Set(input.repositories.map((repository) => repository.path));
   if (input.stored === null) return null;
   if (input.stored !== undefined && known.has(input.stored)) return input.stored;
-  return input.tagged?.find((path) => known.has(path)) ?? null;
+  let best: string | null = null;
+  let bestCount = -1;
+  for (const path of input.tagged ?? []) {
+    if (!known.has(path)) continue;
+    const count = input.touchCounts?.[path] ?? 0;
+    if (count > bestCount) {
+      best = path;
+      bestCount = count;
+    }
+  }
+  return best;
+}
+
+/** True when a stored choice names a repository that is no longer listed. */
+export function isStaleRepositorySelection(input: {
+  readonly repositories: readonly OrchestrationNestedRepository[];
+  readonly stored: string | null | undefined;
+}): boolean {
+  return (
+    typeof input.stored === "string" &&
+    !input.repositories.some((repository) => repository.path === input.stored)
+  );
+}
+
+/** The selected repository's name, only when the project offers more than one repository. */
+export function repositoryLabelForHeader(
+  options: readonly RepositoryOption[],
+  selected: RepositoryOption | null,
+): string | null {
+  return options.length > 1 && selected !== null ? selected.label : null;
 }

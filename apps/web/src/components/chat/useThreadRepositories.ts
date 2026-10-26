@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { fileBasename } from "@t3tools/shared/path";
@@ -8,6 +9,7 @@ import { useNestedRepositories, useThreadRepositoryTags } from "../../state/quer
 import { vcsEnvironment } from "../../state/vcs";
 import {
   buildRepositoryOptions,
+  isStaleRepositorySelection,
   resolveSelectedRepositoryPath,
   type RepositoryOption,
 } from "./repositorySelection";
@@ -32,11 +34,18 @@ export function useThreadRepositories(
     readonly projectName: string;
     readonly workspaceRoot: string;
     readonly worktreePath: string | null;
+    /** A worktree-mode thread without a worktree yet still runs in the project root. */
+    readonly envMode?: "local" | "worktree";
   } | null,
 ): ThreadRepositories {
-  const queryTarget = target === null || target.worktreePath !== null ? null : target;
-  const repositories = useNestedRepositories(queryTarget).data?.repositories ?? NO_REPOSITORIES;
-  const tags = useThreadRepositoryTags(queryTarget).data?.threads;
+  const queryTarget =
+    target === null || target.worktreePath !== null || target.envMode === "worktree"
+      ? null
+      : target;
+  const repositoriesData = useNestedRepositories(queryTarget).data;
+  const repositories = repositoriesData?.repositories ?? NO_REPOSITORIES;
+  const tagsData = useThreadRepositoryTags(queryTarget).data;
+  const tags = tagsData?.threads;
   const outerStatus = useEnvironmentQuery(
     queryTarget === null || repositories.length === 0
       ? null
@@ -67,7 +76,19 @@ export function useThreadRepositories(
     repositories,
     stored,
     tagged: target === null ? undefined : tags?.[target.threadId],
+    touchCounts: target === null ? undefined : tagsData?.touchCounts?.[target.threadId],
   });
+  const removeStored = useRepositorySelectionStore((state) => state.removeThread);
+  const threadIdForCleanup = target?.threadId;
+  const environmentIdForCleanup = target?.environmentId;
+  const isStale =
+    repositoriesData !== undefined && isStaleRepositorySelection({ repositories, stored });
+  useEffect(() => {
+    if (!isStale || threadIdForCleanup === undefined || environmentIdForCleanup === undefined) {
+      return;
+    }
+    removeStored(scopeThreadRef(environmentIdForCleanup, threadIdForCleanup));
+  }, [isStale, threadIdForCleanup, environmentIdForCleanup, removeStored]);
   const selected = options.find((option) => option.path === selectedPath) ?? null;
   const threadId = target?.threadId;
   const environmentId = target?.environmentId;

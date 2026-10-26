@@ -107,7 +107,9 @@ describe("PromptSuggestionHub", () => {
       });
       const first = yield* program.pipe(
         Effect.provide(
-          hubWith(() => Deferred.succeed(asked, undefined).pipe(Effect.andThen(Deferred.await(answer)))),
+          hubWith(() =>
+            Deferred.succeed(asked, undefined).pipe(Effect.andThen(Deferred.await(answer))),
+          ),
         ),
       );
       expect(Option.map(first, (item) => item.suggestion)).toEqual(Option.some(null));

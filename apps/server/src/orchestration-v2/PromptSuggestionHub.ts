@@ -145,12 +145,10 @@ export const make = Effect.gen(function* () {
           Stream.make(initial),
           Stream.fromSubscription(live).pipe(
             Stream.filter((change) => change.threadId === threadId),
-            Stream.map(
-              (change): PromptSuggestionItem => ({
-                kind: "prompt-suggestion",
-                suggestion: change.suggestion,
-              }),
-            ),
+            Stream.map((change): PromptSuggestionItem => ({
+              kind: "prompt-suggestion",
+              suggestion: change.suggestion,
+            })),
           ),
         );
       }),

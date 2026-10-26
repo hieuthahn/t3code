@@ -37,8 +37,12 @@ vi.mock("./useSettings", () => ({ useClientSettings: () => false }));
 vi.mock("./useHandleNewThread", () => ({ useNewThreadHandler: () => vi.fn() }));
 vi.mock("../composerDraftStore", () => ({ useComposerDraftStore: () => vi.fn() }));
 vi.mock("../terminalUiStateStore", () => ({ useTerminalUiStateStore: () => vi.fn() }));
+vi.mock("../repositorySelectionStore", () => ({
+  useRepositorySelectionStore: () => repositorySelection.removeThread,
+}));
 vi.mock("../uiStateStore", () => ({ useUiStateStore: () => vi.fn() }));
 vi.mock("../lib/archivedThreadsState", () => ({ refreshArchivedThreadsForEnvironment: vi.fn() }));
+const repositorySelection = vi.hoisted(() => ({ removeThread: vi.fn() }));
 const threadShell = vi.hoisted(() => ({
   title: "Thread",
   pinOrderKey: "a0",
@@ -188,6 +192,7 @@ describe("archive Undo", () => {
     };
     const actions = useThreadActions();
     await actions.archiveThread(target);
+    expect(repositorySelection.removeThread).toHaveBeenCalledExactlyOnceWith(target);
     expect(useThreadUndoNotice.getState().notice).toMatchObject({ action: "Archived", count: 1 });
     expect(add).not.toHaveBeenCalled();
     await currentUndo()();

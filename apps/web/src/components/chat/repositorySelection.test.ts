@@ -2,7 +2,9 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   buildRepositoryOptions,
+  isStaleRepositorySelection,
   joinWorkspacePath,
+  repositoryLabelForHeader,
   resolveSelectedRepositoryPath,
 } from "./repositorySelection";
 
@@ -81,5 +83,68 @@ describe("joinWorkspacePath", () => {
   it("uses the root's separator and ignores a trailing one", () => {
     expect(joinWorkspacePath("/a/b/", "c/d")).toBe("/a/b/c/d");
     expect(joinWorkspacePath("C:\\a", "c/d")).toBe("C:\\a\\c\\d");
+  });
+});
+
+describe("resolveSelectedRepositoryPath by touch count", () => {
+  it("picks the most touched repository", () => {
+    expect(
+      resolveSelectedRepositoryPath({
+        repositories,
+        stored: undefined,
+        tagged: ["backend", "nojima-manabu-copy/web"],
+        touchCounts: { backend: 2, "nojima-manabu-copy/web": 5 },
+      }),
+    ).toBe("nojima-manabu-copy/web");
+  });
+
+  it("keeps the first tagged repository on a tie", () => {
+    expect(
+      resolveSelectedRepositoryPath({
+        repositories,
+        stored: undefined,
+        tagged: ["backend", "nojima-manabu-copy/web"],
+        touchCounts: { backend: 3, "nojima-manabu-copy/web": 3 },
+      }),
+    ).toBe("backend");
+  });
+
+  it("ignores counts of repositories that are no longer listed", () => {
+    expect(
+      resolveSelectedRepositoryPath({
+        repositories,
+        stored: undefined,
+        tagged: ["gone", "backend"],
+        touchCounts: { gone: 9, backend: 1 },
+      }),
+    ).toBe("backend");
+  });
+});
+
+describe("isStaleRepositorySelection", () => {
+  it("flags only a nested choice that is no longer listed", () => {
+    expect(isStaleRepositorySelection({ repositories, stored: "gone" })).toBe(true);
+    expect(isStaleRepositorySelection({ repositories, stored: "backend" })).toBe(false);
+    expect(isStaleRepositorySelection({ repositories, stored: null })).toBe(false);
+    expect(isStaleRepositorySelection({ repositories, stored: undefined })).toBe(false);
+  });
+});
+
+describe("repositoryLabelForHeader", () => {
+  const options = buildRepositoryOptions({
+    workspaceRoot: "/work/nojima",
+    projectName: "Nojima",
+    projectFolder: "nojima",
+    outerBranch: "main",
+    repositories,
+  });
+
+  it("names the selected repository when the project has nested repositories", () => {
+    expect(repositoryLabelForHeader(options, options[1] ?? null)).toBe("backend");
+  });
+
+  it("stays hidden without nested repositories or a selection", () => {
+    expect(repositoryLabelForHeader(options.slice(0, 1), options[0] ?? null)).toBe(null);
+    expect(repositoryLabelForHeader(options, null)).toBe(null);
   });
 });

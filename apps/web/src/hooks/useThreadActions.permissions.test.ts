@@ -127,6 +127,12 @@ vi.mock("../terminalUiStateStore", () => ({
       clearTerminalUiState: () => state.localEffects.push("clear-terminal-ui"),
     }),
 }));
+vi.mock("../repositorySelectionStore", () => ({
+  useRepositorySelectionStore: (select: (store: unknown) => unknown) =>
+    select({
+      removeThread: () => state.localEffects.push("clear-repository-selection"),
+    }),
+}));
 vi.mock("../uiStateStore", () => ({
   useUiStateStore: (select: (store: unknown) => unknown) =>
     select({
@@ -317,6 +323,7 @@ describe("thread action permissions", () => {
     expect(state.confirm).not.toHaveBeenCalled();
     expect(state.requests.map((request) => request.action)).toEqual(["stopSession", "delete"]);
     expect(state.localEffects).toContain("clear-terminal-ui");
+    expect(state.localEffects).toContain("clear-repository-selection");
   });
 
   it("does not request worktree removal after its grant is revoked during delete", async () => {

@@ -1,5 +1,6 @@
 import type {
   EnvironmentId,
+  OrchestrationProjectLibraryCursor,
   OrchestrationProjectLibraryEntry,
   ProjectId,
 } from "@t3tools/contracts";
@@ -12,7 +13,6 @@ import { isElectron } from "~/env";
 import { useEscapeToGoBack } from "../../hooks/useNavigateBack";
 import { useNowSecond } from "../../hooks/useNowSecond";
 import { cn } from "../../lib/utils";
-import { ORCHESTRATION_PROJECT_LIBRARY_PAGE_LIMIT } from "@t3tools/contracts";
 import { useProject } from "../../state/entities";
 import { useProjectLibraryPage } from "../../state/queries";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
@@ -89,9 +89,9 @@ function LibraryRow(props: {
 function LibraryPageRows(props: {
   readonly environmentId: EnvironmentId;
   readonly projectId: ProjectId;
-  readonly offset: number;
+  readonly cursor: OrchestrationProjectLibraryCursor | null;
   readonly isLast: boolean;
-  readonly onLoadMore: () => void;
+  readonly onLoadMore: (cursor: OrchestrationProjectLibraryCursor) => void;
   readonly nowMs: number;
 }) {
   const query = useProjectLibraryPage(props);
@@ -111,7 +111,7 @@ function LibraryPageRows(props: {
       </li>
     );
   }
-  const { entries, nextOffset } = query.data;
+  const { entries, nextCursor } = query.data;
   return (
     <>
       {entries.map((entry) => (
@@ -122,9 +122,9 @@ function LibraryPageRows(props: {
           nowMs={props.nowMs}
         />
       ))}
-      {props.isLast && nextOffset !== null ? (
+      {props.isLast && nextCursor !== null ? (
         <li className="flex justify-center p-3">
-          <Button size="xs" variant="outline" onClick={props.onLoadMore}>
+          <Button size="xs" variant="outline" onClick={() => props.onLoadMore(nextCursor)}>
             Load more
           </Button>
         </li>
@@ -138,8 +138,10 @@ function ProjectLibraryBody(props: {
   readonly projectId: ProjectId;
 }) {
   const nowMs = useNowSecond();
-  const [pageCount, setPageCount] = useState(1);
-  const firstPage = useProjectLibraryPage({ ...props, offset: 0 });
+  const [cursors, setCursors] = useState<ReadonlyArray<OrchestrationProjectLibraryCursor | null>>([
+    null,
+  ]);
+  const firstPage = useProjectLibraryPage({ ...props, cursor: null });
   if (firstPage.data !== null && firstPage.data.total === 0) {
     return (
       <Empty>
@@ -158,14 +160,14 @@ function ProjectLibraryBody(props: {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <ul className="m-0 flex list-none flex-col divide-y divide-border p-0">
-        {Array.from({ length: pageCount }, (_, index) => (
+        {cursors.map((cursor, index) => (
           <LibraryPageRows
-            key={index}
+            key={cursor === null ? "first" : `${cursor.changedAt}:${cursor.path}`}
             environmentId={props.environmentId}
             projectId={props.projectId}
-            offset={index * ORCHESTRATION_PROJECT_LIBRARY_PAGE_LIMIT}
-            isLast={index === pageCount - 1}
-            onLoadMore={() => setPageCount(index + 2)}
+            cursor={cursor}
+            isLast={index === cursors.length - 1}
+            onLoadMore={(next) => setCursors([...cursors.slice(0, index + 1), next])}
             nowMs={nowMs}
           />
         ))}

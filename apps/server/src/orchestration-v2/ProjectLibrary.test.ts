@@ -1,3 +1,5 @@
+import * as NodeOS from "node:os";
+
 import { assert, it } from "@effect/vitest";
 import {
   EventId,
@@ -124,7 +126,10 @@ const seed = (events: ReadonlyArray<OrchestrationV2DomainEvent>) =>
     Effect.forEach(events, projections.apply, { discard: true }),
   );
 
-const list = (projectId: ProjectId, page: { limit?: number; offset?: number } = {}) =>
+const list = (
+  projectId: ProjectId,
+  page: { limit?: number; offset?: number; cursor?: { changedAt: string; path: string } } = {},
+) =>
   Effect.flatMap(ProjectLibrary.ProjectLibrary, (library) => library.list({ projectId, ...page }));
 
 it.layer(layerTest)("ProjectLibrary", (it) => {
@@ -134,7 +139,12 @@ it.layer(layerTest)("ProjectLibrary", (it) => {
       yield* createProject(project);
       yield* seed([thread(ThreadId.make("thread:empty"), project)]);
 
-      assert.deepEqual(yield* list(project), { entries: [], total: 0, nextOffset: null });
+      assert.deepEqual(yield* list(project), {
+        entries: [],
+        total: 0,
+        nextOffset: null,
+        nextCursor: null,
+      });
     }),
   );
 
@@ -157,7 +167,7 @@ it.layer(layerTest)("ProjectLibrary", (it) => {
         result.entries.map((entry) => [entry.path, entry.status]),
         [
           ["docs/old.md", "deleted"],
-          ["src/b.ts", "edited"],
+          ["src/b.ts", "created"],
         ],
       );
     }),
@@ -261,5 +271,125 @@ it.layer(layerTest)("ProjectLibrary", (it) => {
         [["file-1.ts"], null],
       );
     }),
+  );
+
+  it.effect("treats backslashes as separators", () =>
+    Effect.gen(function* () {
+      const project = ProjectId.make("project:backslash");
+      const threadId = ThreadId.make("thread:backslash");
+      yield* createProject(project);
+      yield* seed([
+        thread(threadId, project, { worktreePath: "C:\\wt\\feature" }),
+        fileChange(threadId, "item:backslash", 1, [
+          { operation: "edit", path: "C:\\wt\\feature\\src\\app.ts" },
+        ]),
+      ]);
+
+      assert.deepEqual(
+        (yield* list(project)).entries.map((entry) => entry.path),
+        ["src/app.ts"],
+      );
+    }),
+  );
+
+  it.effect("matches roots that differ only by the macOS /private prefix", () =>
+    Effect.gen(function* () {
+      const project = ProjectId.make("project:private");
+      const main = ThreadId.make("thread:private-main");
+      const worktree = ThreadId.make("thread:private-wt");
+      yield* createProject(project);
+      yield* seed([
+        thread(main, project),
+        thread(worktree, project, { worktreePath: "/private/var/wt/feature" }),
+        fileChange(main, "item:private-main", 1, [
+          { operation: "edit", path: `/private${rootOf(project)}/src/app.ts` },
+        ]),
+        fileChange(worktree, "item:private-wt", 2, [
+          { operation: "edit", path: "/var/wt/feature/src/app.ts" },
+        ]),
+      ]);
+
+      const result = yield* list(project);
+      assert.deepEqual(
+        result.entries.map((entry) => [entry.path, entry.threadId]),
+        [["src/app.ts", worktree]],
+      );
+    }),
+  );
+
+  it.effect("shows paths outside the workspace with the home directory as ~", () =>
+    Effect.gen(function* () {
+      const project = ProjectId.make("project:outside");
+      const threadId = ThreadId.make("thread:outside");
+      yield* createProject(project);
+      yield* seed([
+        thread(threadId, project),
+        fileChange(threadId, "item:outside", 1, [
+          { operation: "edit", path: `${NodeOS.homedir()}/notes/todo.md` },
+          { operation: "edit", path: "/etc/hosts" },
+        ]),
+      ]);
+
+      assert.deepEqual((yield* list(project)).entries.map((entry) => entry.path).toSorted(), [
+        "/etc/hosts",
+        "~/notes/todo.md",
+      ]);
+    }),
+  );
+
+  it.effect("keeps a renamed file created at its new path", () =>
+    Effect.gen(function* () {
+      const project = ProjectId.make("project:rename-created");
+      const threadId = ThreadId.make("thread:rename-created");
+      yield* createProject(project);
+      yield* seed([
+        thread(threadId, project),
+        fileChange(threadId, "item:rc-create", 1, [{ operation: "add", path: "a.ts" }]),
+        fileChange(threadId, "item:rc-rename", 2, [
+          { operation: "rename", path: "b.ts", oldPath: "a.ts" },
+        ]),
+      ]);
+
+      assert.deepEqual(
+        (yield* list(project)).entries.map((entry) => [entry.path, entry.status]),
+        [["b.ts", "created"]],
+      );
+    }),
+  );
+
+  it.effect(
+    "pages by keyset cursor without duplicating or skipping a file changed between pages",
+    () =>
+      Effect.gen(function* () {
+        const project = ProjectId.make("project:cursor");
+        const threadId = ThreadId.make("thread:cursor");
+        yield* createProject(project);
+        yield* seed([
+          thread(threadId, project),
+          ...[1, 2, 3, 4, 5].map((minute) =>
+            fileChange(threadId, `item:cursor-${minute}`, minute, [
+              { operation: "edit", path: `file-${minute}.ts` },
+            ]),
+          ),
+        ]);
+
+        const firstPage = yield* list(project, { limit: 2 });
+        assert.deepEqual(
+          firstPage.entries.map((entry) => entry.path),
+          ["file-5.ts", "file-4.ts"],
+        );
+        assert.isNotNull(firstPage.nextCursor);
+
+        yield* seed([
+          fileChange(threadId, "item:cursor-touch", 9, [{ operation: "edit", path: "file-3.ts" }]),
+        ]);
+
+        const secondPage = yield* list(project, { limit: 2, cursor: firstPage.nextCursor! });
+        assert.deepEqual(
+          secondPage.entries.map((entry) => entry.path),
+          ["file-2.ts", "file-1.ts"],
+        );
+        assert.isNull(secondPage.nextCursor);
+      }),
   );
 });

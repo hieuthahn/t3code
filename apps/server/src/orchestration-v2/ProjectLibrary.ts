@@ -1,9 +1,12 @@
+import * as NodeOS from "node:os";
+
 import {
   IsoDateTime,
   OrchestrationV2FileChangeDetail,
   ORCHESTRATION_PROJECT_LIBRARY_PAGE_LIMIT,
   type OrchestrationListProjectLibraryInput,
   type OrchestrationListProjectLibraryResult,
+  type OrchestrationProjectLibraryCursor,
   ProjectId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -49,22 +52,61 @@ const decodeChanges = Schema.decodeUnknownOption(
   Schema.fromJsonString(Schema.Array(OrchestrationV2FileChangeDetail)),
 );
 
+function normalizeSeparators(path: string): string {
+  return path.replaceAll("\\", "/");
+}
+
+/** macOS reports /var/... and /private/var/... for the same directory. */
+function canonicalPath(path: string): string {
+  return normalizeSeparators(path).replace(/^\/private(?=\/)/, "");
+}
+
 function stripRoot(path: string, root: string): string | null {
-  const prefix = root.endsWith("/") ? root : `${root}/`;
-  return path.startsWith(prefix) ? path.slice(prefix.length) : null;
+  const canonicalRoot = canonicalPath(root);
+  const prefix = canonicalRoot.endsWith("/") ? canonicalRoot : `${canonicalRoot}/`;
+  const canonical = canonicalPath(path);
+  return canonical.startsWith(prefix) ? canonical.slice(prefix.length) : null;
+}
+
+function abbreviateHome(path: string, home: string): string {
+  const relative = stripRoot(path, home);
+  return relative === null ? path : `~/${relative}`;
 }
 
 /**
  * Worktree threads report absolute paths under their own checkout, so strip the
- * thread's worktree first and the project root second. Paths outside both stay
- * as reported.
+ * thread's worktree first and the project root second. Paths outside both show
+ * the home directory as "~".
  */
-function toWorkspaceRelativePath(path: string, roots: ReadonlyArray<string | null>): string {
+function toWorkspaceRelativePath(
+  path: string,
+  roots: ReadonlyArray<string | null>,
+  home: string,
+): string {
   const relative = roots.reduce<string | null>(
     (found, root) => found ?? (root === null ? null : stripRoot(path, root)),
     null,
   );
-  return (relative ?? path).replace(/^(\.\/)+/, "");
+  return (relative ?? abbreviateHome(path, home)).replace(/^(\.\/)+/, "");
+}
+
+function isAfterCursor(
+  entry: { readonly changedAt: string; readonly path: string },
+  cursor: OrchestrationProjectLibraryCursor,
+): boolean {
+  return (
+    entry.changedAt < cursor.changedAt ||
+    (entry.changedAt === cursor.changedAt && entry.path > cursor.path)
+  );
+}
+
+function compareEntries(
+  left: { readonly changedAt: string; readonly path: string },
+  right: { readonly changedAt: string; readonly path: string },
+): number {
+  if (left.changedAt !== right.changedAt) return left.changedAt < right.changedAt ? 1 : -1;
+  if (left.path === right.path) return 0;
+  return left.path < right.path ? -1 : 1;
 }
 
 export class ProjectLibrary extends Context.Service<
@@ -85,6 +127,7 @@ interface LastTouch {
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const home = NodeOS.homedir();
 
   // Columns come from json_extract so the diff bodies in payload_json never
   // leave SQLite. Item ordinals restart per thread, so order by time first.
@@ -138,11 +181,11 @@ export const make = Effect.gen(function* () {
               : Option.getOrUndefined(decodeChanges(row.changesJson)),
         }).map((change) => ({
           operation: change.operation,
-          path: toWorkspaceRelativePath(change.path, roots),
+          path: toWorkspaceRelativePath(change.path, roots, home),
           oldPath:
             change.oldPath === undefined
               ? undefined
-              : toWorkspaceRelativePath(change.oldPath, roots),
+              : toWorkspaceRelativePath(change.oldPath, roots, home),
         }));
         applyFileChanges(byPath, changes, {
           threadId: row.threadId,
@@ -153,17 +196,23 @@ export const make = Effect.gen(function* () {
 
       const ordered = [...byPath]
         .map(([path, { status, meta }]) => ({ path, status, ...meta }))
-        .toSorted(
-          (left, right) =>
-            right.changedAt.localeCompare(left.changedAt) || left.path.localeCompare(right.path),
-        );
-      const offset = input.offset ?? 0;
+        .toSorted(compareEntries);
       const limit = input.limit ?? ORCHESTRATION_PROJECT_LIBRARY_PAGE_LIMIT;
-      const end = offset + limit;
+      const cursor = input.cursor;
+      const start =
+        cursor !== undefined
+          ? ordered.findIndex((entry) => isAfterCursor(entry, cursor))
+          : (input.offset ?? 0);
+      const remaining = start < 0 ? [] : ordered.slice(start);
+      const entries = remaining.slice(0, limit);
+      const hasMore = remaining.length > entries.length;
+      const last = entries.at(-1);
       return {
-        entries: ordered.slice(offset, end),
+        entries,
         total: ordered.length,
-        nextOffset: end < ordered.length ? end : null,
+        nextOffset: cursor === undefined && hasMore ? start + limit : null,
+        nextCursor:
+          hasMore && last !== undefined ? { changedAt: last.changedAt, path: last.path } : null,
       };
     },
   );

@@ -7,6 +7,12 @@ export type ProjectLibraryEntryStatus = typeof ProjectLibraryEntryStatus.Type;
 
 export const ORCHESTRATION_PROJECT_LIBRARY_PAGE_LIMIT = 100;
 
+export const OrchestrationProjectLibraryCursor = Schema.Struct({
+  changedAt: IsoDateTime,
+  path: TrimmedNonEmptyString,
+});
+export type OrchestrationProjectLibraryCursor = typeof OrchestrationProjectLibraryCursor.Type;
+
 export const OrchestrationListProjectLibraryInput = Schema.Struct({
   projectId: ProjectId,
   limit: Schema.optionalKey(
@@ -14,7 +20,10 @@ export const OrchestrationListProjectLibraryInput = Schema.Struct({
       Schema.isBetween({ minimum: 1, maximum: ORCHESTRATION_PROJECT_LIBRARY_PAGE_LIMIT }),
     ),
   ),
+  /** Legacy offset paging; ignored when `cursor` is set. */
   offset: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  /** Keyset position: the last entry of the previous page. */
+  cursor: Schema.optionalKey(OrchestrationProjectLibraryCursor),
 });
 export type OrchestrationListProjectLibraryInput = typeof OrchestrationListProjectLibraryInput.Type;
 
@@ -32,6 +41,7 @@ export const OrchestrationListProjectLibraryResult = Schema.Struct({
   entries: Schema.Array(OrchestrationProjectLibraryEntry),
   total: Schema.Int,
   nextOffset: Schema.NullOr(Schema.Int),
+  nextCursor: Schema.NullOr(OrchestrationProjectLibraryCursor),
 });
 export type OrchestrationListProjectLibraryResult =
   typeof OrchestrationListProjectLibraryResult.Type;

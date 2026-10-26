@@ -12,6 +12,7 @@ import {
   AuthSourceControlWriteScope,
   EnvironmentAuthorizationError,
   EnvironmentId,
+  type ProjectId,
   type ScopedThreadRef,
   ThreadId,
   sessionGrantsScope,
@@ -61,6 +62,13 @@ import { showThreadUndoNotice } from "./showThreadUndoNotice";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
+import { joinWorkspacePath } from "../components/chat/repositorySelection";
+import {
+  buildRemovedDirtyNestedRepositoriesNotice,
+  buildWorktreeDeleteMessage,
+  DIRTY_NESTED_REPOSITORY_LOOKUP_MS,
+  resolveWithin,
+} from "./worktreeDeleteConfirmation";
 
 export class ThreadArchiveBlockedError extends Schema.TaggedError<ThreadArchiveBlockedError>()(
   "ThreadArchiveBlockedError",
@@ -296,6 +304,9 @@ export function useThreadActions() {
     reportFailure: false,
     refresh: true,
   });
+  const listNestedRepositories = useAtomQueryRunner(orchestrationEnvironment.nestedRepositories, {
+    reportFailure: false,
+  });
   const refreshVcsStatus = useAtomCommand(vcsEnvironment.refreshStatus, {
     reportFailure: false,
   });
@@ -403,6 +414,30 @@ export function useThreadActions() {
     return archiveResult;
   };
 
+  const countDirtyNestedRepositories = (
+    threadRef: ScopedThreadRef,
+    projectId: ProjectId,
+    worktreePath: string,
+  ): Promise<number> =>
+    resolveWithin(DIRTY_NESTED_REPOSITORY_LOOKUP_MS, 0, async () => {
+      const listed = await listNestedRepositories({
+        environmentId: threadRef.environmentId,
+        input: { projectId, threadId: threadRef.threadId },
+      });
+      if (listed._tag !== "Success") return 0;
+      const statuses = await Promise.all(
+        listed.value.repositories.map((repository) =>
+          refreshVcsStatus({
+            environmentId: threadRef.environmentId,
+            input: { cwd: joinWorkspacePath(worktreePath, repository.path) },
+          }),
+        ),
+      );
+      return statuses.filter(
+        (status) => status._tag === "Success" && status.value.hasWorkingTreeChanges,
+      ).length;
+    });
+
   const deleteThread = async (
     target: ScopedThreadRef,
     opts: { deletedThreadKeys?: ReadonlySet<string> } = {},
@@ -485,19 +520,28 @@ export function useThreadActions() {
         sessionGrantsScope(sessionResult.value, AuthSourceControlWriteScope);
     }
     let shouldDeleteWorktree = false;
+    let dirtyNestedRepositories = 0;
     const environmentSettings = environmentConfig?.settings;
     const automaticWorktreeCleanup = environmentSettings
       ? resolveWorktreeCleanup(environmentSettings, thread.projectId).worktreeOnDelete
       : false;
-    if (canDeleteWorktree && localApi && !automaticWorktreeCleanup) {
+    if (
+      canDeleteWorktree &&
+      localApi &&
+      orphanedWorktreePath !== null &&
+      !automaticWorktreeCleanup
+    ) {
+      dirtyNestedRepositories = await countDirtyNestedRepositories(
+        threadRef,
+        thread.projectId,
+        orphanedWorktreePath,
+      );
       const confirmationResult = await settlePromise(() =>
         localApi.dialogs.confirm(
-          [
-            "This thread is the only one linked to this worktree:",
-            displayWorktreePath ?? orphanedWorktreePath,
-            "",
-            "Delete the worktree too?",
-          ].join("\n"),
+          buildWorktreeDeleteMessage({
+            worktreePath: displayWorktreePath ?? orphanedWorktreePath,
+            dirtyNestedRepositories,
+          }),
           { variant: "destructive" },
         ),
       );
@@ -581,6 +625,22 @@ export function useThreadActions() {
             }),
           ),
         );
+    if (
+      removeResult._tag === "Success" &&
+      dirtyNestedRepositories === 0 &&
+      removeResult.value !== undefined &&
+      removeResult.value.dirtyNestedRepositories > 0
+    ) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "warning",
+          title: "Worktree deleted",
+          description: buildRemovedDirtyNestedRepositoriesNotice(
+            removeResult.value.dirtyNestedRepositories,
+          ),
+        }),
+      );
+    }
     const refreshResult =
       removeResult._tag === "Success"
         ? await refreshVcsStatus({

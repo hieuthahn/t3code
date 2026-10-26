@@ -1,4 +1,5 @@
 import * as Deferred from "effect/Deferred";
+import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
@@ -53,9 +54,9 @@ export function assistantText(line: string): string | undefined {
 }
 
 /**
- * Keeps one `claude -p` started and idle per enabled account from start-up, so a judgment costs
- * a model round trip rather than a CLI boot. Each process answers one question: a reused session
- * would carry another thread's conversation into the next verdict.
+ * Keeps `claude -p` processes started and idle per enabled account from start-up, so a judgment
+ * costs a model round trip rather than a CLI boot. Each process answers one question: a reused
+ * session would carry another thread's conversation into the next verdict.
  */
 export const makeClaudeEffortJudge = Effect.fn("makeClaudeEffortJudge")(function* (
   claudeSettings: ClaudeSettings,
@@ -66,13 +67,20 @@ export const makeClaudeEffortJudge = Effect.fn("makeClaudeEffortJudge")(function
     readonly warmAtStart?: boolean;
     /** True answers a question asked while cold by starting a process for it. */
     readonly waitWhenCold?: boolean;
+    /** Processes kept idle at once, so questions asked together are all answered warm. */
+    readonly poolSize?: number;
+    /** Replaces a process idle this long, since one left for hours answers slower. */
+    readonly maxIdle?: Duration.Input;
   },
 ) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const fileSystem = yield* FileSystem.FileSystem;
   const instanceScope = yield* Effect.scope;
   const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, environment);
-  const warmRef = yield* Ref.make(Option.none<WarmProcess>());
+  const poolSize = Math.max(1, options?.poolSize ?? 1);
+  const pool = yield* Ref.make<ReadonlyArray<WarmProcess>>([]);
+  const closeInBackground = (warm: WarmProcess) =>
+    Effect.asVoid(Effect.forkIn(Scope.close(warm.scope, Exit.void), instanceScope));
 
   const spawnWarm = Effect.gen(function* () {
     const scope = yield* Scope.fork(instanceScope);
@@ -135,20 +143,64 @@ export const makeClaudeEffortJudge = Effect.fn("makeClaudeEffortJudge")(function
     return yield* started.pipe(Effect.onError(() => Scope.close(scope, Exit.void)));
   }).pipe(Effect.provideService(FileSystem.FileSystem, fileSystem));
 
-  const replaceWarm = spawnWarm.pipe(
-    Effect.flatMap((next) => Ref.getAndSet(warmRef, Option.some(next))),
-    Effect.flatMap((displaced) =>
-      Option.isSome(displaced) ? Scope.close(displaced.value.scope, Exit.void) : Effect.void,
+  /** Adds a started process, closing the oldest when the pool is already full. */
+  const addWarm: Effect.Effect<void> = Effect.suspend(() => spawnWarm).pipe(
+    Effect.tap((next) => retireWhenIdle(next)),
+    Effect.flatMap((next) =>
+      Ref.modify(pool, (current): [ReadonlyArray<WarmProcess>, ReadonlyArray<WarmProcess>] => {
+        const kept = [...current, next];
+        return [kept.slice(0, -poolSize), kept.slice(-poolSize)];
+      }),
     ),
+    Effect.flatMap((displaced) => Effect.forEach(displaced, closeInBackground)),
     Effect.ignore,
   );
 
+  /** Starts a replacement first and swaps it in, so the pool never empties for a recycle. */
+  const recycle = (stale: WarmProcess) =>
+    spawnWarm.pipe(
+      Effect.tap((next) => retireWhenIdle(next)),
+      Effect.flatMap((next) =>
+        Ref.modify(pool, (current): [WarmProcess, ReadonlyArray<WarmProcess>] =>
+          current.includes(stale)
+            ? [stale, current.map((warm) => (warm === stale ? next : warm))]
+            : [next, current],
+        ),
+      ),
+      Effect.flatMap(closeInBackground),
+      Effect.ignore,
+      Effect.when(Ref.get(pool).pipe(Effect.map((current) => current.includes(stale)))),
+      Effect.asVoid,
+    );
+
+  const retireWhenIdle = (warm: WarmProcess): Effect.Effect<void> =>
+    options?.maxIdle === undefined
+      ? Effect.void
+      : Effect.sleep(options.maxIdle).pipe(
+          Effect.andThen(Effect.forkIn(recycle(warm), instanceScope)),
+          Effect.forkIn(warm.scope),
+          Effect.asVoid,
+        );
+
+  const fill = Effect.gen(function* () {
+    const missing = poolSize - (yield* Ref.get(pool)).length;
+    yield* Effect.forEach(Array.from({ length: Math.max(0, missing) }), () => addWarm, {
+      concurrency: "unbounded",
+      discard: true,
+    });
+  });
+
   // A cold start takes seconds and runs uninterruptibly, so it never happens on a judged turn:
   // that turn falls back while the next process boots.
-  const take = Ref.getAndSet(warmRef, Option.none()).pipe(
-    Effect.tap(() => Effect.forkIn(replaceWarm, instanceScope)),
-  );
+  const take = Ref.modify(
+    pool,
+    (current): [Option.Option<WarmProcess>, ReadonlyArray<WarmProcess>] =>
+      current.length === 0
+        ? [Option.none(), current]
+        : [Option.some(current[0]!), current.slice(1)],
+  ).pipe(Effect.tap(() => Effect.forkIn(addWarm, instanceScope)));
 
+  // Closing waits up to forceKillAfter for the process to exit, which a deadline must not wait on.
   const answer = (warm: WarmProcess, question: string) =>
     Effect.acquireUseRelease(
       Effect.succeed(warm),
@@ -157,15 +209,15 @@ export const makeClaudeEffortJudge = Effect.fn("makeClaudeEffortJudge")(function
           warm.input,
           `${encodeJson({ type: "user", message: { role: "user", content: question } })}\n`,
         ).pipe(Effect.andThen(Deferred.await(warm.answer)), Effect.map(Option.some)),
-      () => Scope.close(warm.scope, Exit.void),
+      () => closeInBackground(warm),
     );
 
   if (claudeSettings.enabled && options?.warmAtStart !== false) {
-    yield* Effect.forkIn(replaceWarm, instanceScope);
+    yield* Effect.forkIn(fill, instanceScope);
   }
 
   return {
-    prewarm: replaceWarm,
+    prewarm: addWarm,
     ask: (question) =>
       take.pipe(
         Effect.flatMap((current) =>

@@ -214,7 +214,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       processEnv,
       modelCatalog,
     );
-    const effortJudge = yield* makeClaudeEffortJudge(effectiveConfig, processEnv);
+    const effortJudge = yield* makeClaudeEffortJudge(effectiveConfig, processEnv, {
+      poolSize: 2,
+      maxIdle: "15 minutes",
+    });
     const promptSuggester = yield* makeClaudeEffortJudge(effectiveConfig, processEnv, {
       systemPrompt: SUGGESTION_SYSTEM,
       warmAtStart: false,

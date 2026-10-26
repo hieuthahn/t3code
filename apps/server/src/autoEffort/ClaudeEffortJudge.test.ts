@@ -38,6 +38,13 @@ createInterface({ input: process.stdin }).on("line", (line) => {
 });
 `;
 
+// Reads a question and never answers it, and outlives SIGTERM until the kill that follows.
+const STUBBORN_JUDGE = `
+import { appendFileSync } from "node:fs";
+process.on("SIGTERM", () => {});
+process.stdin.on("data", () => appendFileSync(process.env.CLAUDE_CONFIG_DIR + "/judge-asked", "1"));
+`;
+
 describe("assistantText", () => {
   it("takes the first assistant text and skips empty or unrelated lines", () => {
     expect(assistantText('{"type":"system","subtype":"init"}')).toBeUndefined();
@@ -158,6 +165,91 @@ describe("makeClaudeEffortJudge", () => {
         question: "what changed?",
         systemPrompt: "Recap the turn.",
       });
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.live("answers two questions at once from a pool of two", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-effort-judge-test-" });
+      const accountDir = path.join(dir, "account-pool");
+      yield* fs.makeDirectory(accountDir);
+      const binary = writeFakeCli({ directory: dir, name: "claude", source: FAKE_JUDGE });
+      const judge = yield* makeClaudeEffortJudge(
+        decodeClaudeSettings({ binaryPath: binary, homePath: accountDir, enabled: false }),
+        undefined,
+        { poolSize: 2 },
+      );
+
+      yield* judge.prewarm;
+      yield* judge.prewarm;
+      const replies = yield* Effect.all([judge.ask("rename x"), judge.ask("migrate everything")], {
+        concurrency: 2,
+      });
+      const seen = replies.map((reply) => JSON.parse(Option.getOrThrow(reply)));
+
+      expect(seen.map((entry) => entry.question).toSorted()).toEqual([
+        "migrate everything",
+        "rename x",
+      ]);
+      expect(seen[0].pid).not.toBe(seen[1].pid);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.live("replaces a process that waited past the idle limit", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-effort-judge-test-" });
+      const accountDir = path.join(dir, "account-idle");
+      yield* fs.makeDirectory(accountDir);
+      const binary = writeFakeCli({ directory: dir, name: "claude", source: FAKE_JUDGE });
+      const startsFile = path.join(accountDir, "judge-starts");
+      const secondStart = yield* fs.watch(accountDir).pipe(
+        Stream.mapEffect(() => fs.readFileString(startsFile).pipe(Effect.orElseSucceed(() => ""))),
+        Stream.map((text) => text.split("\n").filter((line) => line !== "")),
+        Stream.filter((pids) => pids.length >= 2),
+        Stream.runHead,
+        Effect.forkScoped,
+      );
+      const judge = yield* makeClaudeEffortJudge(
+        decodeClaudeSettings({ binaryPath: binary, homePath: accountDir }),
+        undefined,
+        { maxIdle: "200 millis" },
+      );
+
+      const pids = Option.getOrThrow(
+        yield* Fiber.join(secondStart).pipe(Effect.timeout("10 seconds")),
+      );
+      const reply = yield* judge.ask("rename x");
+
+      expect(JSON.parse(Option.getOrThrow(reply)).pid).not.toBe(Number(pids[0]));
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.live("lets go of an interrupted question without waiting for its process to exit", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-effort-judge-test-" });
+      const accountDir = path.join(dir, "account-stubborn");
+      yield* fs.makeDirectory(accountDir);
+      const binary = writeFakeCli({ directory: dir, name: "claude", source: STUBBORN_JUDGE });
+      const asked = yield* fs.watch(accountDir).pipe(
+        Stream.filter((event) => event.path.endsWith("judge-asked")),
+        Stream.runHead,
+        Effect.forkScoped,
+      );
+      const judge = yield* makeClaudeEffortJudge(
+        decodeClaudeSettings({ binaryPath: binary, homePath: accountDir, enabled: false }),
+      );
+
+      yield* judge.prewarm;
+      const question = yield* judge.ask("anything").pipe(Effect.forkChild);
+      yield* Fiber.join(asked).pipe(Effect.timeout("10 seconds"));
+
+      yield* Fiber.interrupt(question).pipe(Effect.timeout("500 millis"));
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 

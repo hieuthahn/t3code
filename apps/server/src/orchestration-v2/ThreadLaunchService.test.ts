@@ -779,20 +779,23 @@ describe("Team Auto", () => {
       return (yield* threads.getThreadProjection(launched.threadId)).thread.team;
     });
 
-  it.effect("starts the default saved team, led by the thread's model, when the judge says team", () => {
-    const judge = judged(true);
-    return Effect.gen(function* () {
-      const team = yield* launchAuto("auto-team", "auto");
-      assert.deepStrictEqual(team, { ...strongTeam, architect: modelSelection });
-      assert.equal(judge.asked.length, 1);
-      assert.equal(judge.asked[0]?.teamName, "Strong team");
-      assert.equal(judge.asked[0]?.text, "Build billing across server, web and the database");
-    }).pipe(
-      Effect.provide(
-        makeHarness({ serverSettings: teamSettings(), judgeTeam: judge.judgeTeam }).layer,
-      ),
-    );
-  });
+  it.effect(
+    "starts the default saved team, led by the thread's model, when the judge says team",
+    () => {
+      const judge = judged(true);
+      return Effect.gen(function* () {
+        const team = yield* launchAuto("auto-team", "auto");
+        assert.deepStrictEqual(team, { ...strongTeam, architect: modelSelection });
+        assert.equal(judge.asked.length, 1);
+        assert.equal(judge.asked[0]?.teamName, "Strong team");
+        assert.equal(judge.asked[0]?.text, "Build billing across server, web and the database");
+      }).pipe(
+        Effect.provide(
+          makeHarness({ serverSettings: teamSettings(), judgeTeam: judge.judgeTeam }).layer,
+        ),
+      );
+    },
+  );
 
   it.effect("runs a single agent when the judge says single, even with a new-thread team", () => {
     const judge = judged(false);
@@ -833,7 +836,11 @@ describe("Team Auto", () => {
 
   it.effect("lets the user's explicit team or single agent win over Auto", () => {
     const judge = judged(true);
-    const own = { architect: modelSelection, workers: [modelSelection], limits: DEFAULT_TEAM_LIMITS };
+    const own = {
+      architect: modelSelection,
+      workers: [modelSelection],
+      limits: DEFAULT_TEAM_LIMITS,
+    };
     return Effect.gen(function* () {
       assert.isUndefined(yield* launchAuto("explicit-single", null));
       assert.deepStrictEqual(yield* launchAuto("explicit-team", own), own);

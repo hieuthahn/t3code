@@ -7,6 +7,13 @@ import { isTemporaryWorktreeBranch } from "@t3tools/shared/git";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import type { ChangeRequestTerminology } from "@t3tools/client-runtime/source-control-clients";
 
+/** Source control actions that lock the repository choice while they run. */
+export const RUNNING_SOURCE_CONTROL_ACTIONS = [
+  "runStackedAction",
+  "pull",
+  "publishRepository",
+] as const;
+
 export type GitActionIconName = "commit" | "push" | "pr";
 
 export type GitDialogAction = "commit" | "push" | "create_pr";

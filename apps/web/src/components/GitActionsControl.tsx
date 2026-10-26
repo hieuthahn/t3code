@@ -59,6 +59,7 @@ import {
   resolveThreadBranchMetadataPatch,
   resolveQuickAction,
   resolveThreadBranchUpdate,
+  RUNNING_SOURCE_CONTROL_ACTIONS,
 } from "./GitActionsControl.logic";
 import { WizardPopup, WizardHeader, WizardSteps, WizardPanel, WizardFooter } from "./ui/wizard";
 import { StartTruncatedPath } from "./StartTruncatedPath";
@@ -176,7 +177,6 @@ function requestVcsStatusRefresh(
   }
   void refresh({ environmentId, input: { cwd } });
 }
-const RUNNING_SOURCE_CONTROL_ACTIONS = ["runStackedAction", "pull", "publishRepository"] as const;
 
 const PUBLISH_PROVIDER_OPTIONS = sourceControlClients.definitions.map((definition) => ({
   value: definition.kind,

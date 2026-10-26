@@ -49,6 +49,7 @@ import {
 } from "../state/entities";
 import { useUiStateStore } from "../uiStateStore";
 import { clearThreadPreviewState } from "../previewStateStore";
+import { useRepositorySelectionStore } from "../repositorySelectionStore";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
 import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "../worktreeCleanup";
@@ -301,6 +302,7 @@ export function useThreadActions() {
     (store) => store.clearProjectDraftThreadById,
   );
   const clearTerminalUiState = useTerminalUiStateStore((state) => state.clearTerminalUiState);
+  const removeRepositorySelection = useRepositorySelectionStore((state) => state.removeThread);
   const markThreadVisited = useUiStateStore((state) => state.markThreadVisited);
   const router = useRouter();
   const handleNewThread = useNewThreadHandler();
@@ -374,6 +376,7 @@ export function useThreadActions() {
       markThreadVisited(scopedThreadKey(threadRef), wokeAt);
     }
     refreshArchivedThreadsForEnvironment(threadRef.environmentId);
+    removeRepositorySelection(threadRef);
     opts.onArchived?.();
     showThreadUndoNotice({
       action: "Archived",
@@ -516,6 +519,7 @@ export function useThreadActions() {
       threadRef,
     );
     clearTerminalUiState(threadRef);
+    removeRepositorySelection(threadRef);
     clearThreadPreviewState(threadRef);
 
     if (shouldNavigateToFallback) {

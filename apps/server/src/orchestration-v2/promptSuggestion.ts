@@ -33,7 +33,16 @@ const WRAPPER_TAG = /^<(suggestion|response|output|answer)>([\s\S]*)<\/\1>$/i;
 const LABEL_PREFIX = /^\s*(suggested\s+(prompt|reply|input)|suggestion|reply|answer)\s*[:：]\s*/i;
 const NO_SUGGESTION = /^(none|nothing|n\/a|no suggestion|\(none\)|done)\.?$/i;
 /** One-word replies that still read as a whole prompt; Claude Code keeps the same short list. */
-const ONE_WORD_PROMPTS = new Set(["yes", "ok", "okay", "sure", "continue", "commit", "push", "stop"]);
+const ONE_WORD_PROMPTS = new Set([
+  "yes",
+  "ok",
+  "okay",
+  "sure",
+  "continue",
+  "commit",
+  "push",
+  "stop",
+]);
 
 /** The text the composer shows, or undefined when the reply holds no usable prompt. */
 export function cleanSuggestion(reply: string): string | undefined {
@@ -46,5 +55,7 @@ export function cleanSuggestion(reply: string): string | undefined {
   if (text === "" || text.includes("\n") || text.length > MAX_SUGGESTION_CHARS) return undefined;
   if (NO_SUGGESTION.test(text)) return undefined;
   const oneWord = !/\s/.test(text);
-  return oneWord && !ONE_WORD_PROMPTS.has(text.toLowerCase().replace(/[.!]$/, "")) ? undefined : text;
+  return oneWord && !ONE_WORD_PROMPTS.has(text.toLowerCase().replace(/[.!]$/, ""))
+    ? undefined
+    : text;
 }

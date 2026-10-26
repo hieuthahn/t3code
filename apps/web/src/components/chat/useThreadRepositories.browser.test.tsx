@@ -9,13 +9,16 @@ import { useThreadRepositories } from "./useThreadRepositories";
 const state = vi.hoisted(() => ({
   repositories: [] as { path: string; name: string; branch: string | null; originUrl: null }[],
   tags: {} as Record<string, string[]>,
+  touchCounts: undefined as Record<string, Record<string, number>> | undefined,
   statusCwds: [] as string[],
 }));
 
 vi.mock(import("../../state/queries"), async (original) => ({
   ...(await original()),
   useNestedRepositories: (() => ({ data: { repositories: state.repositories } })) as never,
-  useThreadRepositoryTags: (() => ({ data: { threads: state.tags } })) as never,
+  useThreadRepositoryTags: (() => ({
+    data: { threads: state.tags, touchCounts: state.touchCounts },
+  })) as never,
 }));
 vi.mock(import("../../state/query"), async (original) => ({
   ...(await original()),
@@ -36,10 +39,14 @@ const target = {
   worktreePath: null,
 };
 
-function Probe(props: { readonly worktreePath?: string | null }) {
+function Probe(props: {
+  readonly worktreePath?: string | null;
+  readonly envMode?: "local" | "worktree";
+}) {
   const repositories = useThreadRepositories({
     ...target,
     worktreePath: props.worktreePath ?? null,
+    ...(props.envMode ? { envMode: props.envMode } : {}),
   });
   return (
     <div>
@@ -57,6 +64,8 @@ function setup(
 ) {
   state.repositories = repositories;
   state.tags = {};
+  state.touchCounts = undefined;
+  state.statusCwds = [];
   useRepositorySelectionStore.setState({ byThreadKey: {} });
 }
 
@@ -98,5 +107,48 @@ describe("useThreadRepositories", () => {
     state.repositories = [{ path: "other", name: "other", branch: null, originUrl: null }];
     await screen.rerender(<Probe />);
     await expect.element(page.getByTestId("cwd")).toHaveTextContent("outer");
+  });
+
+  it("defaults to the most touched repository", async () => {
+    setup([
+      { path: "backend", name: "backend", branch: "main", originUrl: null },
+      { path: "web", name: "web", branch: "main", originUrl: null },
+    ]);
+    state.tags = { [threadId]: ["backend", "web"] };
+    state.touchCounts = { [threadId]: { backend: 1, web: 4 } };
+    await using _screen = await render(<Probe />);
+    await expect.element(page.getByTestId("cwd")).toHaveTextContent("/work/nojima/web");
+  });
+
+  it("clears a stored choice once its repository is no longer listed", async () => {
+    setup();
+    await using screen = await render(<Probe />);
+    await page.getByRole("button", { name: "pick backend" }).click();
+    state.repositories = [{ path: "other", name: "other", branch: null, originUrl: null }];
+    await screen.rerender(<Probe />);
+    await vi.waitFor(() => expect(useRepositorySelectionStore.getState().byThreadKey).toEqual({}));
+  });
+
+  it("never applies a nested cwd to a worktree-mode draft without a worktree", async () => {
+    setup();
+    state.tags = { [threadId]: ["backend"] };
+    useRepositorySelectionStore.getState().select({ environmentId, threadId }, "backend");
+    await using _screen = await render(<Probe envMode="worktree" />);
+    await expect.element(page.getByTestId("labels")).toBeEmptyDOMElement();
+    await expect.element(page.getByTestId("cwd")).toHaveTextContent("outer");
+  });
+
+  it("watches no status beyond the project root across many repositories", async () => {
+    setup([
+      { path: "a", name: "a", branch: "main", originUrl: null },
+      { path: "b", name: "b", branch: "main", originUrl: null },
+      { path: "c", name: "c", branch: "main", originUrl: null },
+    ]);
+    await using _screen = await render(<Probe />);
+    await expect.element(page.getByTestId("labels")).toHaveTextContent("Nojima,a,b,c");
+    expect(state.statusCwds.length).toBeGreaterThan(0);
+    for (const query of state.statusCwds) {
+      expect(query).toContain('\\"cwd\\":\\"/work/nojima\\"');
+    }
   });
 });

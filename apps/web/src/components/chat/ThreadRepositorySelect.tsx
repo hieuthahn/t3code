@@ -20,12 +20,15 @@ export function ThreadRepositorySelect(props: {
   readonly options: readonly RepositoryOption[];
   readonly selected: RepositoryOption | null;
   readonly onSelect: (path: string | null) => void;
+  /** Locks the choice while a git action runs so it cannot retarget mid-flight. */
+  readonly disabled?: boolean;
 }) {
   const selected = props.selected ?? props.options[0];
   if (props.options.length < 2 || selected === undefined) return null;
   return (
     <Select
       value={selected.path ?? OUTER_VALUE}
+      disabled={props.disabled === true}
       onValueChange={(value) => props.onSelect(value === OUTER_VALUE ? null : value)}
     >
       <SelectTrigger

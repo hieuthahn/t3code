@@ -84,7 +84,10 @@ describe("team setup helpers", () => {
         options: [{ id: "effort", value: "high" }],
         accountChoice: "pinned",
       }),
-    ).toEqual({ ...saved, architect: { ...architect, options: [{ id: "effort", value: "high" }] } });
+    ).toEqual({
+      ...saved,
+      architect: { ...architect, options: [{ id: "effort", value: "high" }] },
+    });
   });
 
   it("replaces a saved profile by id and appends a new one", () => {

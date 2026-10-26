@@ -1,4 +1,6 @@
 import { ThreadRepositorySelect } from "./ThreadRepositorySelect";
+import { useSourceControlActionRunning } from "../../lib/sourceControlActions";
+import { RUNNING_SOURCE_CONTROL_ACTIONS } from "../GitActionsControl.logic";
 import { useThreadRepositories } from "./useThreadRepositories";
 import type {
   EditorId,
@@ -98,10 +100,15 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
           projectName: props.activeProjectName,
           workspaceRoot: props.workspaceRoot,
           worktreePath: props.worktreePath,
+          envMode: props.forceNewWorktree ? "worktree" : props.envMode,
         }
       : null,
   );
   const repositoryCwd = repositories.repositoryCwd;
+  const isGitActionRunning = useSourceControlActionRunning(
+    { environmentId: props.environmentId, cwd: repositoryCwd ?? props.gitCwd },
+    RUNNING_SOURCE_CONTROL_ACTIONS,
+  );
   const fileScripts = useT3ProjectFileScripts(
     props.environmentId,
     props.activeProjectScripts ? props.gitCwd : null,
@@ -205,6 +212,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                     options={repositories.options}
                     selected={repositories.selected}
                     onSelect={repositories.select}
+                    disabled={isGitActionRunning}
                   />
                   {props.isGitRepo || repositoryCwd !== null ? (
                     <BranchToolbar layout="panel" panelSection="branch" {...branchToolbarProps} />

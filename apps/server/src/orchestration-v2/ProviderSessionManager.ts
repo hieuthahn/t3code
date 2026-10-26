@@ -326,7 +326,9 @@ export const layerWithOptions = (
       const projectService = yield* Effect.serviceOption(ProjectService.ProjectService);
       const eventSink = yield* EventSink.EventSinkV2;
       const commandOutput = yield* CommandOutputHub.CommandOutputHub;
-      const promptSuggestions = yield* Effect.serviceOption(PromptSuggestionHub.PromptSuggestionHub);
+      const promptSuggestions = yield* Effect.serviceOption(
+        PromptSuggestionHub.PromptSuggestionHub,
+      );
       const idAllocator = yield* IdAllocator.IdAllocatorV2;
       const providerEventIngestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
       const projectionStore = yield* ProjectionStore.ProjectionStoreV2;

@@ -14,6 +14,7 @@ import {
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -26,6 +27,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import type { McpInvocationScope } from "../mcp/McpInvocationContext.ts";
 import * as OrchestratorMcpService from "../mcp/OrchestratorMcpService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+import { isSettleableChildShell } from "../orchestration-v2/ThreadSettlementService.ts";
 import { describeWait, teamMessage } from "./teamMessages.ts";
 import { assignmentView, runView, type TeamRunRow } from "./teamRows.ts";
 import { newAssignmentProblems } from "./teamScheduler.ts";
@@ -307,6 +309,33 @@ export const layerWith = (options: { readonly tickEvery: Duration.Duration | nul
         },
       );
 
+      const settleWorkers = Effect.fn("Team.settleWorkers")(function* (
+        workerThreadIds: ReadonlyArray<ThreadId>,
+      ) {
+        const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
+        yield* Effect.forEach(
+          workerThreadIds,
+          (workerThreadId) =>
+            Effect.gen(function* () {
+              const shell = yield* shellOf(workerThreadId);
+              if (shell === null || !isSettleableChildShell(shell, nowMs)) return;
+              yield* threads.settleThread({
+                threadId: workerThreadId,
+                commandId: CommandId.make(`team:settle:${yield* newId}`),
+                byOwnAgent: false,
+              });
+            }).pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("Could not settle a team worker", {
+                  threadId: workerThreadId,
+                  cause,
+                }),
+              ),
+            ),
+          { discard: true },
+        );
+      });
+
       const finish: TeamService["Service"]["finish"] = Effect.fn("Team.finish")(
         function* (callerScope, input) {
           const threadId = callerScope.thread?.threadId;
@@ -336,12 +365,16 @@ export const layerWith = (options: { readonly tickEvery: Duration.Duration | nul
                 }
                 yield* store.updateRun(run, { status: "finished", summary: input.summary });
                 yield* closeOpenCards(run, teamMessage.teamFinished);
+                return current.flatMap((row) =>
+                  row.child_thread_id === null ? [] : [row.child_thread_id],
+                );
               }),
             )
             .pipe(
               Effect.mapError((error) =>
                 error._tag === "TeamError" ? asMcpFailure(error) : error,
               ),
+              Effect.flatMap(settleWorkers),
             );
           return { status: "finished" as const };
         },

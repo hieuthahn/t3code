@@ -377,6 +377,7 @@ describe("autoSettlementSettingsKey", () => {
   });
 });
 
+type SettleCommand = Extract<OrchestrationV2Command, { readonly type: "thread.settle" }>;
 type AutoSettleCommand = Extract<OrchestrationV2Command, { readonly type: "thread.auto-settle" }>;
 
 const testCrypto = Crypto.make({
@@ -488,6 +489,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
   const settingsChanges = yield* PubSub.unbounded<ContractServerSettings>();
   const mergedPullRequests = yield* PubSub.unbounded<PullRequestService.PullRequestMergeEvent>();
   const commands = yield* Ref.make<ReadonlyArray<AutoSettleCommand>>([]);
+  const settleCommands = yield* Ref.make<ReadonlyArray<SettleCommand>>([]);
   const branchCalls = yield* Ref.make<
     ReadonlyArray<{ readonly cwd: string; readonly branch: string }>
   >([]);
@@ -539,6 +541,11 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
     });
 
   const dispatch: Orchestrator.OrchestratorV2Shape["dispatch"] = (command) => {
+    if (command.type === "thread.settle") {
+      return Ref.update(settleCommands, (recorded) => [...recorded, command]).pipe(
+        Effect.as({ sequence: 1, storedEvents: [] }),
+      );
+    }
     if (command.type !== "thread.auto-settle") {
       return Effect.die(new Error(`Unexpected command: ${command.type}`));
     }
@@ -576,6 +583,15 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
               ? snapshot.threads
               : snapshot.threads.filter((thread) => thread.id === threadId),
           ),
+        ),
+      getShellSnapshot: () =>
+        Ref.get(snapshots).pipe(
+          Effect.map((snapshot) => ({
+            schemaVersion: snapshot.schemaVersion,
+            snapshotSequence: snapshot.snapshotSequence,
+            threads: snapshot.threads,
+            archivedThreads: snapshot.archivedThreads,
+          })),
         ),
       getThread: (threadId) => {
         const thread = options.currentThreads?.find((candidate) => candidate.id === threadId);
@@ -624,6 +640,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
     snapshotReads,
     candidateReads,
     commands,
+    settleCommands,
     branchCalls,
     summaryCalls,
     summaryRecovery,
@@ -1083,4 +1100,178 @@ describe("isSnoozed", () => {
       }),
     ).toBeNull();
   });
+});
+
+describe("settleableDescendantIds", () => {
+  const nowMs = NOW_MS;
+  const child = (
+    id: string,
+    parentId: string,
+    overrides: Partial<SettlementShell> = {},
+  ): SettlementShell =>
+    makeThread(id, {
+      lineage: {
+        rootThreadId: ThreadId.make("parent"),
+        parentThreadId: ThreadId.make(parentId),
+        relationshipToParent: "subagent",
+      },
+      ...overrides,
+    });
+  const idsFor = (threads: ReadonlyArray<SettlementShell>) =>
+    ThreadSettlementService.settleableDescendantIds(
+      ThreadId.make("parent"),
+      threads.map((thread) =>
+        thread.id === "parent" ? { ...thread, settledOverride: "settled" as const } : thread,
+      ),
+      nowMs,
+    );
+
+  it("settles finished and idle children and keeps running, waiting and queued ones", () => {
+    const ids = idsFor([
+      makeThread("parent"),
+      child("done", "parent", { status: "completed" }),
+      child("failed", "parent", { status: "failed" }),
+      child("cancelled", "parent", { status: "cancelled" }),
+      child("interrupted", "parent", { status: "interrupted" }),
+      child("idle", "parent"),
+      child("running", "parent", { status: "running", activityRunStatus: "running" }),
+      child("waiting", "parent", { status: "waiting", activityRunStatus: "waiting" }),
+      child("asking", "parent", {
+        status: "completed",
+        pendingRuntimeRequest: {
+          id: "request" as never,
+          kind: "user-input" as never,
+          createdAt: at(0),
+        },
+      }),
+    ]);
+    expect(ids).toEqual(["done", "failed", "cancelled", "interrupted", "idle"]);
+  });
+
+  it("settles nothing when the root is no longer settled", () => {
+    expect(
+      ThreadSettlementService.settleableDescendantIds(
+        ThreadId.make("parent"),
+        [makeThread("parent", { settledOverride: "active" }), child("done", "parent")],
+        nowMs,
+      ),
+    ).toEqual([]);
+  });
+
+  it("reaches grandchildren, including those below a running child", () => {
+    const ids = idsFor([
+      makeThread("parent"),
+      child("running", "parent", { status: "running", activityRunStatus: "running" }),
+      child("grandchild", "running", { status: "completed" }),
+      child("finished", "parent", { status: "completed" }),
+      child("great-grandchild", "finished", { status: "completed" }),
+    ]);
+    expect(ids).toEqual(["finished", "grandchild", "great-grandchild"]);
+  });
+
+  it("keeps pinned, snoozed, already settled and unsettled children", () => {
+    const ids = idsFor([
+      makeThread("parent"),
+      child("pinned", "parent", { pinnedAt: at(-1_000) }),
+      child("snoozed", "parent", { snoozedUntil: at(DAY_MS), snoozedAt: at(-1_000) }),
+      child("settled", "parent", { settledOverride: "settled", settledAt: at(-1_000) }),
+      child("reopened", "parent", { settledOverride: "active" }),
+      child("free", "parent"),
+    ]);
+    expect(ids).toEqual(["free"]);
+  });
+
+  it("leaves forks and children in another project alone", () => {
+    const ids = idsFor([
+      makeThread("parent"),
+      child("fork", "parent", {
+        lineage: {
+          rootThreadId: ThreadId.make("parent"),
+          parentThreadId: ThreadId.make("parent"),
+          relationshipToParent: "fork",
+        },
+      }),
+      child("elsewhere", "parent", { projectId: ProjectId.make("other-project") }),
+      child("below-elsewhere", "elsewhere"),
+      child("local", "parent"),
+    ]);
+    expect(ids).toEqual(["local"]);
+  });
+});
+
+describe("ThreadSettlementServiceV2 child settlement", () => {
+  const settledEvent = (thread: SettlementShell): OrchestrationV2DomainEvent => ({
+    type: "thread.settled",
+    id: EventId.make(`event:settled:${thread.id}`),
+    threadId: thread.id,
+    occurredAt: DateTime.makeUnsafe(NOW),
+    payload: thread as never,
+  });
+  const subagent = (id: string, parentId: string, overrides: Partial<SettlementShell> = {}) =>
+    makeThread(id, {
+      lineage: {
+        rootThreadId: ThreadId.make(parentId),
+        parentThreadId: ThreadId.make(parentId),
+        relationshipToParent: "subagent",
+      },
+      ...overrides,
+    });
+
+  it.effect("settles the finished children of a settled thread and nothing else", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const parent = makeThread("parent", { settledOverride: "settled", settledAt: at(0) });
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([
+            parent,
+            subagent("done", "parent", { status: "completed" }),
+            subagent("grandchild", "done", { status: "failed" }),
+            subagent("running", "parent", { status: "running", activityRunStatus: "running" }),
+            subagent("pinned", "parent", { pinnedAt: at(-1_000) }),
+          ]),
+        });
+
+        yield* Effect.gen(function* () {
+          const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+          yield* fixture.publishEvent(settledEvent(parent));
+          yield* service.drain;
+          yield* Effect.yieldNow;
+          const settled = (yield* Ref.get(fixture.settleCommands)).map(
+            (command) => command.threadId,
+          );
+          expect(settled).toEqual(["done", "grandchild"]);
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
+  it.effect("does not settle children when the parent is unsettled", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const parent = makeThread("parent", { settledOverride: "active" });
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([
+            parent,
+            subagent("done", "parent", { status: "completed", settledOverride: "settled" }),
+          ]),
+        });
+
+        yield* Effect.gen(function* () {
+          const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+          yield* fixture.publishEvent({
+            type: "thread.unsettled",
+            id: EventId.make("event:unsettled:parent"),
+            threadId: parent.id,
+            occurredAt: DateTime.makeUnsafe(NOW),
+            payload: parent as never,
+          } as OrchestrationV2DomainEvent);
+          yield* service.drain;
+          yield* Effect.yieldNow;
+          expect(yield* Ref.get(fixture.settleCommands)).toEqual([]);
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
 });

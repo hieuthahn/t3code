@@ -156,6 +156,58 @@ function pullRequestSettles(
   return pullRequestAtMs >= userAnchorMs;
 }
 
+const SETTLEABLE_STATUSES: ReadonlyArray<OrchestrationV2ThreadShell["status"]> = [
+  "idle",
+  "completed",
+  "failed",
+  "cancelled",
+  "interrupted",
+];
+
+/** Whether a finished child thread may settle together with its parent. */
+export function isSettleableChildShell(thread: OrchestrationV2ThreadShell, nowMs: number): boolean {
+  if (thread.deletedAt !== null || thread.archivedAt !== null) return false;
+  if (thread.settledOverride !== null) return false;
+  if (thread.pinnedAt != null || thread.autoSettleDisabledAt != null) return false;
+  if (!SETTLEABLE_STATUSES.includes(thread.status)) return false;
+  if (thread.activeRunId !== null || thread.activityRunStatus != null) return false;
+  if (thread.pendingRuntimeRequest !== null || thread.blockedOnThreadWait === true) return false;
+  if (backgroundWorkHoldsCompletion(thread.pendingBackgroundTasks ?? [])) return false;
+  if (threadHasQueuedTurnStart(thread, nowMs)) return false;
+  return !isSnoozed(thread, nowMs);
+}
+
+/** Descendant subagent threads of `rootId` in its project that may settle, parents before children. */
+export function settleableDescendantIds(
+  rootId: ThreadId,
+  threads: ReadonlyArray<OrchestrationV2ThreadShell>,
+  nowMs: number,
+): ReadonlyArray<ThreadId> {
+  const root = threads.find((thread) => thread.id === rootId);
+  if (root === undefined || root.settledOverride !== "settled") return [];
+  const childrenByParent = Map.groupBy(
+    threads.filter(
+      (thread) =>
+        thread.projectId === root.projectId &&
+        thread.lineage.relationshipToParent === "subagent" &&
+        thread.lineage.parentThreadId !== null,
+    ),
+    (thread) => thread.lineage.parentThreadId,
+  );
+  const settleable: ThreadId[] = [];
+  const visited = new Set<ThreadId>([rootId]);
+  const queue: ThreadId[] = [rootId];
+  for (let parentId = queue.shift(); parentId !== undefined; parentId = queue.shift()) {
+    for (const child of childrenByParent.get(parentId) ?? []) {
+      if (visited.has(child.id)) continue;
+      visited.add(child.id);
+      queue.push(child.id);
+      if (isSettleableChildShell(child, nowMs)) settleable.push(child.id);
+    }
+  }
+  return settleable;
+}
+
 export function isAutoSettlementCandidate(
   thread: Omit<ProjectionStore.ProjectionSettlementCandidate, "latestUserAuthoredMessageAt">,
   nowMs: number,
@@ -584,10 +636,51 @@ export const make = Effect.gen(function* () {
       ),
   );
 
+  const settleChildren = Effect.fn("ThreadSettlementServiceV2.settleChildren")(
+    function* (threadId: ThreadId) {
+      const snapshot = yield* projections.getShellSnapshot();
+      const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
+      const childIds = settleableDescendantIds(threadId, snapshot.threads, nowMs);
+      yield* Effect.forEach(
+        childIds,
+        (childId) =>
+          Effect.gen(function* () {
+            const uuid = yield* crypto.randomUUIDv4();
+            yield* orchestrator.dispatch({
+              type: "thread.settle",
+              commandId: CommandId.make(`server:settle-child:${childId}:${uuid}`),
+              threadId: childId,
+            });
+          }).pipe(
+            Effect.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause)
+                ? Effect.failCause(cause)
+                : Effect.logWarning("settling a child thread skipped", {
+                    threadId: childId,
+                    cause: Cause.pretty(cause),
+                  }),
+            ),
+          ),
+        { discard: true },
+      );
+    },
+    (effect, threadId) =>
+      effect.pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.failCause(cause)
+            : Effect.logWarning("settling child threads failed", {
+                threadId,
+                cause: Cause.pretty(cause),
+              }),
+        ),
+      ),
+  );
+
   const processEvent = (event: OrchestrationV2DomainEvent) => {
     switch (event.type) {
       case "thread.settled":
-        return cleanUpSettledThread(event.threadId);
+        return Effect.andThen(cleanUpSettledThread(event.threadId), settleChildren(event.threadId));
       case "thread.pull-request-link-updated":
       case "thread.pull-request-synced":
       case "provider-session.detached":

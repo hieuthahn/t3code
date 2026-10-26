@@ -1,5 +1,6 @@
 import * as NodeOS from "node:os";
 
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
   EventId,
@@ -12,24 +13,27 @@ import {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
+import * as NestedRepositories from "./NestedRepositories.ts";
 import * as ProjectLibrary from "./ProjectLibrary.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 
 const layerTest = Layer.mergeAll(
-  ProjectLibrary.layer,
+  ProjectLibrary.layer.pipe(Layer.provideMerge(NestedRepositories.layer)),
   ProjectionStore.layer,
   ProjectStore.layer,
-).pipe(Layer.provideMerge(SqlitePersistence.layerMemory));
+).pipe(Layer.provideMerge(SqlitePersistence.layerMemory), Layer.provideMerge(NodeServices.layer));
 
 const providerInstanceId = ProviderInstanceId.make("codex");
 const at = (minute: number) => DateTime.makeUnsafe(Date.UTC(2026, 8, 27, 0, minute));
 const rootOf = (projectId: ProjectId) => `/work/${projectId}`;
 
-const createProject = (projectId: ProjectId) =>
+const createProject = (projectId: ProjectId, workspaceRoot = rootOf(projectId)) =>
   Effect.flatMap(ProjectStore.ProjectStoreV2, (projects) =>
     projects.apply({
       sequence: 0,
@@ -45,7 +49,7 @@ const createProject = (projectId: ProjectId) =>
       payload: {
         projectId,
         title: projectId,
-        workspaceRoot: rootOf(projectId),
+        workspaceRoot,
         defaultModelSelection: null,
         scripts: [],
         createdAt: DateTime.formatIso(at(0)),
@@ -128,7 +132,12 @@ const seed = (events: ReadonlyArray<OrchestrationV2DomainEvent>) =>
 
 const list = (
   projectId: ProjectId,
-  page: { limit?: number; offset?: number; cursor?: { changedAt: string; path: string } } = {},
+  page: {
+    limit?: number;
+    offset?: number;
+    cursor?: { changedAt: string; path: string };
+    repository?: string;
+  } = {},
 ) =>
   Effect.flatMap(ProjectLibrary.ProjectLibrary, (library) => library.list({ projectId, ...page }));
 
@@ -391,5 +400,64 @@ it.layer(layerTest)("ProjectLibrary", (it) => {
         );
         assert.isNull(secondPage.nextCursor);
       }),
+  );
+  it.effect("assigns rows to their nested repository and filters by repository", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectory({ prefix: "library-repos-" });
+      for (const directory of ["backend/.git", "apps/admin/.git", "docs"]) {
+        yield* fs.makeDirectory(path.join(root, directory), { recursive: true });
+      }
+      const project = ProjectId.make("project:repos");
+      const threadId = ThreadId.make("thread:repos");
+      yield* createProject(project, root);
+      yield* seed([
+        thread(threadId, project),
+        fileChange(threadId, "item:outer", 1, [{ operation: "edit", path: "docs/a.md" }]),
+        fileChange(threadId, "item:backend", 2, [
+          { operation: "edit", path: `${root}/backend/src/app.ts` },
+        ]),
+        fileChange(threadId, "item:admin", 3, [
+          { operation: "edit", path: "apps/admin/src/main.ts" },
+        ]),
+        fileChange(threadId, "item:sibling", 4, [{ operation: "edit", path: "backend-notes.md" }]),
+      ]);
+
+      const all = yield* list(project);
+      assert.deepEqual(
+        all.entries.map((entry) => [entry.path, entry.repository]),
+        [
+          ["backend-notes.md", null],
+          ["apps/admin/src/main.ts", "apps/admin"],
+          ["backend/src/app.ts", "backend"],
+          ["docs/a.md", null],
+        ],
+      );
+
+      const filtered = yield* list(project, { repository: "backend" });
+      assert.deepEqual(
+        filtered.entries.map((entry) => entry.path),
+        ["backend/src/app.ts"],
+      );
+      assert.equal(filtered.total, 1);
+    }),
+  );
+
+  it.effect("leaves repository null when the project has no nested repositories", () =>
+    Effect.gen(function* () {
+      const project = ProjectId.make("project:repos-none");
+      const threadId = ThreadId.make("thread:repos-none");
+      yield* createProject(project);
+      yield* seed([
+        thread(threadId, project),
+        fileChange(threadId, "item:none", 1, [{ operation: "edit", path: "src/a.ts" }]),
+      ]);
+
+      assert.deepEqual(
+        (yield* list(project)).entries.map((entry) => entry.repository),
+        [null],
+      );
+    }),
   );
 });

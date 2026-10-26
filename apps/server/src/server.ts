@@ -187,6 +187,7 @@ import * as RuntimeLayer from "./orchestration-v2/runtimeLayer.ts";
 import * as AutoEffort from "./autoEffort/AutoEffortService.ts";
 import * as PromptSuggester from "./promptSuggestion/PromptSuggester.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
+import * as NestedRepositories from "./orchestration-v2/NestedRepositories.ts";
 import * as ProjectLibrary from "./orchestration-v2/ProjectLibrary.ts";
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
 import * as ThreadSettlementService from "./orchestration-v2/ThreadSettlementService.ts";
@@ -625,7 +626,13 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
 ).pipe(
   Layer.provideMerge(layerOrchestrationApplication),
   Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
-  Layer.provideMerge(Layer.mergeAll(ProjectStore.layer, ThreadSearch.layer, ProjectLibrary.layer)),
+  Layer.provideMerge(
+    Layer.mergeAll(
+      ProjectStore.layer,
+      ThreadSearch.layer,
+      ProjectLibrary.layer.pipe(Layer.provideMerge(NestedRepositories.layer)),
+    ),
+  ),
   Layer.provideMerge(layerServerSettings),
   Layer.provideMerge(layerSourceControlProviderRegistry),
   Layer.provideMerge(layerGit),

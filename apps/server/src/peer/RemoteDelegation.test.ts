@@ -34,6 +34,7 @@ import { McpSchema, McpServer } from "effect/ai";
 
 import * as MergeQueueService from "../mergeQueue/MergeQueueService.ts";
 import * as TeamService from "../team/TeamService.ts";
+import * as ProjectMemoryService from "../projectMemory/ProjectMemoryService.ts";
 import * as ServerConfig from "../config.ts";
 import * as McpHttpServer from "../mcp/McpHttpServer.ts";
 import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
@@ -467,7 +468,12 @@ const boxToolkitLayer = (thread: BoxThread) => {
     Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
     Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
     Layer.provide(Layer.mock(MergeQueueService.MergeQueueService)({})),
-    Layer.provide(Layer.mock(TeamService.TeamService)({})),
+    Layer.provide(
+      Layer.mergeAll(
+        Layer.mock(TeamService.TeamService)({}),
+        Layer.mock(ProjectMemoryService.ProjectMemoryService)({}),
+      ),
+    ),
     Layer.provide(Layer.mock(PeerLinks.PeerLinks)({})),
     Layer.provide(
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/p" }),
@@ -586,7 +592,12 @@ const makeLaptop = (
       Layer.provide(Layer.succeedContext(linking)),
       Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
       Layer.provide(Layer.mock(MergeQueueService.MergeQueueService)({})),
-      Layer.provide(Layer.mock(TeamService.TeamService)({})),
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.mock(TeamService.TeamService)({}),
+          Layer.mock(ProjectMemoryService.ProjectMemoryService)({}),
+        ),
+      ),
       Layer.provide(NodeCrypto.layer),
       Layer.provideMerge(layerThreads),
       Layer.provide(Layer.mock(ProviderRegistry.ProviderRegistry)({})),

@@ -127,6 +127,7 @@ import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
 import * as MergeQueueService from "./mergeQueue/MergeQueueService.ts";
 import * as TeamService from "./team/TeamService.ts";
+import * as ProjectMemoryService from "./projectMemory/ProjectMemoryService.ts";
 import * as SecretRequests from "./secrets/SecretRequests.ts";
 import {
   archivedShellStreamItemFromThreadShell,
@@ -1264,6 +1265,7 @@ type WsRpcServices =
   | SecretRequests.SecretRequests
   | MergeQueueService.MergeQueueService
   | TeamService.TeamService
+  | ProjectMemoryService.ProjectMemoryService
   | ServerConfig.ServerConfig
   | ServerEnvironment.ServerEnvironment
   | ServerLifecycleEvents.ServerLifecycleEvents
@@ -1316,6 +1318,7 @@ const makeWsRpcLayer = (
       const secretRequests = yield* SecretRequests.SecretRequests;
       const mergeQueue = yield* MergeQueueService.MergeQueueService;
       const team = yield* TeamService.TeamService;
+      const projectMemory = yield* ProjectMemoryService.ProjectMemoryService;
       const pullRequests = yield* PullRequestService.PullRequestService;
       const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
@@ -1875,6 +1878,28 @@ const makeWsRpcLayer = (
         [WS_METHODS.mergeQueueCancel]: (input) =>
           Effect.annotateCurrentSpan({ "merge_queue.item_id": input.itemId }).pipe(
             Effect.andThen(mergeQueue.cancel(input)),
+          ),
+        [WS_METHODS.projectMemoryList]: (input) =>
+          Effect.annotateCurrentSpan({ "project.id": input.projectId }).pipe(
+            Effect.andThen(projectMemory.list(input.projectId)),
+          ),
+        [WS_METHODS.projectMemorySubscribe]: (input) =>
+          Stream.unwrap(
+            Effect.annotateCurrentSpan({ "project.id": input.projectId }).pipe(
+              Effect.as(projectMemory.subscribe(input.projectId)),
+            ),
+          ),
+        [WS_METHODS.projectMemoryAppend]: (input) =>
+          Effect.annotateCurrentSpan({ "project.id": input.projectId }).pipe(
+            Effect.andThen(projectMemory.append(input)),
+          ),
+        [WS_METHODS.projectMemoryEdit]: (input) =>
+          Effect.annotateCurrentSpan({ "project.id": input.projectId }).pipe(
+            Effect.andThen(projectMemory.edit(input)),
+          ),
+        [WS_METHODS.projectMemoryDelete]: (input) =>
+          Effect.annotateCurrentSpan({ "project.id": input.projectId }).pipe(
+            Effect.andThen(projectMemory.delete(input)),
           ),
         [WS_METHODS.teamSubscribe]: (input) =>
           Stream.unwrap(
@@ -3371,6 +3396,7 @@ export const layer = Layer.unwrap(
     const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
     const mergeQueue = yield* MergeQueueService.MergeQueueService;
     const team = yield* TeamService.TeamService;
+    const projectMemory = yield* ProjectMemoryService.ProjectMemoryService;
     const sql = yield* SqlClient.SqlClient;
     return HttpRouter.add(
       "GET",
@@ -3469,6 +3495,9 @@ export const layer = Layer.unwrap(
               Layer.provide(Layer.succeed(PeerLinkRequests.PeerLinkRequests, peerLinkRequests)),
               Layer.provide(Layer.succeed(MergeQueueService.MergeQueueService, mergeQueue)),
               Layer.provide(Layer.succeed(TeamService.TeamService, team)),
+              Layer.provide(
+                Layer.succeed(ProjectMemoryService.ProjectMemoryService, projectMemory),
+              ),
               Layer.provide(
                 SourceControlDiscovery.layer.pipe(
                   Layer.provide(

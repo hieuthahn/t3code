@@ -78,6 +78,7 @@ import * as ReviewService from "./review/ReviewService.ts";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
 import * as MergeQueueService from "./mergeQueue/MergeQueueService.ts";
 import * as TeamService from "./team/TeamService.ts";
+import * as ProjectMemoryService from "./projectMemory/ProjectMemoryService.ts";
 import * as SecretRequests from "./secrets/SecretRequests.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
@@ -355,6 +356,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(SecretRequests.SecretRequests)({}),
   Layer.mock(MergeQueueService.MergeQueueService)({}),
   Layer.mock(TeamService.TeamService)({}),
+  Layer.mock(ProjectMemoryService.ProjectMemoryService)({}),
   Layer.mock(ServerLifecycleEvents.ServerLifecycleEvents)({}),
   Layer.mock(ServerRuntimeStartup.ServerRuntimeStartup)({}),
   Layer.mock(ServerSelfUpdate.ServerSelfUpdate)({}),
@@ -646,6 +648,7 @@ it.effect("pauses a thread's team for the user of the connection", () =>
             paused.push(input.threadId);
           }),
       }),
+      Layer.mock(ProjectMemoryService.ProjectMemoryService)({}),
     );
     const server = yield* RpcServer.makeNoSerialization(RpcGroup.make(WsTeamPauseRpc), {
       ...WS_RPC_SERVER_OPTIONS,

@@ -35,25 +35,25 @@ describe("summarizeRepositoryChips", () => {
     expect(summarizeRepositoryChips([])).toBeNull();
   });
 
-  it("shows every chip up to the cap", () => {
-    expect(summarizeRepositoryChips(["backend", "ios"])).toEqual({
-      labels: ["backend", "ios"],
+  it("shows a single repository as one chip", () => {
+    expect(summarizeRepositoryChips(["backend"])).toEqual({
+      labels: ["backend"],
       overflow: 0,
     });
   });
 
-  it("collapses the rest into a +N count past two chips", () => {
-    expect(MAX_REPOSITORY_CHIPS).toBe(2);
+  it("collapses the rest into a +N count past one chip", () => {
+    expect(MAX_REPOSITORY_CHIPS).toBe(1);
     expect(summarizeRepositoryChips(["backend", "ios", "web", "docs"])).toEqual({
-      labels: ["backend", "ios"],
-      overflow: 2,
+      labels: ["backend"],
+      overflow: 3,
     });
   });
 
   it("counts repositories that shorten to the same name once", () => {
     expect(summarizeRepositoryChips(["a/api", "b/api", "ios"])).toEqual({
-      labels: ["api", "ios"],
-      overflow: 0,
+      labels: ["api"],
+      overflow: 1,
     });
   });
 });

@@ -1021,7 +1021,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       <span
         aria-hidden
         className={cn(
-          "min-w-0 flex-1 text-start text-sm transition-opacity motion-reduce:transition-none",
+          "min-w-[12ch] flex-1 text-start text-sm transition-opacity motion-reduce:transition-none",
           shouldRecede ? "font-normal" : "font-medium",
           variant === "card" || props.nested || (props.compact && variantAction === "settle")
             ? cn(
@@ -1052,14 +1052,15 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       </span>
     );
   const accessibleTitle = isRenaming ? null : <span className="sr-only">{thread.title}</span>;
-  const repositoryChips = (
-    <SidebarRepositoryChips
-      environmentId={thread.environmentId}
-      projectId={thread.projectId}
-      threadId={thread.id}
-      workspaceRoot={props.project?.workspaceRoot ?? null}
-    />
-  );
+  const repositoryChips =
+    props.nested || props.childSession ? null : (
+      <SidebarRepositoryChips
+        environmentId={thread.environmentId}
+        projectId={thread.projectId}
+        threadId={thread.id}
+        workspaceRoot={props.project?.workspaceRoot ?? null}
+      />
+    );
 
   const prBadgeShape = supportsMultiplePullRequests
     ? resolveThreadPullRequestBadge(thread.pullRequests)

@@ -27,6 +27,18 @@ export class UnknownWorkspaceError extends Schema.TaggedError<UnknownWorkspaceEr
   }
 }
 
+export class NotRepositoryRootError extends Schema.TaggedError<NotRepositoryRootError>()(
+  "NotRepositoryRootError",
+  {
+    cwd: Schema.String,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  override get message(): string {
+    return `'${this.cwd}' sits inside another git repository and is not its top level, so the request was refused.`;
+  }
+}
+
 /** Resolve candidate and root consistently before checking containment. */
 export const isWithinRoot = (path: Path.Path, candidate: string, root: string) => {
   const relative = path.relative(root, candidate);
@@ -43,6 +55,8 @@ export class KnownWorkspaces extends Context.Service<
     readonly contains: (realPath: string) => Effect.Effect<boolean>;
     /** Fails unless `cwd` exists and resolves inside a known workspace. */
     readonly assertContains: (cwd: string) => Effect.Effect<void, UnknownWorkspaceError>;
+    /** Fails when git resolves `cwd` to another repository, so a folder that lost its `.git` never acts as its parent. */
+    readonly assertRepositoryRoot: (cwd: string) => Effect.Effect<void, NotRepositoryRootError>;
   }
 >()("t3/workspace/KnownWorkspaces") {}
 
@@ -55,6 +69,7 @@ export const make = Effect.gen(function* () {
   const projectStore = yield* ProjectStore.ProjectStoreV2;
   const sql = yield* SqlClient.SqlClient;
   const git = yield* GitVcsDriver.GitVcsDriver;
+  const hostPlatform = yield* HostProcess.Platform;
 
   // Missing roots keep lexical paths; other resolution failures and filesystem roots grant nothing.
   const resolveRoot = (value: string) => {
@@ -144,7 +159,48 @@ export const make = Effect.gen(function* () {
     if (!(yield* contains(realCwd))) return yield* new UnknownWorkspaceError({ cwd });
   });
 
-  return KnownWorkspaces.of({ contains, assertContains });
+  const sameFolder = (left: string, right: string) =>
+    hostPlatform === "darwin" || hostPlatform === "win32"
+      ? left.toLowerCase() === right.toLowerCase()
+      : left === right;
+
+  const assertRepositoryRoot: KnownWorkspaces["Service"]["assertRepositoryRoot"] = Effect.fn(
+    "KnownWorkspaces.assertRepositoryRoot",
+  )(function* (cwd) {
+    const realCwd = yield* fileSystem
+      .realPath(path.resolve(cwd))
+      .pipe(Effect.mapError((cause) => new NotRepositoryRootError({ cwd, cause })));
+    const projects = yield* projectStore.listShells().pipe(Effect.orElseSucceed(() => []));
+    for (const project of projects) {
+      const root = yield* resolveRoot(project.workspaceRoot);
+      // A project root may sit inside a larger repo, as a monorepo package does.
+      if (root !== null && sameFolder(root, realCwd)) return;
+    }
+    const topLevel = yield* git
+      .execute({
+        operation: "KnownWorkspaces.assertRepositoryRoot",
+        cwd: realCwd,
+        args: ["rev-parse", "--show-toplevel"],
+        allowNonZeroExit: true,
+        timeoutMs: 5_000,
+      })
+      .pipe(
+        Effect.map((result) => (result.exitCode === 0 ? result.stdout.replace(/\n$/, "") : null)),
+        Effect.orElseSucceed(() => null),
+      );
+    const realTopLevel =
+      topLevel === null || topLevel.length === 0
+        ? null
+        : yield* fileSystem
+            .realPath(path.resolve(realCwd, topLevel))
+            .pipe(Effect.orElseSucceed(() => null));
+    // Outside any repo the write fails in git itself, so only another repo's top level is refused.
+    if (realTopLevel !== null && !sameFolder(realTopLevel, realCwd)) {
+      return yield* new NotRepositoryRootError({ cwd });
+    }
+  });
+
+  return KnownWorkspaces.of({ contains, assertContains, assertRepositoryRoot });
 });
 
 export const layer = Layer.effect(KnownWorkspaces, make);

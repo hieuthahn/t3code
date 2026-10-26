@@ -7,6 +7,19 @@ type KnownWorkspacesService = KnownWorkspaces.KnownWorkspaces["Service"];
 
 /** Rejects a git or vcs cwd outside every known workspace, which includes nested repos under one. */
 export const makeGitCwdGuard = (knownWorkspaces: KnownWorkspacesService) => ({
+  /** Write guard: the cwd must also be the git top level, or a project root. */
+  asGitCommandWrite: (operation: string, cwd: string) =>
+    knownWorkspaces.assertContains(cwd).pipe(
+      Effect.andThen(knownWorkspaces.assertRepositoryRoot(cwd)),
+      Effect.mapError(
+        (error) => new GitCommandError({ operation, command: "git", cwd, detail: error.message }),
+      ),
+    ),
+  asGitManagerWrite: (operation: string, cwd: string) =>
+    knownWorkspaces.assertContains(cwd).pipe(
+      Effect.andThen(knownWorkspaces.assertRepositoryRoot(cwd)),
+      Effect.mapError((error) => new GitManagerError({ operation, cwd, detail: error.message })),
+    ),
   asGitCommandError: (operation: string, cwd: string) =>
     knownWorkspaces
       .assertContains(cwd)

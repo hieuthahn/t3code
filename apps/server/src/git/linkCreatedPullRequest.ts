@@ -12,6 +12,8 @@ import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 
+const trimTrailingSeparators = (value: string) => value.replace(/[\\/]+$/, "");
+
 export interface CreatedPullRequestKey {
   readonly host: string;
   readonly repository: string;
@@ -22,6 +24,7 @@ export interface CreatedPullRequestKey {
 export function createdPullRequestKey(
   result: Pick<GitRunStackedActionResult, "pr">,
   project: OrchestrationProjectShell | undefined,
+  options: { readonly nestedRepository?: boolean } = {},
 ): CreatedPullRequestKey | null {
   const { status, number, url } = result.pr;
   if ((status !== "created" && status !== "opened_existing") || number === undefined || !url) {
@@ -31,6 +34,8 @@ export function createdPullRequestKey(
   if (parsed !== undefined) {
     return { host: parsed.host, repository: parsed.repository, number: parsed.number, url };
   }
+  // The project identity names the outer repo, never a nested one.
+  if (options.nestedRepository === true) return null;
   const identity = project?.repositoryIdentity;
   const kind = identity?.provider;
   const repository = sourceControlDefinitions.repositorySelector(identity);
@@ -50,12 +55,14 @@ export function createdPullRequestKey(
 export const linkCreatedPullRequest: <E>(input: {
   readonly threadId: ThreadId;
   readonly result: Pick<GitRunStackedActionResult, "pr">;
+  readonly cwd?: string | undefined;
   readonly commandId: Effect.Effect<CommandId, E>;
 }) => Effect.Effect<void, never, Orchestrator.OrchestratorV2 | ProjectService.ProjectService> =
   Effect.fn("linkCreatedPullRequest")(
     function* <E>(input: {
       readonly threadId: ThreadId;
       readonly result: Pick<GitRunStackedActionResult, "pr">;
+      readonly cwd?: string | undefined;
       readonly commandId: Effect.Effect<CommandId, E>;
     }) {
       const engine = yield* Orchestrator.OrchestratorV2;
@@ -65,8 +72,20 @@ export const linkCreatedPullRequest: <E>(input: {
         .pipe(Effect.map(Option.fromNullishOr));
       if (Option.isNone(thread)) return;
       const project = Option.getOrUndefined(yield* projects.getShell(thread.value.projectId));
-      const key = createdPullRequestKey(input.result, project);
-      if (key === null) return;
+      const base = thread.value.worktreePath ?? project?.workspaceRoot;
+      const nestedRepository =
+        input.cwd !== undefined &&
+        base !== undefined &&
+        trimTrailingSeparators(input.cwd) !== trimTrailingSeparators(base);
+      const key = createdPullRequestKey(input.result, project, { nestedRepository });
+      if (key === null) {
+        if (nestedRepository) {
+          yield* Effect.logInfo("skipped linking a pull request created in a nested repository", {
+            threadId: input.threadId,
+          });
+        }
+        return;
+      }
       const commandId = yield* input.commandId;
       yield* engine
         .dispatch({

@@ -137,7 +137,7 @@ const LIMITED_THREAD_SWITCH_LABELS: Record<LimitedThreadSwitchMode, string> = {
 const isLimitedThreadSwitchMode = Schema.is(LimitedThreadSwitchMode);
 
 const AUTO_EFFORT_JUDGE_LABELS: Record<AutoEffortJudge, string> = {
-  auto: "Jev, then Haiku",
+  auto: "Jev and Haiku",
   haiku: "Haiku only",
 };
 const isAutoEffortJudge = Schema.is(AutoEffortJudge);
@@ -1144,7 +1144,7 @@ export function GeneralSettingsPanel() {
         <SettingsRow
           serverScoped
           {...searchableSetting("auto-effort-judge")}
-          description="Who picks the effort when Auto effort is on in the composer. Jev answers first when a TypeSafe key is found (TYPESAFE_API_KEY or ~/.config/jev/.env); Haiku decides otherwise, on the thread's Claude account (a Codex thread uses the text-generation Claude account, else the first one)."
+          description="Who picks the effort when Auto effort is on in the composer. With a TypeSafe key (TYPESAFE_API_KEY or ~/.config/jev/.env), Jev and Haiku answer together: a sure Jev pick applies at once, Haiku settles an unsure one, and Jev's pick stands when Haiku has no answer. Haiku runs on the thread's Claude account (a Codex thread uses the text-generation Claude account, else the first one)."
           settingKeys={["autoEffortJudge"]}
           control={
             <Select

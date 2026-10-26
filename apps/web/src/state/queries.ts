@@ -14,6 +14,7 @@ import type {
   ProjectContentMatch,
   ProjectEntry,
   ProjectEntryKind,
+  ProjectId,
   ThreadId,
   TurnItemId,
   VcsListRefsResult,
@@ -381,6 +382,19 @@ export function useCheckpointDiff(
     turnTarget === null ? null : orchestrationEnvironment.turnDiff(turnTarget),
   );
   return fullThreadTarget === null ? turn : fullThread;
+}
+
+export function useProjectLibraryPage(target: {
+  readonly environmentId: EnvironmentId;
+  readonly projectId: ProjectId;
+  readonly offset: number;
+}) {
+  return useEnvironmentQuery(
+    orchestrationEnvironment.projectLibrary({
+      environmentId: target.environmentId,
+      input: { projectId: target.projectId, offset: target.offset },
+    }),
+  );
 }
 
 export function useTurnItemDetail(

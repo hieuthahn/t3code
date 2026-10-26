@@ -55,6 +55,7 @@ import {
   FileSearchIcon,
   FolderGit2Icon,
   FolderIcon,
+  LibraryIcon,
   FolderPlusIcon,
   MessageSquareDashedIcon,
   LinkIcon,
@@ -1622,6 +1623,26 @@ function OpenCommandPaletteDialog(props: {
         });
       },
     });
+    const libraryProjectRef = contextualProjectRef ?? contextualProjectGroup.memberProjectRefs[0];
+    if (libraryProjectRef) {
+      actionItems.push({
+        kind: "action",
+        value: "action:project-library",
+        searchTerms: ["project", "library", "files", "outputs", "created", "edited", "deleted"],
+        title: "Project library",
+        description: contextualProjectGroup.displayName,
+        icon: <LibraryIcon className={ITEM_ICON_CLASS} />,
+        run: async () => {
+          await navigate({
+            to: "/library",
+            search: {
+              environmentId: libraryProjectRef.environmentId,
+              projectId: libraryProjectRef.projectId,
+            },
+          });
+        },
+      });
+    }
   }
 
   const rootGroups = buildRootGroups({ actionItems, recentThreadItems });

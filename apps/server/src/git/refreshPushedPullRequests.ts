@@ -26,7 +26,12 @@ export const refreshPushedPullRequests = Effect.fn("refreshPushedPullRequests")(
     }
     const projects = yield* (yield* ProjectStore.ProjectStoreV2).listShells();
     yield* Effect.forEach(
-      projects.filter((project) => project.workspaceRoot === input.cwd),
+      projects.filter((project) => {
+        const root = project.workspaceRoot.replace(/[\\/]+$/, "");
+        return [root, `${root}/`, `${root}\\`].some((prefix, index) =>
+          index === 0 ? input.cwd === prefix : input.cwd.startsWith(prefix),
+        );
+      }),
       (project) => pullRequests.refreshAfterTurn(project.id),
       { discard: true },
     );

@@ -192,6 +192,11 @@ const WRITE_TOOL_NAMES = [
   "strreplacebasededittool",
 ];
 
+interface ThreadTouches {
+  readonly tags: Readonly<Record<string, ReadonlyArray<string>>>;
+  readonly counts: Readonly<Record<string, Readonly<Record<string, number>>>>;
+}
+
 export class NestedRepositories extends Context.Service<
   NestedRepositories,
   {
@@ -201,6 +206,13 @@ export class NestedRepositories extends Context.Service<
     readonly threadTags: (
       projectId: ProjectId,
     ) => Effect.Effect<Readonly<Record<string, ReadonlyArray<string>>>, NestedRepositoriesError>;
+    /** Per thread, how many tool calls touched each repository. */
+    readonly threadTouchCounts: (
+      projectId: ProjectId,
+    ) => Effect.Effect<
+      Readonly<Record<string, Readonly<Record<string, number>>>>,
+      NestedRepositoriesError
+    >;
   }
 >()("t3/orchestration-v2/NestedRepositories") {}
 
@@ -213,10 +225,10 @@ export const make = Effect.gen(function* () {
     ReadonlyArray<OrchestrationNestedRepository>,
     NestedRepositoriesError
   >({ ttlMillis: CACHE_TTL_MILLIS, maxEntries: CACHE_MAX_ENTRIES });
-  const tagCache = makeCoalescedCache<
-    Readonly<Record<string, ReadonlyArray<string>>>,
-    NestedRepositoriesError
-  >({ ttlMillis: CACHE_TTL_MILLIS, maxEntries: CACHE_MAX_ENTRIES });
+  const tagCache = makeCoalescedCache<ThreadTouches, NestedRepositoriesError>({
+    ttlMillis: CACHE_TTL_MILLIS,
+    maxEntries: CACHE_MAX_ENTRIES,
+  });
 
   const projectRoot = SqlSchema.findOneOption({
     Request: ProjectRootRequest,
@@ -292,12 +304,13 @@ export const make = Effect.gen(function* () {
     workspaceRoot: string,
   ) {
     const repositoryPaths = (yield* scan(workspaceRoot)).map((repository) => repository.path);
-    if (repositoryPaths.length === 0) return {};
+    if (repositoryPaths.length === 0) return { tags: {}, counts: {} } satisfies ThreadTouches;
     const rows = yield* sql
       .withTransaction(tagRows({ projectId }))
       .pipe(NodeSqliteClient.readOnly, Effect.mapError(toError));
 
     const tags = new Map<string, Set<string>>();
+    const counts = new Map<string, Map<string, number>>();
     for (const row of rows) {
       const roots = [row.worktreePath, workspaceRoot].filter((value) => value !== null);
       const touched = new Set<string>();
@@ -330,10 +343,23 @@ export const make = Effect.gen(function* () {
       const known = tags.get(row.threadId) ?? new Set<string>();
       for (const repository of touched) known.add(repository);
       tags.set(row.threadId, known);
+      const threadCounts = counts.get(row.threadId) ?? new Map<string, number>();
+      for (const repository of touched) {
+        threadCounts.set(repository, (threadCounts.get(repository) ?? 0) + 1);
+      }
+      counts.set(row.threadId, threadCounts);
     }
-    return Object.fromEntries(
-      [...tags].map(([threadId, repositories]) => [threadId, [...repositories].toSorted()]),
-    );
+    return {
+      tags: Object.fromEntries(
+        [...tags].map(([threadId, repositories]) => [threadId, [...repositories].toSorted()]),
+      ),
+      counts: Object.fromEntries(
+        [...counts].map(([threadId, perRepository]) => [
+          threadId,
+          Object.fromEntries(perRepository),
+        ]),
+      ),
+    } satisfies ThreadTouches;
   });
 
   const threadTags: NestedRepositories["Service"]["threadTags"] = Effect.fn(
@@ -341,10 +367,18 @@ export const make = Effect.gen(function* () {
   )(function* (projectId) {
     const root = yield* rootOf(projectId);
     if (Option.isNone(root)) return {};
-    return yield* tagCache(projectId, computeThreadTags(projectId, root.value));
+    return (yield* tagCache(projectId, computeThreadTags(projectId, root.value))).tags;
   });
 
-  return NestedRepositories.of({ list, threadTags });
+  const threadTouchCounts: NestedRepositories["Service"]["threadTouchCounts"] = Effect.fn(
+    "NestedRepositories.threadTouchCounts",
+  )(function* (projectId) {
+    const root = yield* rootOf(projectId);
+    if (Option.isNone(root)) return {};
+    return (yield* tagCache(projectId, computeThreadTags(projectId, root.value))).counts;
+  });
+
+  return NestedRepositories.of({ list, threadTags, threadTouchCounts });
 });
 
 export const layer = Layer.effect(NestedRepositories, make);

@@ -2688,7 +2688,7 @@ const makeWsRpcLayer = (
             .asGitManagerError("ws.vcsRefreshStatus", input.cwd)
             .pipe(Effect.andThen(vcsStatusBroadcaster.refreshStatus(input.cwd))),
         [WS_METHODS.vcsPull]: (input) =>
-          gitCwdGuard.asGitCommandError("ws.vcsPull", input.cwd).pipe(
+          gitCwdGuard.asGitCommandWrite("ws.vcsPull", input.cwd).pipe(
             Effect.andThen(gitWorkflow.pullCurrentBranch(input.cwd)),
             Effect.matchCauseEffect({
               onFailure: (cause) => Effect.failCause(cause),
@@ -2698,7 +2698,7 @@ const makeWsRpcLayer = (
           ),
         [WS_METHODS.gitRunStackedAction]: (input) =>
           Stream.callback<GitActionProgressEvent, GitManagerServiceError>((queue) =>
-            gitCwdGuard.asGitManagerError("ws.gitRunStackedAction", input.cwd).pipe(
+            gitCwdGuard.asGitManagerWrite("ws.gitRunStackedAction", input.cwd).pipe(
               Effect.andThen(
                 gitWorkflow.runStackedAction(input, {
                   actionId: input.actionId,
@@ -2715,6 +2715,7 @@ const makeWsRpcLayer = (
                     : linkCreatedPullRequest({
                         threadId: input.threadId,
                         result,
+                        cwd: input.cwd,
                         commandId: serverCommandId("pr-created-link"),
                       }).pipe(
                         Effect.provideService(Orchestrator.OrchestratorV2, orchestrationEngine),
@@ -2739,7 +2740,7 @@ const makeWsRpcLayer = (
             .asGitManagerError("ws.gitResolvePullRequest", input.cwd)
             .pipe(Effect.andThen(gitWorkflow.resolvePullRequest(input))),
         [WS_METHODS.gitPreparePullRequestThread]: (input) =>
-          gitCwdGuard.asGitManagerError("ws.gitPreparePullRequestThread", input.cwd).pipe(
+          gitCwdGuard.asGitManagerWrite("ws.gitPreparePullRequestThread", input.cwd).pipe(
             Effect.andThen(gitWorkflow.preparePullRequestThread(input)),
             Effect.tap(() => refreshGitStatus(input.cwd)),
           ),
@@ -2748,22 +2749,22 @@ const makeWsRpcLayer = (
             .asGitCommandError("ws.vcsListRefs", input.cwd)
             .pipe(Effect.andThen(gitWorkflow.listRefs(input))),
         [WS_METHODS.vcsCreateWorktree]: (input) =>
-          gitCwdGuard.asGitCommandError("ws.vcsCreateWorktree", input.cwd).pipe(
+          gitCwdGuard.asGitCommandWrite("ws.vcsCreateWorktree", input.cwd).pipe(
             Effect.andThen(gitWorkflow.createWorktree(input)),
             Effect.tap(() => refreshGitStatus(input.cwd)),
           ),
         [WS_METHODS.vcsRemoveWorktree]: (input) =>
-          gitCwdGuard.asGitCommandError("ws.vcsRemoveWorktree", input.cwd).pipe(
+          gitCwdGuard.asGitCommandWrite("ws.vcsRemoveWorktree", input.cwd).pipe(
             Effect.andThen(gitWorkflow.removeWorktree(input)),
             Effect.tap(() => refreshGitStatus(input.cwd)),
           ),
         [WS_METHODS.vcsCreateRef]: (input) =>
-          gitCwdGuard.asGitCommandError("ws.vcsCreateRef", input.cwd).pipe(
+          gitCwdGuard.asGitCommandWrite("ws.vcsCreateRef", input.cwd).pipe(
             Effect.andThen(gitWorkflow.createRef(input)),
             Effect.tap(() => refreshGitStatus(input.cwd)),
           ),
         [WS_METHODS.vcsSwitchRef]: (input) =>
-          gitCwdGuard.asGitCommandError("ws.vcsSwitchRef", input.cwd).pipe(
+          gitCwdGuard.asGitCommandWrite("ws.vcsSwitchRef", input.cwd).pipe(
             Effect.andThen(gitWorkflow.switchRef(input)),
             Effect.tap(() => refreshGitStatus(input.cwd)),
           ),
@@ -3260,8 +3261,10 @@ const makeWsOrchestrationRpcLayer = (
             ),
           ),
         [ORCHESTRATION_V2_WS_METHODS.listThreadRepositoryTags]: (input) =>
-          nestedRepositories.threadTags(input.projectId).pipe(
-            Effect.map((threads) => ({ threads })),
+          Effect.all({
+            threads: nestedRepositories.threadTags(input.projectId),
+            touchCounts: nestedRepositories.threadTouchCounts(input.projectId),
+          }).pipe(
             Effect.mapError(
               (cause) =>
                 new OrchestrationListThreadRepositoryTagsError({

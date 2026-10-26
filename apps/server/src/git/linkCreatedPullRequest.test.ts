@@ -132,6 +132,16 @@ describe("createdPullRequestKey", () => {
       ),
     ).toBeNull();
   });
+
+  it("never falls back to the project identity for a nested repository", () => {
+    expect(
+      createdPullRequestKey(
+        prResult({ status: "created", number: 3, url: "https://ghe.internal/x/3" }),
+        project,
+        { nestedRepository: true },
+      ),
+    ).toBeNull();
+  });
 });
 
 describe("linkCreatedPullRequest", () => {
@@ -160,6 +170,32 @@ describe("linkCreatedPullRequest", () => {
           source: "created",
         },
       ]);
+    }),
+  );
+
+  it.effect("skips linking an unreadable URL created from a nested repository cwd", () =>
+    Effect.gen(function* () {
+      const { commands, dispatch } = yield* recordingDispatch();
+      const unreadable = prResult({
+        status: "created",
+        number: 9,
+        url: "https://ghe.internal/x/9",
+      });
+      yield* linkCreatedPullRequest({
+        threadId: THREAD_ID,
+        result: unreadable,
+        cwd: `${project.workspaceRoot}/backend`,
+        commandId,
+      }).pipe(Effect.provide(layerDependenciesFor(dispatch)));
+      expect(yield* Ref.get(commands)).toEqual([]);
+
+      yield* linkCreatedPullRequest({
+        threadId: THREAD_ID,
+        result: unreadable,
+        cwd: project.workspaceRoot,
+        commandId,
+      }).pipe(Effect.provide(layerDependenciesFor(dispatch)));
+      expect(yield* Ref.get(commands)).toHaveLength(1);
     }),
   );
 });
@@ -202,6 +238,10 @@ it.effect(
         { cwd: "/draft-worktree", projectId: PROJECT_ID },
         { push: { status: "pushed" } },
       ).pipe(Effect.provide(layerDependencies));
-      expect(refreshed).toEqual([PROJECT_ID, PROJECT_ID, PROJECT_ID]);
+      yield* refreshPushedPullRequests(
+        { cwd: `${project.workspaceRoot}/backend` },
+        { push: { status: "pushed" } },
+      ).pipe(Effect.provide(layerDependencies));
+      expect(refreshed).toEqual([PROJECT_ID, PROJECT_ID, PROJECT_ID, PROJECT_ID]);
     }),
 );

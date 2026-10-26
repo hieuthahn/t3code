@@ -72,7 +72,15 @@ export const make = Effect.gen(function* () {
       KnownWorkspaces.isWithinRoot(path, candidate, workspaceRoot) ||
       (yield* knownWorkspaces.contains(candidate))
     ) {
-      return;
+      // A nested folder that lost its `.git` must not show its parent repo's diff.
+      if (candidate === workspaceRoot) return;
+      return yield* knownWorkspaces
+        .assertRepositoryRoot(candidate)
+        .pipe(
+          Effect.mapError(
+            (error) => new VcsRepositoryDetectionError({ operation, cwd, detail: error.message }),
+          ),
+        );
     }
 
     return yield* new VcsRepositoryDetectionError({

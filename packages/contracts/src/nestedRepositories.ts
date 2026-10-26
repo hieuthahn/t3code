@@ -37,6 +37,10 @@ export type OrchestrationListThreadRepositoryTagsInput =
 export const OrchestrationListThreadRepositoryTagsResult = Schema.Struct({
   /** Only threads that touched at least one nested repository appear. */
   threads: Schema.Record(ThreadId, Schema.Array(TrimmedNonEmptyString)),
+  /** Per thread, how many tool calls touched each repository. Absent from older servers. */
+  touchCounts: Schema.optional(
+    Schema.Record(ThreadId, Schema.Record(TrimmedNonEmptyString, Schema.Number)),
+  ),
 });
 export type OrchestrationListThreadRepositoryTagsResult =
   typeof OrchestrationListThreadRepositoryTagsResult.Type;

@@ -241,6 +241,27 @@ it.layer(layerTest)("NestedRepositories", (it) => {
     }),
   );
 
+  it.effect("counts how many tool calls touched each repository", () =>
+    Effect.gen(function* () {
+      const root = yield* makeWorkspace();
+      const project = ProjectId.make("project:counts");
+      const threadId = ThreadId.make("thread:counts");
+      yield* createProject(project, root);
+      yield* seed([
+        thread(threadId, project),
+        command(threadId, "k1", 1, `cat ${root}/backend/src/a.ts`),
+        command(threadId, "k2", 2, `cat ${root}/backend/src/b.ts`),
+        tool(threadId, "k3", 3, { file_path: `${root}/apps/admin/src/b.vue`, old_string: "x" }),
+      ]);
+
+      const service = yield* NestedRepositories.NestedRepositories;
+      assert.deepEqual(yield* service.threadTouchCounts(project), {
+        [threadId]: { backend: 2, "apps/admin": 1 },
+      });
+      assert.deepEqual(yield* tags(project), { [threadId]: ["apps/admin", "backend"] });
+    }),
+  );
+
   it.effect("reads absolute and relative cd forms and ignores paths outside the project", () =>
     Effect.gen(function* () {
       const root = yield* makeWorkspace();

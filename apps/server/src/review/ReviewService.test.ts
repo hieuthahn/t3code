@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeChildProcess from "node:child_process";
+
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -83,6 +86,20 @@ function layer(input: {
     Layer.provide(
       Layer.mock(GitVcsDriver.GitVcsDriver)({
         listWorktreePaths: () => Effect.succeed([...(input.gitWorktrees ?? [])]),
+        execute: (request) =>
+          Effect.sync(() => {
+            const result = NodeChildProcess.spawnSync("git", [...request.args], {
+              cwd: request.cwd,
+              encoding: "utf8",
+            });
+            return {
+              exitCode: result.status ?? 1,
+              stdout: result.stdout,
+              stderr: result.stderr,
+              stdoutTruncated: false,
+              stderrTruncated: false,
+            } as never;
+          }),
       }),
     ),
     Layer.provide(
@@ -263,6 +280,38 @@ describe("ReviewService", () => {
         ),
       );
       assert.strictEqual(result.cwd, checkout);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("reviews a nested repo cwd but rejects one whose .git vanished", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
+      const project = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-project-" });
+      const nested = `${project}/backend`;
+      yield* fs.makeDirectory(nested);
+      NodeChildProcess.spawnSync("git", ["init", "-q"], { cwd: project });
+      NodeChildProcess.spawnSync("git", ["init", "-q"], { cwd: nested });
+
+      yield* Effect.gen(function* () {
+        const review = yield* ReviewService.ReviewService;
+        const preview = yield* review.getDiffPreview({ cwd: nested });
+        assert.strictEqual(preview.cwd, nested);
+
+        yield* fs.remove(`${nested}/.git`, { recursive: true });
+        const previewError = yield* review.getDiffPreview({ cwd: nested }).pipe(Effect.flip);
+        assert.strictEqual(previewError._tag, "VcsRepositoryDetectionError");
+        const contentsError = yield* review
+          .getDiffFileContents({
+            cwd: nested,
+            path: "a.txt",
+            changeType: "modified",
+            sourceKind: "working-tree",
+          } as never)
+          .pipe(Effect.flip);
+        assert.strictEqual(contentsError._tag, "VcsRepositoryDetectionError");
+      }).pipe(Effect.provide(layer({ workspaceRoot, baseDir, projectRoots: [project] })));
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 });

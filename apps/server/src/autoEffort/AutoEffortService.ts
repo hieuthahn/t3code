@@ -10,10 +10,13 @@ import { isSpentAccount } from "@t3tools/shared/usageLimitSwitchCandidates";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 
@@ -43,8 +46,11 @@ import {
 /** Past this a turn starts on its manual effort: a judge must not hold the prompt up. */
 const JUDGE_DEADLINE_MS = 3_000;
 const JEV_TIMEOUT_MS = 1_000;
+/** Below this Jev's pick waits for Haiku, and stands only when Haiku has no answer. */
+const JEV_SURE_THRESHOLD = 0.5;
 const JEV_URL = "https://api.typesafe.ai/v1/systemone";
 const CLAUDE_DRIVER = ProviderDriverKind.make("claudeAgent");
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 /** Usage of the fullest window; an unmeasured account ranks after every measured one. */
 const fullestWindowPercent = (provider: ServerProvider): number => {
@@ -113,6 +119,17 @@ interface LaunchJudgment {
 
 const percent = (value: number) => `${Math.round(value * 100)}% sure`;
 
+const isSure = (verdict: EffortVerdict) =>
+  verdict.sure === undefined || verdict.sure >= JEV_SURE_THRESHOLD;
+
+const markedLow = (verdict: EffortVerdict): EffortVerdict => ({
+  ...verdict,
+  why: `${verdict.why ?? "unsure"} (low)`,
+});
+
+const logJudgeMiss = (judge: "jev" | "haiku", reason: string, details: object) =>
+  Effect.logWarning("auto-effort judge miss", { judge, reason, ...details });
+
 /** The team half of the notice line. */
 function teamNoticeText(launch: LaunchJudgment): string {
   if (Option.isNone(launch.judged)) return "single agent (judge unavailable)";
@@ -145,8 +162,9 @@ const make = Effect.gen(function* () {
     return Option.fromNullishOr(parseJevKey(file));
   }).pipe(Effect.catch(() => Effect.succeed(Option.none<string>())));
 
-  const askJev = (key: string, input: JudgeInput) =>
-    httpClient
+  const askJev = Effect.fn("AutoEffortService.askJev")(function* (key: string, input: JudgeInput) {
+    const startedAt = yield* Clock.currentTimeMillis;
+    const body = yield* httpClient
       .execute(
         HttpClientRequest.post(process.env.JEV_URL ?? JEV_URL).pipe(
           HttpClientRequest.bearerToken(key),
@@ -156,11 +174,27 @@ const make = Effect.gen(function* () {
       .pipe(
         Effect.flatMap(HttpClientResponse.filterStatusOk),
         Effect.flatMap((response) => response.json),
-        Effect.map((body) => Option.fromNullishOr(parseJevAnswer(body))),
         Effect.timeoutOption(JEV_TIMEOUT_MS),
-        Effect.map(Option.flatten),
-        Effect.catch(() => Effect.succeed(Option.none<EffortVerdict>())),
+        Effect.result,
       );
+    const ms = (yield* Clock.currentTimeMillis) - startedAt;
+    if (Result.isFailure(body)) {
+      yield* logJudgeMiss("jev", "error", { ms, error: String(body.failure) });
+      return Option.none<EffortVerdict>();
+    }
+    if (Option.isNone(body.success)) {
+      yield* logJudgeMiss("jev", "deadline", { ms });
+      return Option.none<EffortVerdict>();
+    }
+    const verdict = parseJevAnswer(body.success.value);
+    if (verdict === undefined) {
+      yield* logJudgeMiss("jev", "unreadable", {
+        ms,
+        reply: encodeJson(body.success.value).slice(0, 200),
+      });
+    }
+    return Option.fromNullishOr(verdict);
+  });
 
   const judgeInstance = (
     request: AutoEffortRequest,
@@ -191,40 +225,61 @@ const make = Effect.gen(function* () {
     if (instanceId === undefined) return Option.none<EffortVerdict>();
     const instance = yield* instanceRegistry.getInstance(instanceId);
     if (instance?.judgeEffort === undefined) return Option.none<EffortVerdict>();
-    const reply = yield* instance.judgeEffort(judgeQuestion(input));
-    return Option.flatMap(reply, (text) => Option.fromNullishOr(parseJudgeVerdict(text)));
+    const startedAt = yield* Clock.currentTimeMillis;
+    const reply = yield* instance
+      .judgeEffort(judgeQuestion(input))
+      .pipe(Effect.timeoutOption(JUDGE_DEADLINE_MS));
+    const ms = (yield* Clock.currentTimeMillis) - startedAt;
+    if (Option.isNone(reply)) {
+      yield* logJudgeMiss("haiku", "deadline", { instanceId, ms });
+      return Option.none<EffortVerdict>();
+    }
+    if (Option.isNone(reply.value)) {
+      yield* logJudgeMiss("haiku", "no warm process or no answer", { instanceId, ms });
+      return Option.none<EffortVerdict>();
+    }
+    const verdict = parseJudgeVerdict(reply.value.value);
+    if (verdict === undefined) {
+      yield* logJudgeMiss("haiku", "unreadable", {
+        instanceId,
+        ms,
+        reply: reply.value.value.slice(0, 200),
+      });
+    }
+    return Option.fromNullishOr(verdict);
   });
 
-  const judge = Effect.fn("AutoEffortService.judge")(
-    function* (
-      request: AutoEffortRequest,
-      input: JudgeInput,
-      providers: ReadonlyArray<ServerProvider>,
-    ) {
-      const settings = yield* serverSettings.getSettings.pipe(Effect.option);
-      const judgeSetting = Option.match(settings, {
-        onNone: () => "auto" as const,
-        onSome: (value) => value.autoEffortJudge,
-      });
-      const key = judgeSetting === "haiku" ? Option.none<string>() : yield* jevKey;
-      if (Option.isSome(key)) {
-        const verdict = yield* askJev(key.value, input);
-        if (Option.isSome(verdict)) {
-          return Option.some<Judged>({ verdict: verdict.value, by: "jev" });
-        }
-      }
-      const instanceId = judgeInstance(
-        request,
-        providers,
-        Option.getOrUndefined(settings)?.textGenerationModelSelection.instanceId,
-        yield* Clock.currentTimeMillis,
-      );
-      const verdict = yield* askHaiku(instanceId, input);
-      return Option.map(verdict, (value): Judged => ({ verdict: value, by: "haiku", instanceId }));
-    },
-    Effect.timeoutOption(JUDGE_DEADLINE_MS),
-    Effect.map(Option.flatten),
-  );
+  // Haiku starts with Jev so it has the whole deadline when Jev turns out unsure; each
+  // judge carries its own timeout, so Jev's unsure pick survives a Haiku that runs out.
+  const judge = Effect.fn("AutoEffortService.judge")(function* (
+    request: AutoEffortRequest,
+    input: JudgeInput,
+    providers: ReadonlyArray<ServerProvider>,
+  ) {
+    const settings = yield* serverSettings.getSettings.pipe(Effect.option);
+    const judgeSetting = Option.match(settings, {
+      onNone: () => "auto" as const,
+      onSome: (value) => value.autoEffortJudge,
+    });
+    const instanceId = judgeInstance(
+      request,
+      providers,
+      Option.getOrUndefined(settings)?.textGenerationModelSelection.instanceId,
+      yield* Clock.currentTimeMillis,
+    );
+    const haiku = yield* askHaiku(instanceId, input).pipe(Effect.forkChild);
+    const key = judgeSetting === "haiku" ? Option.none<string>() : yield* jevKey;
+    const jev = Option.isSome(key) ? yield* askJev(key.value, input) : Option.none<EffortVerdict>();
+    if (Option.isSome(jev) && isSure(jev.value)) {
+      yield* Fiber.interrupt(haiku);
+      return Option.some<Judged>({ verdict: jev.value, by: "jev" });
+    }
+    const haikuVerdict = yield* Fiber.join(haiku);
+    if (Option.isSome(haikuVerdict)) {
+      return Option.some<Judged>({ verdict: haikuVerdict.value, by: "haiku", instanceId });
+    }
+    return Option.map(jev, (verdict): Judged => ({ verdict: markedLow(verdict), by: "jev" }));
+  });
 
   const judgeTeam = Effect.fn("AutoEffortService.judgeTeam")(function* (request: AutoTeamRequest) {
     const stored = (yield* Ref.get(launchJudged)).get(request.threadId);
@@ -324,8 +379,8 @@ const make = Effect.gen(function* () {
         : launch !== undefined && Option.isSome(launch.judged)
           ? launch.judged
           : previous !== undefined &&
-            request.attachmentCount === 0 &&
-            isFollowUp(request.text, request.previousAssistantText)
+              request.attachmentCount === 0 &&
+              isFollowUp(request.text, request.previousAssistantText)
             ? Option.some<Judged>({ verdict: { effort: previous }, by: "follow-up" })
             : yield* judge(request, input, providers);
 

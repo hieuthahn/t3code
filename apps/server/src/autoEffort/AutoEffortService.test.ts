@@ -6,6 +6,7 @@ import {
   type ServerProvider,
   ThreadId,
 } from "@t3tools/contracts";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -84,6 +85,7 @@ const selection = (
 interface Harness {
   readonly haikuReply?: Effect.Effect<Option.Option<string>>;
   readonly jevBody?: unknown;
+  readonly jevLatency?: Duration.Input;
   readonly jevKeyFile?: string;
   readonly judge?: "auto" | "haiku";
   readonly autoEffortDefault?: boolean;
@@ -158,6 +160,7 @@ const run = <A>(
                 ...list,
                 request.headers.authorization ?? "",
               ]).pipe(
+                Effect.andThen(Effect.sleep(harness.jevLatency ?? 0)),
                 Effect.as(
                   HttpClientResponse.fromWeb(request, Response.json(harness.jevBody ?? {})),
                 ),
@@ -323,20 +326,20 @@ describe("AutoEffortService", () => {
     ),
   );
 
-  it.effect("asks Jev first with the key from ~/.config/jev/.env", () =>
+  it.effect("applies a sure Jev verdict, read with the key from ~/.config/jev/.env, at once", () =>
     run(
       {
         judge: "auto",
         jevKeyFile: "TYPESAFE_API_KEY=ts_test\n",
         jevBody: { answers: { effort: { choice: "low", confidence: 0.92 } } },
+        haikuReply: Effect.never,
       },
-      ({ service, haikuQuestions, jevAuthorization }) =>
+      ({ service, jevAuthorization }) =>
         Effect.gen(function* () {
           const resolution = yield* service.resolve(request({ text: "what does this flag do?" }));
           expect(effortOf(resolution)).toBe("low");
           expect(resolution.notice).toBe("Auto effort: low · by Jev · 92% sure");
           expect(yield* Ref.get(jevAuthorization)).toEqual(["Bearer ts_test"]);
-          expect(yield* Ref.get(haikuQuestions)).toEqual([]);
         }),
     ),
   );
@@ -359,6 +362,63 @@ describe("AutoEffortService", () => {
         }),
       );
     }),
+  );
+
+  it.effect("keeps Jev's unsure pick, marked low, when Haiku has no answer", () =>
+    run(
+      {
+        jevKeyFile: "TYPESAFE_API_KEY=ts_test\n",
+        jevBody: { answers: { effort: { choice: "low", confidence: 0.3 } } },
+        haikuReply: Effect.succeed(Option.none()),
+      },
+      ({ service }) =>
+        Effect.gen(function* () {
+          const resolution = yield* service.resolve(request());
+          expect(effortOf(resolution)).toBe("low");
+          expect(resolution.notice).toBe("Auto effort: low · by Jev · 30% sure (low)");
+        }),
+    ),
+  );
+
+  it.effect("keeps Jev's unsure pick when Haiku misses the deadline", () =>
+    run(
+      {
+        jevKeyFile: "TYPESAFE_API_KEY=ts_test\n",
+        jevBody: { answers: { effort: { choice: "low", confidence: 0.3 } } },
+        haikuReply: Effect.never,
+      },
+      ({ service }) =>
+        Effect.gen(function* () {
+          const fiber = yield* service.resolve(request()).pipe(Effect.forkChild);
+          yield* TestClock.adjust("2999 millis");
+          expect(fiber.pollUnsafe()).toBeUndefined();
+          yield* TestClock.adjust("1 millis");
+          const resolution = yield* Fiber.join(fiber);
+          expect(effortOf(resolution)).toBe("low");
+          expect(resolution.notice).toBe("Auto effort: low · by Jev · 30% sure (low)");
+        }),
+    ),
+  );
+
+  it.effect("gives Haiku the whole deadline while Jev is still answering", () =>
+    run(
+      {
+        jevKeyFile: "TYPESAFE_API_KEY=ts_test\n",
+        jevBody: { answers: { effort: { choice: "low", confidence: 0.3 } } },
+        jevLatency: "900 millis",
+        haikuReply: Effect.sleep("2500 millis").pipe(
+          Effect.as(Option.some('{"effort":"high","sure":0.8,"why":"big job"}')),
+        ),
+      },
+      ({ service }) =>
+        Effect.gen(function* () {
+          const fiber = yield* service.resolve(request()).pipe(Effect.forkChild);
+          yield* TestClock.adjust("3 seconds");
+          const resolution = yield* Fiber.join(fiber);
+          expect(effortOf(resolution)).toBe("high");
+          expect(resolution.notice).toBe("Auto effort: high · by Haiku · big job");
+        }),
+    ),
   );
 });
 
@@ -443,10 +503,13 @@ describe("AutoEffortService team verdict", () => {
           },
         },
       },
-      ({ service, haikuQuestions }) =>
+      ({ service }) =>
         Effect.gen(function* () {
           expect(yield* service.judgeTeam(teamRequest())).toBe(true);
-          expect(yield* Ref.get(haikuQuestions)).toEqual([]);
+          const resolution = yield* service.resolve(request({ firstTurn: true }));
+          expect(resolution.notice).toBe(
+            "Auto effort: high · by Jev · 70% sure · team: Strong team, 90% sure",
+          );
         }),
     ),
   );

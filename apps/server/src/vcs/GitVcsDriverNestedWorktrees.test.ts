@@ -385,5 +385,33 @@ describe("nested repository worktrees", () => {
         assert.equal(yield* worktreeCount(path.join(project.root, names[24]!)), 1);
       }),
     );
+
+    it.effect("lists the inner worktrees with their branches", () =>
+      Effect.gen(function* () {
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const path = yield* Path.Path;
+        const project = yield* makeProject(["alpha", "beta"]);
+        const target = project.worktreePath("listed");
+        yield* driver.createWorktree({
+          cwd: project.root,
+          path: target,
+          refName: yield* baseRef(project.root),
+          newRefName: "feature/listed",
+        });
+
+        const listed = yield* driver.listNestedWorktrees({ cwd: project.root, path: target });
+        assert.deepEqual(
+          listed.map((entry) => [entry.path, entry.branch, entry.worktree]),
+          [
+            ["alpha", "feature/listed", path.join(target, "alpha")],
+            ["beta", "feature/listed", path.join(target, "beta")],
+          ],
+        );
+        assert.deepEqual(
+          yield* driver.listNestedWorktrees({ cwd: project.root, path: project.root }),
+          [],
+        );
+      }),
+    );
   });
 });

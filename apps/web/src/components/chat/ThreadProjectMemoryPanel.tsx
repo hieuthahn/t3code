@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { PencilIcon, XIcon } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   AuthOrchestrationOperateScope,
   PROJECT_MEMORY_MAX_TEXT_CHARS,
@@ -56,36 +56,39 @@ export function ThreadProjectMemoryPanel(props: {
     null,
   );
   const [busy, setBusy] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const savingRef = useRef(false);
 
   if (projectId === null) return null;
   const entries: ReadonlyArray<ProjectMemoryEntry> = memoryQuery.data ?? [];
+  const loaded = memoryQuery.data !== null;
 
   const run = async (
     failureTitle: string,
     command: () => ReturnType<typeof appendEntry | typeof editEntry | typeof deleteEntry>,
   ) => {
-    if (busy || !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) return false;
+    if (busy || !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) {
+      return { saved: false, message: null };
+    }
+    savingRef.current = true;
     setBusy(true);
     const result = await command();
+    savingRef.current = false;
     setBusy(false);
-    if (result._tag === "Success") return true;
-    if (!isAtomCommandInterrupted(result)) {
-      const error = squashAtomCommandFailure(result);
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: failureTitle,
-          description: error instanceof Error ? error.message : String(error),
-        }),
-      );
-    }
-    return false;
+    if (result._tag === "Success") return { saved: true, message: null };
+    if (isAtomCommandInterrupted(result)) return { saved: false, message: null };
+    const error = squashAtomCommandFailure(result);
+    const message = error instanceof Error ? error.message : String(error);
+    toastManager.add(
+      stackedThreadToast({ type: "error", title: failureTitle, description: message }),
+    );
+    return { saved: false, message };
   };
 
   const add = async () => {
     const text = newText.trim();
     if (text.length === 0) return;
-    const saved = await run("Could not save the memory", () =>
+    const { saved } = await run("Could not save the memory", () =>
       appendEntry({ environmentId, input: { projectId, text } }),
     );
     if (saved) setNewText("");
@@ -97,10 +100,12 @@ export function ThreadProjectMemoryPanel(props: {
       setEditing(null);
       return;
     }
-    const saved = await run("Could not save the memory", () =>
+    setEditError(null);
+    const { saved, message } = await run("Could not save the memory", () =>
       editEntry({ environmentId, input: { projectId, entryId: entry.id, text: trimmed } }),
     );
     if (saved) setEditing(null);
+    else setEditError(message);
   };
 
   return (
@@ -125,12 +130,12 @@ export function ThreadProjectMemoryPanel(props: {
           disabled={!canOperate}
           onValueChange={setNewText}
           onKeyDown={(event) => {
-            if (event.key === "Enter") void add();
+            if (event.key === "Enter" && !event.nativeEvent.isComposing) void add();
           }}
         />
       </div>
 
-      {entries.length === 0 && memoryQuery.error === null ? (
+      {loaded && entries.length === 0 && memoryQuery.error === null ? (
         <p className="px-2.5 py-1.5 text-2xs text-muted-foreground">Nothing saved yet.</p>
       ) : null}
 
@@ -147,12 +152,25 @@ export function ThreadProjectMemoryPanel(props: {
                   value={editing.text}
                   disabled={busy}
                   onValueChange={(text) => setEditing({ id: entry.id, text })}
-                  onBlur={() => setEditing(null)}
+                  onBlur={() => {
+                    if (savingRef.current || editError !== null) return;
+                    setEditing(null);
+                  }}
                   onKeyDown={(event) => {
-                    if (event.key === "Enter") void saveEdit(entry, editing.text);
-                    if (event.key === "Escape") setEditing(null);
+                    if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                      void saveEdit(entry, editing.text);
+                    }
+                    if (event.key === "Escape") {
+                      setEditError(null);
+                      setEditing(null);
+                    }
                   }}
                 />
+                {editError !== null ? (
+                  <p role="alert" className="py-1 text-2xs text-destructive">
+                    Could not save: {editError}
+                  </p>
+                ) : null}
               </div>
             ) : (
               <div className={cn("group flex items-start", THREAD_DETAILS_PANEL_ROW_CONTENT_CLASS)}>
@@ -169,7 +187,10 @@ export function ThreadProjectMemoryPanel(props: {
                           part="icon"
                           aria-label={`Edit memory: ${entry.text}`}
                           disabled={!canOperate || busy}
-                          onClick={() => setEditing({ id: entry.id, text: entry.text })}
+                          onClick={() => {
+                            setEditError(null);
+                            setEditing({ id: entry.id, text: entry.text });
+                          }}
                         >
                           <PencilIcon className="size-3.5" />
                         </ThreadDetailsControl>

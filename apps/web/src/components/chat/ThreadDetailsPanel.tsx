@@ -1,3 +1,5 @@
+import { ThreadRepositorySelect } from "./ThreadRepositorySelect";
+import { useThreadRepositories } from "./useThreadRepositories";
 import type {
   EditorId,
   EnvironmentId,
@@ -87,6 +89,19 @@ export interface ThreadDetailsPanelProps extends Pick<
 }
 
 export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
+  const repositories = useThreadRepositories(
+    props.activeProjectName !== undefined && props.workspaceRoot !== null
+      ? {
+          environmentId: props.environmentId,
+          projectId: props.projectId,
+          threadId: props.threadId,
+          projectName: props.activeProjectName,
+          workspaceRoot: props.workspaceRoot,
+          worktreePath: props.worktreePath,
+        }
+      : null,
+  );
+  const repositoryCwd = repositories.repositoryCwd;
   const fileScripts = useT3ProjectFileScripts(
     props.environmentId,
     props.activeProjectScripts ? props.gitCwd : null,
@@ -98,6 +113,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
     threadId: props.threadId,
     projectId: props.projectId,
     worktreePath: props.worktreePath,
+    repositoryCwd,
     isServerThread: props.isServerThread,
     ...(props.draftId ? { draftId: props.draftId } : {}),
     onEnvModeChange: props.onEnvModeChange,
@@ -185,14 +201,19 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 separated={density === "full"}
               >
                 <div className="flex flex-col">
-                  {props.isGitRepo ? (
+                  <ThreadRepositorySelect
+                    options={repositories.options}
+                    selected={repositories.selected}
+                    onSelect={repositories.select}
+                  />
+                  {props.isGitRepo || repositoryCwd !== null ? (
                     <BranchToolbar layout="panel" panelSection="branch" {...branchToolbarProps} />
                   ) : null}
                   {props.activeProjectName ? (
                     <GitActionsControl
                       displayMode="panel"
                       compact={density !== "full"}
-                      gitCwd={props.gitCwd}
+                      gitCwd={repositoryCwd ?? props.gitCwd}
                       activeThreadRef={activeThreadRef}
                       {...(props.draftId ? { draftId: props.draftId } : {})}
                       {...(props.onOpenChanges ? { onOpenChanges: props.onOpenChanges } : {})}

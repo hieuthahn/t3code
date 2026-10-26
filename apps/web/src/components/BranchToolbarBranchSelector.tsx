@@ -158,7 +158,7 @@ export function BranchToolbarBranchSelector({
     ? null
     : (serverThread?.worktreePath ?? draftThread?.worktreePath ?? null);
   const activeProjectCwd = repositoryCwd ?? activeProject?.workspaceRoot ?? null;
-  const branchCwd = activeWorktreePath ?? activeProjectCwd;
+  const branchCwd = repositoryCwd ?? activeWorktreePath ?? activeProjectCwd;
   const hasServerThread = serverThread !== null;
   const canUpdateThreadBranch = !hasServerThread || canOperateThread;
   const canChangeThreadBranch = canWriteSourceControl && canUpdateThreadBranch;

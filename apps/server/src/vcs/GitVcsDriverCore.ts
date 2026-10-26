@@ -4504,15 +4504,23 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const linked = yield* Effect.filter(nested, (entry) =>
       isLinkedWorktreeOf(entry.root, entry.worktree),
     );
-    const dirty = yield* Effect.filter(linked, (entry) =>
+    const hasLocalChanges = (directory: string) =>
       executeGit(
         "GitVcsDriver.removeWorktree.nestedStatus",
-        entry.worktree,
+        directory,
         ["-c", "status.showUntrackedFiles=normal", "status", "--porcelain"],
         { allowNonZeroExit: true, timeoutMs: 30_000 },
-      ).pipe(Effect.map((result) => result.exitCode === 0 && result.stdout !== "")),
-    );
-    const blocking = input.force === true ? undefined : dirty[0];
+      ).pipe(Effect.map((result) => result.exitCode !== 0 || result.stdout !== ""));
+    const dirty = yield* Effect.filter(linked, (entry) => hasLocalChanges(entry.worktree));
+    // Git would refuse the outer removal after the inner worktrees were gone.
+    const outer = path.resolve(input.cwd, input.path);
+    const blocking =
+      input.force === true
+        ? undefined
+        : (dirty[0] ??
+          (linked.length > 0 && (yield* hasLocalChanges(outer))
+            ? { root: input.cwd, worktree: outer }
+            : undefined));
     if (blocking !== undefined) {
       return yield* new GitCommandError({
         ...gitCommandContext({

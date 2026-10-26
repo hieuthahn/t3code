@@ -421,6 +421,31 @@ describe("nested repository worktrees", () => {
       }),
     );
 
+    it.effect("keeps the inner worktrees when the outer worktree cannot be removed", () =>
+      Effect.gen(function* () {
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const project = yield* makeProject(["alpha"]);
+        const target = project.worktreePath("dirty-outer");
+        yield* driver.createWorktree({
+          cwd: project.root,
+          path: target,
+          refName: yield* baseRef(project.root),
+          newRefName: "feature/dirty-outer",
+        });
+        yield* fileSystem.writeFileString(path.join(target, "README.md"), "edited\n");
+
+        const result = yield* Effect.result(
+          driver.removeWorktree({ cwd: project.root, path: target }),
+        );
+
+        assert.equal(result._tag, "Failure");
+        assert.isTrue(yield* fileSystem.exists(path.join(target, "alpha", "README.md")));
+        assert.equal(yield* worktreeCount(path.join(project.root, "alpha")), 2);
+      }),
+    );
+
     it.effect("lists the inner worktrees with their branches", () =>
       Effect.gen(function* () {
         const driver = yield* GitVcsDriver.GitVcsDriver;

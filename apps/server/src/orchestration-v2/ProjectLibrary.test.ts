@@ -137,6 +137,7 @@ const list = (
     offset?: number;
     cursor?: { changedAt: string; path: string };
     repository?: string;
+    scope?: "outer" | "outside";
   } = {},
 ) =>
   Effect.flatMap(ProjectLibrary.ProjectLibrary, (library) => library.list({ projectId, ...page }));
@@ -441,6 +442,46 @@ it.layer(layerTest)("ProjectLibrary", (it) => {
         ["backend/src/app.ts"],
       );
       assert.equal(filtered.total, 1);
+    }),
+  );
+
+  it.effect("separates files outside the project folder and filters them server-side", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectory({ prefix: "library-outside-" });
+      yield* fs.makeDirectory(path.join(root, "backend/.git"), { recursive: true });
+      const project = ProjectId.make("project:outside");
+      const threadId = ThreadId.make("thread:outside");
+      yield* createProject(project, root);
+      yield* seed([
+        thread(threadId, project),
+        fileChange(threadId, "item:outer", 1, [{ operation: "edit", path: "docs/a.md" }]),
+        fileChange(threadId, "item:backend", 2, [{ operation: "edit", path: "backend/app.ts" }]),
+        fileChange(threadId, "item:outside", 3, [
+          { operation: "edit", path: "/elsewhere/notes.md" },
+        ]),
+      ]);
+
+      const all = yield* list(project);
+      assert.deepEqual(
+        all.entries.map((entry) => [entry.path, entry.outsideProject]),
+        [
+          ["/elsewhere/notes.md", true],
+          ["backend/app.ts", false],
+          ["docs/a.md", false],
+        ],
+      );
+      assert.deepEqual(
+        (yield* list(project, { scope: "outside" })).entries.map((entry) => entry.path),
+        ["/elsewhere/notes.md"],
+      );
+      const outer = yield* list(project, { scope: "outer" });
+      assert.deepEqual(
+        outer.entries.map((entry) => entry.path),
+        ["docs/a.md"],
+      );
+      assert.equal(outer.total, 1);
     }),
   );
 

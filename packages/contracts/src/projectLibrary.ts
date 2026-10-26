@@ -26,6 +26,8 @@ export const OrchestrationListProjectLibraryInput = Schema.Struct({
   cursor: Schema.optionalKey(OrchestrationProjectLibraryCursor),
   /** Nested repository path (see listNestedRepositories) to keep; omitted keeps every row. */
   repository: Schema.optionalKey(TrimmedNonEmptyString),
+  /** "outer" keeps the project's own files, "outside" keeps files outside the project folder; wins over `repository`. */
+  scope: Schema.optionalKey(Schema.Literals(["outer", "outside"])),
 });
 export type OrchestrationListProjectLibraryInput = typeof OrchestrationListProjectLibraryInput.Type;
 
@@ -38,6 +40,8 @@ export const OrchestrationProjectLibraryEntry = Schema.Struct({
   changedAt: IsoDateTime,
   /** Longest matching nested repository path, or null for the outer repository. */
   repository: Schema.NullOr(TrimmedNonEmptyString),
+  /** The file lies outside the project folder (a "~/..." or absolute path), so it belongs to no repository of the project. */
+  outsideProject: Schema.Boolean,
 });
 export type OrchestrationProjectLibraryEntry = typeof OrchestrationProjectLibraryEntry.Type;
 

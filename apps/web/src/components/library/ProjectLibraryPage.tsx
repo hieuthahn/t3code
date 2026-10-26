@@ -37,6 +37,9 @@ import {
   ALL_REPOSITORIES_FILTER,
   OUTER_REPOSITORY_FILTER,
   applyRepositoryFilter,
+  libraryScopeOfFilter,
+  OUTSIDE_PROJECT_FILTER,
+  OUTSIDE_PROJECT_LABEL,
   groupLibraryEntries,
   nestedRepositoryOfFilter,
   repositoryFilterValue,
@@ -108,6 +111,7 @@ function LibraryPageLoader(props: {
   readonly projectId: ProjectId;
   readonly cursor: OrchestrationProjectLibraryCursor | null;
   readonly repository: string | null;
+  readonly scope: "outer" | "outside" | undefined;
   readonly index: number;
   readonly onPage: (index: number, page: LibraryPage) => void;
 }) {
@@ -157,7 +161,9 @@ function RepositoryFilter(props: {
       ? "All repositories"
       : value === OUTER_REPOSITORY_FILTER
         ? props.projectTitle
-        : (nestedRepositoryOfFilter(value) ?? value);
+        : value === OUTSIDE_PROJECT_FILTER
+          ? OUTSIDE_PROJECT_LABEL
+          : (nestedRepositoryOfFilter(value) ?? value);
   return (
     <Select value={props.value} onValueChange={(value) => value !== null && props.onChange(value)}>
       <SelectTrigger size="sm" className="ms-auto w-44" aria-label="Filter by repository">
@@ -179,6 +185,9 @@ function RepositoryFilter(props: {
             {repository.path}
           </SelectItem>
         ))}
+        <SelectItem hideIndicator value={OUTSIDE_PROJECT_FILTER}>
+          {OUTSIDE_PROJECT_LABEL}
+        </SelectItem>
       </SelectPopup>
     </Select>
   );
@@ -213,8 +222,21 @@ function LibraryList(props: {
     props.filter,
   );
   const groups = groupLibraryEntries(entries, props);
-  const unfilteredEmpty = pages[0] !== undefined && pages[0].total === 0;
-  if (unfilteredEmpty) {
+  const firstPageEmpty = pages[0] !== undefined && pages[0].total === 0;
+  if (firstPageEmpty && props.filter !== ALL_REPOSITORIES_FILTER) {
+    return (
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <LibraryIcon aria-hidden />
+          </EmptyMedia>
+          <EmptyTitle>No files here</EmptyTitle>
+          <EmptyDescription>No file changes match this repository filter.</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
+  }
+  if (firstPageEmpty) {
     return (
       <Empty>
         <EmptyHeader>
@@ -238,7 +260,7 @@ function LibraryList(props: {
         {groups.length === 0
           ? entries.map(row)
           : groups.map((group) => (
-              <Fragment key={group.repository ?? "outer"}>
+              <Fragment key={group.outsideProject ? "outside" : (group.repository ?? "outer")}>
                 <LibraryGroupHeader label={group.label} count={group.entries.length} />
                 {group.entries.map(row)}
               </Fragment>
@@ -250,6 +272,7 @@ function LibraryList(props: {
             projectId={props.projectId}
             cursor={cursor}
             repository={nestedRepository}
+            scope={libraryScopeOfFilter(props.filter)}
             index={index}
             onPage={onPage}
           />

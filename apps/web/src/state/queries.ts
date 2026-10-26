@@ -390,8 +390,9 @@ export function useProjectLibraryPage(target: {
   readonly projectId: ProjectId;
   readonly cursor: OrchestrationProjectLibraryCursor | null;
   readonly repository?: string | null;
+  readonly scope?: "outer" | "outside" | undefined;
 }) {
-  const { environmentId, projectId, cursor, repository } = target;
+  const { environmentId, projectId, cursor, repository, scope } = target;
   return useEnvironmentQuery(
     orchestrationEnvironment.projectLibrary({
       environmentId,
@@ -399,6 +400,7 @@ export function useProjectLibraryPage(target: {
         projectId,
         ...(cursor === null ? {} : { cursor }),
         ...(repository == null ? {} : { repository }),
+        ...(scope === undefined ? {} : { scope }),
       },
     }),
   );

@@ -26,7 +26,11 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlSchema from "effect/sql/SqlSchema";
 
 import * as NestedRepositories from "./NestedRepositories.ts";
-import { repositoryOfPath, toWorkspaceRelativePath } from "./RepositoryPaths.ts";
+import {
+  repositoryOfPath,
+  isOutsideProjectPath,
+  toWorkspaceRelativePath,
+} from "./RepositoryPaths.ts";
 
 export class ProjectLibraryError extends Schema.TaggedError<ProjectLibraryError>()(
   "ProjectLibraryError",
@@ -169,8 +173,13 @@ export const make = Effect.gen(function* () {
           status,
           ...meta,
           repository: repositoryOfPath(path, repositoryPaths),
+          outsideProject: isOutsideProjectPath(path),
         }))
-        .filter((entry) => input.repository === undefined || entry.repository === input.repository)
+        .filter((entry) => {
+          if (input.scope === "outside") return entry.outsideProject;
+          if (input.scope === "outer") return !entry.outsideProject && entry.repository === null;
+          return input.repository === undefined || entry.repository === input.repository;
+        })
         .toSorted(compareEntries);
       const limit = input.limit ?? ORCHESTRATION_PROJECT_LIBRARY_PAGE_LIMIT;
       const cursor = input.cursor;

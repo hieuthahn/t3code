@@ -472,6 +472,8 @@ export function useNestedRepositories(
   target: {
     readonly environmentId: EnvironmentId;
     readonly projectId: ProjectId;
+    /** Lists the repositories under this thread's worktree instead of the project root. */
+    readonly threadId?: ThreadId;
   } | null,
 ) {
   return useEnvironmentQuery(
@@ -479,7 +481,10 @@ export function useNestedRepositories(
       ? null
       : orchestrationEnvironment.nestedRepositories({
           environmentId: target.environmentId,
-          input: { projectId: target.projectId },
+          input: {
+            projectId: target.projectId,
+            ...(target.threadId === undefined ? {} : { threadId: target.threadId }),
+          },
         }),
   );
 }

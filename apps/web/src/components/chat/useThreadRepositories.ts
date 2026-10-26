@@ -17,7 +17,7 @@ import {
 const NO_REPOSITORIES: readonly never[] = [];
 
 export interface ThreadRepositories {
-  /** Empty unless the project has nested repositories and the thread runs in the project checkout. */
+  /** Empty unless the project has nested repositories, or the thread worktree holds inner worktrees. */
   readonly options: readonly RepositoryOption[];
   readonly selected: RepositoryOption | null;
   /** The nested repository's absolute path, or null for the outer repository. */
@@ -25,7 +25,7 @@ export interface ThreadRepositories {
   readonly select: (path: string | null) => void;
 }
 
-/** Resolve which repository the thread's git section targets; inert for worktree threads. */
+/** Resolve which repository the thread's git section targets, under the worktree when the thread has one. */
 export function useThreadRepositories(
   target: {
     readonly environmentId: EnvironmentId;
@@ -39,10 +39,18 @@ export function useThreadRepositories(
   } | null,
 ): ThreadRepositories {
   const queryTarget =
-    target === null || target.worktreePath !== null || target.envMode === "worktree"
+    target === null || (target.worktreePath === null && target.envMode === "worktree")
       ? null
       : target;
-  const repositoriesData = useNestedRepositories(queryTarget).data;
+  const repositoriesData = useNestedRepositories(
+    queryTarget === null
+      ? null
+      : {
+          environmentId: queryTarget.environmentId,
+          projectId: queryTarget.projectId,
+          ...(queryTarget.worktreePath === null ? {} : { threadId: queryTarget.threadId }),
+        },
+  ).data;
   const repositories = repositoriesData?.repositories ?? NO_REPOSITORIES;
   const tagsData = useThreadRepositoryTags(queryTarget).data;
   const tags = tagsData?.threads;
@@ -51,7 +59,7 @@ export function useThreadRepositories(
       ? null
       : vcsEnvironment.status({
           environmentId: queryTarget.environmentId,
-          input: { cwd: queryTarget.workspaceRoot },
+          input: { cwd: queryTarget.worktreePath ?? queryTarget.workspaceRoot },
         }),
   );
   const threadKey =
@@ -66,7 +74,7 @@ export function useThreadRepositories(
     queryTarget === null || repositories.length === 0
       ? NO_REPOSITORIES
       : buildRepositoryOptions({
-          workspaceRoot: queryTarget.workspaceRoot,
+          workspaceRoot: queryTarget.worktreePath ?? queryTarget.workspaceRoot,
           projectName: queryTarget.projectName,
           projectFolder: fileBasename(queryTarget.workspaceRoot),
           outerBranch,

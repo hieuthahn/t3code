@@ -11,11 +11,15 @@ const state = vi.hoisted(() => ({
   tags: {} as Record<string, string[]>,
   touchCounts: undefined as Record<string, Record<string, number>> | undefined,
   statusCwds: [] as string[],
+  nestedQueries: [] as unknown[],
 }));
 
 vi.mock(import("../../state/queries"), async (original) => ({
   ...(await original()),
-  useNestedRepositories: (() => ({ data: { repositories: state.repositories } })) as never,
+  useNestedRepositories: ((target: unknown) => {
+    state.nestedQueries.push(target);
+    return { data: { repositories: state.repositories } };
+  }) as never,
   useThreadRepositoryTags: (() => ({
     data: { threads: state.tags, touchCounts: state.touchCounts },
   })) as never,
@@ -66,6 +70,7 @@ function setup(
   state.tags = {};
   state.touchCounts = undefined;
   state.statusCwds = [];
+  state.nestedQueries = [];
   useRepositorySelectionStore.setState({ byThreadKey: {} });
 }
 
@@ -77,11 +82,31 @@ describe("useThreadRepositories", () => {
     await expect.element(page.getByTestId("cwd")).toHaveTextContent("outer");
   });
 
-  it("offers no options for a worktree thread", async () => {
-    setup();
+  it("offers no options for a worktree thread whose worktree holds no inner worktrees", async () => {
+    setup([]);
     await using _screen = await render(<Probe worktreePath="/wt" />);
     await expect.element(page.getByTestId("labels")).toBeEmptyDOMElement();
     await expect.element(page.getByTestId("cwd")).toHaveTextContent("outer");
+  });
+
+  it("points the selector at the inner worktrees of a worktree thread", async () => {
+    setup();
+    await using _screen = await render(<Probe worktreePath="/wt" />);
+    await expect.element(page.getByTestId("labels")).toHaveTextContent("Nojima,backend");
+    await expect.element(page.getByTestId("cwd")).toHaveTextContent("outer");
+    expect(state.nestedQueries.at(-1)).toMatchObject({ threadId });
+
+    await page.getByRole("button", { name: "pick backend" }).click();
+    await expect.element(page.getByTestId("cwd")).toHaveTextContent("/wt/backend");
+    for (const query of state.statusCwds) {
+      expect(query).toContain('\\"cwd\\":\\"/wt\\"');
+    }
+  });
+
+  it("lists the project root repositories without a thread id outside a worktree", async () => {
+    setup();
+    await using _screen = await render(<Probe />);
+    expect(state.nestedQueries.at(-1)).not.toHaveProperty("threadId");
   });
 
   it("targets the outer repository by default", async () => {

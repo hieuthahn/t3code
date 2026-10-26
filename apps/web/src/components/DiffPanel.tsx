@@ -250,10 +250,10 @@ export default function DiffPanel({
   );
   const diffRepositoryLabel = repositoryLabelForHeader(repositories.options, repositories.selected);
   const activeCwd =
-    activeThread?.worktreePath ?? repositories.repositoryCwd ?? activeProject?.workspaceRoot;
-  const activeRepositoryRoot = activeThread?.worktreePath
-    ? undefined
-    : (repositories.repositoryCwd ?? activeProject?.repositoryIdentity?.rootPath);
+    repositories.repositoryCwd ?? activeThread?.worktreePath ?? activeProject?.workspaceRoot;
+  const activeRepositoryRoot =
+    repositories.repositoryCwd ??
+    (activeThread?.worktreePath ? undefined : activeProject?.repositoryIdentity?.rootPath);
   const serverConfig = useAtomValue(
     serverEnvironment.configValueAtom(activeThread?.environmentId ?? null),
   );

@@ -172,6 +172,14 @@ import {
   OrchestrationListProjectLibraryInput,
   OrchestrationListProjectLibraryResult,
 } from "./projectLibrary.ts";
+import {
+  OrchestrationListNestedRepositoriesError,
+  OrchestrationListNestedRepositoriesInput,
+  OrchestrationListNestedRepositoriesResult,
+  OrchestrationListThreadRepositoryTagsError,
+  OrchestrationListThreadRepositoryTagsInput,
+  OrchestrationListThreadRepositoryTagsResult,
+} from "./nestedRepositories.ts";
 import { OrchestrationSearchThreadsError } from "./threadSearch.ts";
 import {
   ProviderUploadFeedbackError,
@@ -1768,6 +1776,27 @@ const WsOrchestrationV2ListProjectLibraryRpc = Rpc.make(
   },
 );
 
+const WsOrchestrationV2ListNestedRepositoriesRpc = Rpc.make(
+  ORCHESTRATION_V2_WS_METHODS.listNestedRepositories,
+  {
+    payload: OrchestrationListNestedRepositoriesInput,
+    success: OrchestrationListNestedRepositoriesResult,
+    error: Schema.Union([OrchestrationListNestedRepositoriesError, EnvironmentAuthorizationError]),
+  },
+);
+
+const WsOrchestrationV2ListThreadRepositoryTagsRpc = Rpc.make(
+  ORCHESTRATION_V2_WS_METHODS.listThreadRepositoryTags,
+  {
+    payload: OrchestrationListThreadRepositoryTagsInput,
+    success: OrchestrationListThreadRepositoryTagsResult,
+    error: Schema.Union([
+      OrchestrationListThreadRepositoryTagsError,
+      EnvironmentAuthorizationError,
+    ]),
+  },
+);
+
 const WsOrchestrationV2GetArchivedShellSnapshotRpc = Rpc.make(
   ORCHESTRATION_V2_WS_METHODS.getArchivedShellSnapshot,
   {
@@ -2093,6 +2122,8 @@ export const WsOrchestrationV2RpcGroup = RpcGroup.make(
   WsOrchestrationV2GetFullThreadDiffRpc,
   WsOrchestrationV2SearchThreadsRpc,
   WsOrchestrationV2ListProjectLibraryRpc,
+  WsOrchestrationV2ListNestedRepositoriesRpc,
+  WsOrchestrationV2ListThreadRepositoryTagsRpc,
   WsOrchestrationV2SearchThreadRpc,
   WsOrchestrationV2SearchThreadStreamRpc,
   WsOrchestrationV2GetArchivedShellSnapshotRpc,

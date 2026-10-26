@@ -73,6 +73,17 @@ describe("deriveThreadOutputs", () => {
     ]);
   });
 
+  it("keeps a file created earlier as created after it is renamed", () => {
+    const outputs = deriveThreadOutputs([
+      fileChange(1, { fileName: "x", changes: [{ operation: "add", path: "/repo/before.md" }] }),
+      fileChange(2, {
+        fileName: "x",
+        changes: [{ operation: "move", path: "/repo/after.md", oldPath: "/repo/before.md" }],
+      }),
+    ]);
+    expect(outputs).toEqual([{ path: "/repo/after.md", status: "created" }]);
+  });
+
   it("ignores changes that did not complete and items of other types", () => {
     const outputs = deriveThreadOutputs([
       fileChange(1, { fileName: "/repo/failed.ts", status: "failed" }),

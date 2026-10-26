@@ -63,6 +63,9 @@ export const WorktreeNestedRepositories = Schema.Union([
   Schema.Array(TrimmedNonEmptyString.check(Schema.isMaxLength(512))).check(Schema.isMaxLength(100)),
 ]);
 export type WorktreeNestedRepositories = typeof WorktreeNestedRepositories.Type;
+
+/** A project with more inner repositories than this includes none by default. */
+export const NESTED_WORKTREES_DEFAULT_LIMIT = 8;
 export type ExecutionEnvironmentPlatform = typeof ExecutionEnvironmentPlatform.Type;
 
 export const ServerSelfUpdateMethod = Schema.Literals(["boot-service", "respawn", "desktop-app"]);

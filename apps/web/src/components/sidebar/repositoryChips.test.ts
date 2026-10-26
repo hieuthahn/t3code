@@ -15,6 +15,11 @@ describe("repositoryShortName", () => {
     expect(repositoryShortName("nojima-manabu/ios", "nojima-manabu")).toBe("ios");
   });
 
+  it("strips the project folder as a name prefix", () => {
+    expect(repositoryShortName("nojima-manabu-copy-backend", "nojima-manabu-copy")).toBe("backend");
+    expect(repositoryShortName("nojima-manabu-copy-ios", "nojima-manabu-copy")).toBe("ios");
+  });
+
   it("shortens a nested path to its last segment", () => {
     expect(repositoryShortName("services/api")).toBe("api");
   });

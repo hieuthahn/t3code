@@ -414,13 +414,13 @@ export function useThreadActions() {
     threadRef: ScopedThreadRef,
     projectId: ProjectId,
     worktreePath: string,
-  ): Promise<number> =>
-    resolveWithin(DIRTY_NESTED_REPOSITORY_LOOKUP_MS, 0, async () => {
+  ): Promise<number | null> =>
+    resolveWithin<number | null>(DIRTY_NESTED_REPOSITORY_LOOKUP_MS, null, async () => {
       const listed = await listNestedRepositories({
         environmentId: threadRef.environmentId,
         input: { projectId, threadId: threadRef.threadId },
       });
-      if (listed._tag !== "Success") return 0;
+      if (listed._tag !== "Success") return null;
       const statuses = await Promise.all(
         listed.value.repositories.map((repository) =>
           refreshVcsStatus({
@@ -429,6 +429,7 @@ export function useThreadActions() {
           }),
         ),
       );
+      if (statuses.some((status) => status._tag !== "Success")) return null;
       return statuses.filter(
         (status) => status._tag === "Success" && status.value.hasWorkingTreeChanges,
       ).length;
@@ -500,7 +501,7 @@ export function useThreadActions() {
         sessionGrantsScope(sessionResult.value, AuthSourceControlWriteScope);
     }
     let shouldDeleteWorktree = false;
-    let dirtyNestedRepositories = 0;
+    let dirtyNestedRepositories: number | null = 0;
     const environmentSettings = environmentConfig?.settings;
     const automaticWorktreeCleanup = environmentSettings
       ? resolveWorktreeCleanup(environmentSettings, thread.projectId).worktreeOnDelete

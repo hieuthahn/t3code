@@ -157,6 +157,24 @@ describe("groupByCoordinator", () => {
     ]);
   });
 
+  it("keeps a nested child no section lists under its coordinator", () => {
+    const all = [
+      thread("lead"),
+      thread("w1", { parent: "lead", order: 1 }),
+      thread("w2", { parent: "lead", order: 2 }),
+    ];
+    const section = [all[0]!];
+    const groups = groupByCoordinator(section, {
+      keyOf,
+      titleOf: (entry) => entry.title,
+      childrenByParentKey: resolveLineageChildren(all, keyOf),
+      listedKeys: new Set(section.map(keyOf)),
+    });
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.threads.map((entry) => entry.id)).toEqual(["lead", "w1", "w2"]);
+    expect(groups[0]?.childCount).toBe(2);
+  });
+
   it("returns nothing for an empty section", () => {
     expect(group([], [])).toEqual([]);
   });

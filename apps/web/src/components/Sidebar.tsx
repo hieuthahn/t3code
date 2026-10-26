@@ -503,6 +503,15 @@ function useSidebarThreads(input: {
 
   const { pinnedThreads, activeThreads, workingThreads, snoozedThreads, settledThreads } =
     partition;
+  const listedThreadKeys = new Set(
+    [
+      ...pinnedThreads,
+      ...activeThreads,
+      ...workingThreads,
+      ...snoozedThreads,
+      ...settledThreads,
+    ].map(threadShellKey),
+  );
   const fanoutGroupIdByKey = resolveFanoutGroupIds(threads, threadShellKey);
   const lineageChildrenByParentKey = resolveLineageChildren(threads, threadShellKey);
   const collapsedFanoutGroupIdSet = compactModeEnabled
@@ -527,6 +536,7 @@ function useSidebarThreads(input: {
           list,
           lineageChildrenByParentKey,
           threadShellKey,
+          listedThreadKeys,
         ),
         keyOf: threadShellKey,
         collapsedGroupIds: collapsedFanoutGroupIdSet,
@@ -625,11 +635,13 @@ function useSidebarThreads(input: {
       keyOf: threadShellKey,
       titleOf: (thread) => thread.title,
       childrenByParentKey: lineageChildrenByParentKey,
+      listedKeys: listedThreadKeys,
     }).map((group) => {
       const sectionChildrenByParentKey = restrictChildrenToItems(
         list,
         lineageChildrenByParentKey,
         threadShellKey,
+        listedThreadKeys,
       );
       const marker = coordinatorBucketMarker(section, group.id);
       const collapsed = collapsedBucketMarkers.includes(marker);

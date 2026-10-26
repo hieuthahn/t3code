@@ -5,11 +5,12 @@ import {
   ProjectId,
   ProviderInstanceId,
   type ServerSettings,
+  type WorktreeNestedRepositories,
 } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 import * as Cause from "effect/Cause";
-import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
+import { resolveProjectSettings, resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
 
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import {
@@ -190,6 +191,28 @@ describe("scoped settings writes", () => {
         worktreeKeepWhen: "uncommitted-changes",
       },
     ]);
+  });
+
+  it("round-trips the inner repositories setting at environment and project scope", () => {
+    const apply = (scope: typeof all, value: WorktreeNestedRepositories) => {
+      const write = planScopedSettingsPatch(scope, [server], {
+        worktreeNestedRepositories: value,
+      }).serverWrites[0]!;
+      return applyServerSettingsPatch(server.serverConfig!.settings, write.patch);
+    };
+
+    const chosen = apply(project, ["backend", "ios"]);
+    expect(resolveProjectSettings(chosen, projectId).settings.worktreeNestedRepositories).toEqual([
+      "backend",
+      "ios",
+    ]);
+    expect(chosen.worktreeNestedRepositories).toBeNull();
+
+    const none = apply(named, "none");
+    expect(resolveProjectSettings(none, projectId).settings.worktreeNestedRepositories).toBe(
+      "none",
+    );
+    expect(none.worktreeNestedRepositories).toBe("none");
   });
 
   it("writes an aggregate preference only to connected environments with loaded configuration", async () => {

@@ -1,5 +1,6 @@
 import {
   DEFAULT_SERVER_SETTINGS,
+  NESTED_WORKTREES_DEFAULT_LIMIT,
   type ModelSelection,
   type ProviderInstanceId,
   type WorktreeSubmodules,
@@ -20,12 +21,21 @@ import {
   sortProviderInstanceEntries,
 } from "../../providerInstances";
 import { useEnvironmentProviders, useEnvironments } from "../../state/environments";
+import { useNestedRepositories } from "../../state/queries";
 import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
-import { resolveEnvModeLabel, WORKTREE_SUBMODULES_LABELS } from "../BranchToolbar.logic";
+import {
+  normalizeNestedRepositoryPath,
+  resolveEnvModeLabel,
+  resolveNestedRepositoriesChoice,
+  WORKTREE_NESTED_REPOSITORIES_LABELS,
+  WORKTREE_SUBMODULES_LABELS,
+  type NestedRepositoriesChoice,
+} from "../BranchToolbar.logic";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { runtimeModeConfig, runtimeModeOptions } from "../chat/runtimeModeConfig";
 import { PULL_REQUEST_MERGE_METHOD_LABELS } from "../pullRequest/pullRequestDetail.logic";
 import { TraitsPicker } from "../chat/TraitsPicker";
+import { Checkbox } from "../ui/checkbox";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { toastManager } from "../ui/toast";
 import { Switch } from "../ui/switch";
@@ -48,6 +58,11 @@ import {
 const WORKTREE_SUBMODULES_OPTIONS = ["recursive", "top-level", "none"] as const;
 function isWorktreeSubmodules(value: string | null): value is WorktreeSubmodules {
   return value !== null && (WORKTREE_SUBMODULES_OPTIONS as readonly string[]).includes(value);
+}
+
+const NESTED_REPOSITORIES_OPTIONS = ["all", "none", "choose"] as const;
+function isNestedRepositoriesChoice(value: string | null): value is NestedRepositoriesChoice {
+  return value !== null && (NESTED_REPOSITORIES_OPTIONS as readonly string[]).includes(value);
 }
 
 export function ProjectDefaultsSettings({ category }: { category: ProjectSettingsCategory }) {
@@ -90,6 +105,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
   const PermissionIcon = runtimeModeConfig[settings.defaultRuntimeMode].icon;
   const mixedWorkspace = useScopedSettingsMixed(["defaultThreadEnvMode"]);
   const mixedSubmodules = useScopedSettingsMixed(["worktreeSubmodules"]);
+  const mixedNestedRepositories = useScopedSettingsMixed(["worktreeNestedRepositories"]);
   const mixedAutoPull = useScopedSettingsMixed(["defaultAutoPull"]);
   const mixedAgentCredits = useScopedSettingsMixed(["removeAgentCreditsOnMerge"]);
   const mixedMergeMethod = useScopedSettingsMixed(["pullRequestMergeMethod"]);
@@ -99,6 +115,25 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
   const effective = target
     ? resolveProjectSettings(target.settings, null, null, null).settings
     : null;
+  const nestedRepositories = useNestedRepositories(
+    isProjectScope && target?.projectId
+      ? { environmentId: target.environmentId, projectId: target.projectId }
+      : null,
+  ).data?.repositories;
+  const nestedRepositoryPaths = nestedRepositories?.map((repository) => repository.path) ?? [];
+  const nestedRepositoriesValue = effective?.worktreeNestedRepositories ?? null;
+  const nestedRepositoriesChoice: NestedRepositoriesChoice | null =
+    nestedRepositoriesValue === null
+      ? null
+      : settings.worktreeNestedRepositories === null &&
+          nestedRepositoryPaths.length > NESTED_WORKTREES_DEFAULT_LIMIT
+        ? "none"
+        : resolveNestedRepositoriesChoice(nestedRepositoriesValue);
+  const chosenNestedRepositories = new Set(
+    Array.isArray(nestedRepositoriesValue)
+      ? nestedRepositoriesValue.map(normalizeNestedRepositoryPath)
+      : [],
+  );
 
   function modelDisabledReason(instanceId: ProviderInstanceId, model: string): string | null {
     const sourceEntry = entries.find((entry) => entry.instanceId === instanceId);
@@ -376,6 +411,85 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
               </Select>
             }
           />
+          <SettingsRow
+            serverScoped
+            settingKeys={["worktreeNestedRepositories"]}
+            mixed={mixedNestedRepositories}
+            {...searchableSetting("worktree-nested-repositories")}
+            description={
+              isProjectScope
+                ? "Which inner repositories new worktrees in this project include."
+                : "Which inner repositories new worktrees include. Projects and their t3.json can override it."
+            }
+            resetAction={
+              !isProjectScope && settings.worktreeNestedRepositories !== null ? (
+                <SettingResetButton
+                  label="worktree inner repositories"
+                  onClick={() => updateSettings({ worktreeNestedRepositories: null })}
+                />
+              ) : null
+            }
+            control={
+              <Select
+                value={mixedNestedRepositories ? null : nestedRepositoriesChoice}
+                onValueChange={(value) => {
+                  if (!isNestedRepositoriesChoice(value)) return;
+                  if (value === "choose") {
+                    if (nestedRepositoriesChoice !== "choose") {
+                      updateSettings({ worktreeNestedRepositories: nestedRepositoryPaths });
+                    }
+                    return;
+                  }
+                  updateSettings({ worktreeNestedRepositories: value });
+                }}
+              >
+                <SelectTrigger size="sm" aria-label="Worktree inner repositories">
+                  <SelectValue>
+                    {(value: string | null) =>
+                      isNestedRepositoriesChoice(value)
+                        ? WORKTREE_NESTED_REPOSITORIES_LABELS[value]
+                        : unavailable
+                          ? "Unavailable"
+                          : "Mixed"
+                    }
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  {NESTED_REPOSITORIES_OPTIONS.filter(
+                    (option) => option !== "choose" || isProjectScope,
+                  ).map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {WORKTREE_NESTED_REPOSITORIES_LABELS[option]}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            }
+          >
+            {isProjectScope && !mixedNestedRepositories && nestedRepositoriesChoice === "choose" ? (
+              <div
+                className="grid gap-1.5 pt-2 pb-2"
+                role="group"
+                aria-label="Included inner repositories"
+              >
+                {nestedRepositoryPaths.map((path) => (
+                  <label key={path} className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={chosenNestedRepositories.has(path)}
+                      onCheckedChange={(checked) =>
+                        updateSettings({
+                          worktreeNestedRepositories: nestedRepositoryPaths.filter((candidate) =>
+                            candidate === path ? checked : chosenNestedRepositories.has(candidate),
+                          ),
+                        })
+                      }
+                    />
+                    {path}
+                  </label>
+                ))}
+              </div>
+            ) : null}
+          </SettingsRow>
         </>
       ) : (
         <>

@@ -1,9 +1,11 @@
-import type {
-  EnvironmentId,
-  EnvironmentMachineKind,
-  VcsRef,
-  ProjectId,
-  WorktreeSubmodules,
+import {
+  NESTED_WORKTREES_DEFAULT_LIMIT,
+  type EnvironmentId,
+  type EnvironmentMachineKind,
+  type VcsRef,
+  type ProjectId,
+  type WorktreeNestedRepositories,
+  type WorktreeSubmodules,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { sanitizeNewRefName } from "@t3tools/shared/git";
@@ -102,6 +104,43 @@ export const WORKTREE_SUBMODULES_LABELS: Record<WorktreeSubmodules, string> = {
   "top-level": "Top level only",
   none: "Skip",
 };
+
+export type NestedRepositoriesChoice = "all" | "none" | "choose";
+
+export const WORKTREE_NESTED_REPOSITORIES_LABELS: Record<NestedRepositoriesChoice, string> = {
+  all: "All",
+  none: "None",
+  choose: "Choose repositories",
+};
+
+export function resolveNestedRepositoriesChoice(
+  value: WorktreeNestedRepositories,
+): NestedRepositoriesChoice {
+  return value === "all" || value === "none" ? value : "choose";
+}
+
+export function normalizeNestedRepositoryPath(value: string): string {
+  return value.trim().replaceAll("\\", "/").replace(/^\.\//, "").replace(/\/+$/, "");
+}
+
+/** Mirrors the server: an unset setting includes every inner repository up to the default limit. */
+export function resolveIncludedNestedRepositoryCount(input: {
+  setting: WorktreeNestedRepositories | null;
+  projectFileSetting: WorktreeNestedRepositories | undefined;
+  discoveredPaths: readonly string[];
+}): number {
+  const value = input.setting ?? input.projectFileSetting;
+  const total = input.discoveredPaths.length;
+  if (value === undefined) return total > NESTED_WORKTREES_DEFAULT_LIMIT ? 0 : total;
+  if (value === "all") return total;
+  if (value === "none") return 0;
+  const wanted = new Set(value.map(normalizeNestedRepositoryPath));
+  return input.discoveredPaths.filter((path) => wanted.has(path)).length;
+}
+
+export function formatIncludedRepositoriesLabel(count: number): string {
+  return `Includes ${count} ${count === 1 ? "repo" : "repos"}`;
+}
 
 export function resolveCurrentWorkspaceLabel(activeWorktreePath: string | null): string {
   return activeWorktreePath ? "Current worktree" : resolveEnvModeLabel("local");

@@ -557,6 +557,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["git submodule init recursive top-level none worktree t3.json"],
   },
   {
+    id: "worktree-nested-repositories",
+    title: "Inner repositories",
+    to: "/settings/general",
+    scope: "project-defaults",
+    searchTerms: ["nested repos gitignored backend hora worktree include all none t3.json"],
+  },
+  {
     id: "start-from-origin",
     title: "Start from remote",
     to: "/settings/general",

@@ -3,6 +3,9 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   dedupeRemoteBranchesWithLocalMatches,
   deriveLocalBranchNameFromRemoteRef,
+  formatIncludedRepositoriesLabel,
+  resolveIncludedNestedRepositoryCount,
+  resolveNestedRepositoriesChoice,
   resolveBranchSelectionTarget,
   resolveDraftEnvModeAfterBranchChange,
   resolveEffectiveEnvMode,
@@ -252,5 +255,101 @@ describe("sanitizeNewRefName", () => {
   it("does not collapse dashes the user typed", () => {
     expect(sanitizeNewRefName("new - branch")).toBe("new---branch");
     expect(sanitizeNewRefName("foo--bar")).toBe("foo--bar");
+  });
+});
+
+describe("resolveIncludedNestedRepositoryCount", () => {
+  const paths = ["backend", "ios", "web"];
+
+  it("counts every repository for all and none for none", () => {
+    expect(
+      resolveIncludedNestedRepositoryCount({
+        setting: "all",
+        projectFileSetting: undefined,
+        discoveredPaths: paths,
+      }),
+    ).toBe(3);
+    expect(
+      resolveIncludedNestedRepositoryCount({
+        setting: "none",
+        projectFileSetting: undefined,
+        discoveredPaths: paths,
+      }),
+    ).toBe(0);
+  });
+
+  it("counts only the listed repositories that exist, ignoring path spelling", () => {
+    expect(
+      resolveIncludedNestedRepositoryCount({
+        setting: ["./backend/", "missing"],
+        projectFileSetting: undefined,
+        discoveredPaths: paths,
+      }),
+    ).toBe(1);
+  });
+
+  it("lets the setting win over t3.json and falls back to it when unset", () => {
+    expect(
+      resolveIncludedNestedRepositoryCount({
+        setting: "none",
+        projectFileSetting: "all",
+        discoveredPaths: paths,
+      }),
+    ).toBe(0);
+    expect(
+      resolveIncludedNestedRepositoryCount({
+        setting: null,
+        projectFileSetting: ["web"],
+        discoveredPaths: paths,
+      }),
+    ).toBe(1);
+  });
+
+  it("includes every repository by default up to the limit and none above it", () => {
+    const many = Array.from({ length: 9 }, (_, index) => `repo-${index}`);
+    expect(
+      resolveIncludedNestedRepositoryCount({
+        setting: null,
+        projectFileSetting: undefined,
+        discoveredPaths: many.slice(0, 8),
+      }),
+    ).toBe(8);
+    expect(
+      resolveIncludedNestedRepositoryCount({
+        setting: null,
+        projectFileSetting: undefined,
+        discoveredPaths: many,
+      }),
+    ).toBe(0);
+    expect(
+      resolveIncludedNestedRepositoryCount({
+        setting: "all",
+        projectFileSetting: undefined,
+        discoveredPaths: many,
+      }),
+    ).toBe(9);
+  });
+
+  it("is zero for a project without inner repositories", () => {
+    expect(
+      resolveIncludedNestedRepositoryCount({
+        setting: null,
+        projectFileSetting: undefined,
+        discoveredPaths: [],
+      }),
+    ).toBe(0);
+  });
+});
+
+describe("nested repository labels", () => {
+  it("names the count in one short line", () => {
+    expect(formatIncludedRepositoriesLabel(5)).toBe("Includes 5 repos");
+    expect(formatIncludedRepositoriesLabel(1)).toBe("Includes 1 repo");
+  });
+
+  it("maps a stored value to its select choice", () => {
+    expect(resolveNestedRepositoriesChoice("all")).toBe("all");
+    expect(resolveNestedRepositoriesChoice("none")).toBe("none");
+    expect(resolveNestedRepositoriesChoice(["backend"])).toBe("choose");
   });
 });

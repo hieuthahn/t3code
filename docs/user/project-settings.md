@@ -170,11 +170,15 @@ applies when the project and environment are both on **Inherit**.
 
 Projects whose gitignored inner repositories are cloned side by side, such as a backend and an iOS
 app under one outer repository, get a worktree of each inner repository inside the new worktree, on
-a branch with the same name. Set `"worktreeNestedRepositories"` in `t3.json` to `"all"`, `"none"`, or
-a list of paths like `["backend"]` to choose which ones. Without it, a project with 8 or fewer inner
-repositories includes all of them and a project with more includes none. Submodules are not
-included, and an inner repository with no commits is skipped. Removing the worktree removes the inner
-ones too.
+a branch with the same name. Choose which ones with **Inner repositories** in **Settings → General**
+(**All**, **None**, or **Choose repositories** with the project selected), or set
+`"worktreeNestedRepositories"` in `t3.json` to `"all"`, `"none"`, or a list of paths like
+`["backend"]`. It resolves in the same order as **Submodules**. Without a value, a project with 8 or
+fewer inner repositories includes all of them and a project with more includes none. Submodules are
+not included, and an inner repository with no commits is skipped. The new-thread toolbar shows how
+many inner repositories a new worktree includes, and a worktree thread lets you pick which
+repository its Git section and diff target. Deleting the last thread of a worktree removes the inner
+worktrees too, and the confirmation names inner repositories that have uncommitted changes.
 
 ## Worktree location
 

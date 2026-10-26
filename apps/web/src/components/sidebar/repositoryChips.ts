@@ -5,14 +5,18 @@ export interface RepositoryChipSummary {
   readonly overflow: number;
 }
 
-/** Shorten a nested repository path to its last segment, dropping a leading project folder. */
+/** Shorten a nested repository path to its last segment, dropping the project folder as a leading directory or name prefix. */
 export function repositoryShortName(path: string, projectFolder?: string | null): string {
   const segments = path.split("/").filter((segment) => segment !== "");
   const rest =
     projectFolder != null && segments.length > 1 && segments[0] === projectFolder
       ? segments.slice(1)
       : segments;
-  return rest.at(-1) ?? path;
+  const name = rest.at(-1) ?? path;
+  const prefix = projectFolder == null ? null : `${projectFolder}-`;
+  return prefix !== null && name.startsWith(prefix) && name.length > prefix.length
+    ? name.slice(prefix.length)
+    : name;
 }
 
 /** Keep the first two repositories as chips and count the rest, or return null when there is nothing to show. */

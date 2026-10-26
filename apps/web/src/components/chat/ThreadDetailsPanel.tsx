@@ -31,6 +31,7 @@ import { ThreadRelationshipsPanel } from "./ThreadRelationshipsControl";
 import { ThreadConnectorsPanel } from "./ThreadConnectorsPanel";
 import { ThreadContextPanel } from "./ThreadContextPanel";
 import { ThreadOutputsPanel } from "./ThreadOutputsPanel";
+import { ThreadProjectMemoryPanel } from "./ThreadProjectMemoryPanel";
 
 const GitActionsControl = memo(BaseGitActionsControl);
 
@@ -217,6 +218,13 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 outputs={props.outputs}
                 workspaceRoot={props.workspaceRoot}
                 onOpenFile={props.onOpenFile}
+              />
+            ) : null}
+
+            {panels.memory ? (
+              <ThreadProjectMemoryPanel
+                environmentId={props.environmentId}
+                projectId={props.activeProjectName === undefined ? null : props.projectId}
               />
             ) : null}
 

@@ -30,6 +30,7 @@ export function threadDetailsPanels(
     context: density === "full" && !isDraft,
     connectors: density === "full" && !isDraft,
     outputs: density === "full" && !isDraft,
+    memory: density === "full" && !isDraft,
   };
 }
 

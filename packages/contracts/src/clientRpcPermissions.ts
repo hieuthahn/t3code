@@ -55,6 +55,9 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.teamPause]: AuthOrchestrationOperateScope,
   [WS_METHODS.teamResume]: AuthOrchestrationOperateScope,
   [WS_METHODS.teamStop]: AuthOrchestrationOperateScope,
+  [WS_METHODS.projectMemoryAppend]: AuthOrchestrationOperateScope,
+  [WS_METHODS.projectMemoryEdit]: AuthOrchestrationOperateScope,
+  [WS_METHODS.projectMemoryDelete]: AuthOrchestrationOperateScope,
 
   [WS_METHODS.peerLinksLink]: AuthAccessWriteScope,
   [WS_METHODS.peerLinksUnlink]: AuthAccessWriteScope,

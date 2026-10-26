@@ -380,6 +380,14 @@ import {
   MergeQueueView,
 } from "./mergeQueue.ts";
 import { TeamError, TeamRunView, TeamThreadInput } from "./teamRun.ts";
+import {
+  ProjectMemoryAppendInput,
+  ProjectMemoryDeleteInput,
+  ProjectMemoryEditInput,
+  ProjectMemoryEntry,
+  ProjectMemoryError,
+  ProjectMemoryListInput,
+} from "./projectMemory.ts";
 import { SecretRequestAnswerInput, SecretRequestError } from "./secretRequest.ts";
 import {
   ProjectCloneActionInput,
@@ -555,6 +563,11 @@ export const WS_METHODS = {
   teamPause: "team.pause",
   teamResume: "team.resume",
   teamStop: "team.stop",
+  projectMemoryList: "projectMemory.list",
+  projectMemorySubscribe: "projectMemory.subscribe",
+  projectMemoryAppend: "projectMemory.append",
+  projectMemoryEdit: "projectMemory.edit",
+  projectMemoryDelete: "projectMemory.delete",
   mergeQueueDiff: "mergeQueue.diff",
   scheduledTasksListWebhookDeliveries: "scheduledTasks.listWebhookDeliveries",
   scheduledTasksGetWebhookDelivery: "scheduledTasks.getWebhookDelivery",
@@ -1919,6 +1932,36 @@ const WsMergeQueueCancelRpc = Rpc.make(WS_METHODS.mergeQueueCancel, {
   error: Schema.Union([MergeQueueError, EnvironmentAuthorizationError]),
 });
 
+const WsProjectMemoryListRpc = Rpc.make(WS_METHODS.projectMemoryList, {
+  payload: ProjectMemoryListInput,
+  success: Schema.Array(ProjectMemoryEntry),
+  error: Schema.Union([ProjectMemoryError, EnvironmentAuthorizationError]),
+});
+
+const WsProjectMemorySubscribeRpc = Rpc.make(WS_METHODS.projectMemorySubscribe, {
+  payload: ProjectMemoryListInput,
+  success: Schema.Array(ProjectMemoryEntry),
+  error: Schema.Union([ProjectMemoryError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
+const WsProjectMemoryAppendRpc = Rpc.make(WS_METHODS.projectMemoryAppend, {
+  payload: ProjectMemoryAppendInput,
+  success: ProjectMemoryEntry,
+  error: Schema.Union([ProjectMemoryError, EnvironmentAuthorizationError]),
+});
+
+const WsProjectMemoryEditRpc = Rpc.make(WS_METHODS.projectMemoryEdit, {
+  payload: ProjectMemoryEditInput,
+  success: ProjectMemoryEntry,
+  error: Schema.Union([ProjectMemoryError, EnvironmentAuthorizationError]),
+});
+
+const WsProjectMemoryDeleteRpc = Rpc.make(WS_METHODS.projectMemoryDelete, {
+  payload: ProjectMemoryDeleteInput,
+  error: Schema.Union([ProjectMemoryError, EnvironmentAuthorizationError]),
+});
+
 const WsTeamSubscribeRpc = Rpc.make(WS_METHODS.teamSubscribe, {
   payload: TeamThreadInput,
   success: Schema.NullOr(TeamRunView),
@@ -2078,6 +2121,11 @@ export const WsRpcGroup = RpcGroup.make(
   WsMergeQueueSubscribeRpc,
   WsMergeQueueApproveRpc,
   WsMergeQueueCancelRpc,
+  WsProjectMemoryListRpc,
+  WsProjectMemorySubscribeRpc,
+  WsProjectMemoryAppendRpc,
+  WsProjectMemoryEditRpc,
+  WsProjectMemoryDeleteRpc,
   WsTeamSubscribeRpc,
   WsTeamPauseRpc,
   WsTeamResumeRpc,

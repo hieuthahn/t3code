@@ -190,7 +190,7 @@ describe("parsing", () => {
     expect(parseJudgeVerdict("no json")).toBeUndefined();
   });
 
-  it("takes Jev's choice and hands an unsure one to Haiku", () => {
+  it("takes Jev's choice with its confidence, an unsure one included", () => {
     expect(parseJevAnswer({ answers: { effort: { choice: "low", confidence: 0.9 } } })).toEqual({
       effort: "low",
       sure: 0.9,
@@ -200,7 +200,7 @@ describe("parsing", () => {
       parseJevAnswer({
         result: { answers: { effort: { choice: "max", probabilities: { max: 0.3 } } } },
       }),
-    ).toBeUndefined();
+    ).toEqual({ effort: "max", sure: 0.3, why: "30% sure" });
     expect(parseJevAnswer({ answers: { effort: { choice: "huge" } } })).toBeUndefined();
   });
 

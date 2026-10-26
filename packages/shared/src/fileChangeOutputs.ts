@@ -28,8 +28,9 @@ export function fileChangeEntries(item: {
 }
 
 /**
- * Folds one file_change item into a path map. A rename drops the old path, and
- * an edit after a create keeps the file "created". Apply items oldest first.
+ * Folds one file_change item into a path map. A rename moves the old path's
+ * status to the new path, and an edit after a create keeps the file "created".
+ * Apply items oldest first.
  */
 export function applyFileChanges<Meta>(
   byPath: Map<string, FileChangeOutput<Meta>>,
@@ -37,8 +38,9 @@ export function applyFileChanges<Meta>(
   meta: Meta,
 ): void {
   for (const change of changes) {
+    const renamedFrom = change.oldPath === undefined ? undefined : byPath.get(change.oldPath);
     if (change.oldPath !== undefined) byPath.delete(change.oldPath);
-    const previous = byPath.get(change.path);
+    const previous = renamedFrom ?? byPath.get(change.path);
     const next = statusForOperation(change.operation);
     byPath.set(change.path, {
       status: previous?.status === "created" && next === "edited" ? "created" : next,

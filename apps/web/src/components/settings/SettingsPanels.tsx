@@ -126,6 +126,7 @@ const COMPACT_GROUP_BY_LABELS: Record<SidebarCompactGroupBy, string> = {
   time: "Date",
   project: "Project",
   status: "Status",
+  coordinator: "Coordinator",
 };
 const isSidebarCompactGroupBy = Schema.is(SidebarCompactGroupBy);
 
@@ -1298,7 +1299,7 @@ export function GeneralSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("compact-sidebar-grouping")}
-          description="Groups Active and Settled threads by date or project, or Active threads by status, in the compact sidebar."
+          description="Groups Active and Settled threads by date or project, or Active threads by status or coordinator, in the compact sidebar."
           resetAction={
             settings.sidebarCompactGroupBy !== DEFAULT_UNIFIED_SETTINGS.sidebarCompactGroupBy ? (
               <SettingResetButton
@@ -1336,6 +1337,9 @@ export function GeneralSettingsPanel() {
                 </SelectItem>
                 <SelectItem hideIndicator value="status">
                   Status
+                </SelectItem>
+                <SelectItem hideIndicator value="coordinator">
+                  Coordinator
                 </SelectItem>
               </SelectPopup>
             </Select>

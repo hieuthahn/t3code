@@ -5412,4 +5412,119 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       ]);
     }),
   );
+  const makeOuterWithNestedRepo = Effect.fnUntraced(function* () {
+    const outer = yield* makeTempDir("t3code-nested-outer-");
+    yield* initRepo(outer);
+    const nested = NodePath.join(outer, "backend");
+    NodeFS.mkdirSync(nested);
+    NodeFS.writeFileSync(NodePath.join(outer, ".gitignore"), "backend/\n");
+    yield* runGit(outer, ["add", ".gitignore"]);
+    yield* runGit(outer, ["commit", "-m", "Ignore backend"]);
+    return { outer, nested };
+  });
+
+  it.effect("reports the nested repo's own branch and changes, not the outer repo's", () =>
+    Effect.gen(function* () {
+      const { outer, nested } = yield* makeOuterWithNestedRepo();
+      yield* initRepo(nested);
+      yield* runGit(nested, ["checkout", "-b", "feature/inner"]);
+      NodeFS.writeFileSync(NodePath.join(outer, "README.md"), "outer change\n");
+      const { manager } = yield* makeManager();
+
+      const nestedStatus = yield* manager.status({ cwd: nested });
+      const outerStatus = yield* manager.status({ cwd: outer });
+
+      expect(nestedStatus.refName).toBe("feature/inner");
+      expect(nestedStatus.hasWorkingTreeChanges).toBe(false);
+      expect(outerStatus.refName).toBe("main");
+      expect(outerStatus.hasWorkingTreeChanges).toBe(true);
+      expect(outerStatus.workingTree.files.map((file) => file.path)).toEqual(["README.md"]);
+    }),
+  );
+
+  it.effect("commits only the nested repo and leaves the outer repo untouched", () =>
+    Effect.gen(function* () {
+      const { outer, nested } = yield* makeOuterWithNestedRepo();
+      yield* initRepo(nested);
+      NodeFS.writeFileSync(NodePath.join(outer, "README.md"), "outer change\n");
+      NodeFS.writeFileSync(NodePath.join(nested, "README.md"), "nested change\n");
+      const outerHeadBefore = (yield* runGit(outer, ["rev-parse", "HEAD"])).stdout;
+      const { manager } = yield* makeManager();
+
+      yield* runStackedAction(manager, {
+        cwd: nested,
+        action: "commit",
+        commitMessage: "Update nested readme",
+      });
+
+      const nestedFiles = (yield* runGit(nested, ["show", "--name-only", "--format=", "HEAD"]))
+        .stdout;
+      expect(nestedFiles.trim()).toBe("README.md");
+      expect((yield* runGit(nested, ["log", "-1", "--format=%s"])).stdout.trim()).toBe(
+        "Update nested readme",
+      );
+      expect((yield* runGit(outer, ["rev-parse", "HEAD"])).stdout).toBe(outerHeadBefore);
+      expect((yield* runGit(outer, ["status", "--porcelain"])).stdout.trim()).toBe("M README.md");
+    }),
+  );
+
+  it.effect("reads status of a nested repo that has no commits", () =>
+    Effect.gen(function* () {
+      const { nested } = yield* makeOuterWithNestedRepo();
+      yield* runGit(nested, ["init", "--initial-branch=trunk"]);
+      NodeFS.writeFileSync(NodePath.join(nested, "a.txt"), "a\n");
+      const { manager } = yield* makeManager();
+
+      const status = yield* manager.status({ cwd: nested });
+
+      expect(status.refName).toBe("trunk");
+      expect(status.hasWorkingTreeChanges).toBe(true);
+      expect(status.workingTree.files.map((file) => file.path)).toEqual(["a.txt"]);
+    }),
+  );
+
+  it.effect("reads a detached nested repo and rejects pushing from it", () =>
+    Effect.gen(function* () {
+      const { nested } = yield* makeOuterWithNestedRepo();
+      yield* initRepo(nested);
+      yield* runGit(nested, ["checkout", "--detach", "HEAD"]);
+      const { manager } = yield* makeManager();
+
+      const status = yield* manager.status({ cwd: nested });
+      const error = yield* runStackedAction(manager, { cwd: nested, action: "commit_push" }).pipe(
+        Effect.flip,
+      );
+
+      expect(status.refName).toBeNull();
+      expect(error.message).toContain("detached HEAD");
+    }),
+  );
+  it.effect("pushes a nested repo to its own origin, never the outer repo's", () =>
+    Effect.gen(function* () {
+      const { outer, nested } = yield* makeOuterWithNestedRepo();
+      yield* initRepo(nested);
+      const outerRemote = yield* createBareRemote();
+      const nestedRemote = yield* createBareRemote();
+      yield* runGit(outer, ["remote", "add", "origin", outerRemote]);
+      yield* runGit(nested, ["remote", "add", "origin", nestedRemote]);
+      yield* runGit(nested, ["checkout", "-b", "feature/inner"]);
+      NodeFS.writeFileSync(NodePath.join(nested, "README.md"), "nested change\n");
+      const { manager } = yield* makeManager();
+
+      yield* runStackedAction(manager, {
+        cwd: nested,
+        action: "commit_push",
+        commitMessage: "Update nested readme",
+      });
+
+      const heads = (remote: string) =>
+        NodeChildProcess.execFileSync(
+          "git",
+          ["--git-dir", remote, "for-each-ref", "--format=%(refname)", "refs/heads"],
+          { encoding: "utf8" },
+        ).trim();
+      expect(heads(nestedRemote)).toBe("refs/heads/feature/inner");
+      expect(heads(outerRemote)).toBe("");
+    }),
+  );
 });

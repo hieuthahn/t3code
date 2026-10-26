@@ -206,6 +206,7 @@ import {
 import { parseBase64DataUrl } from "./imageMime.ts";
 import { deletePendingAttachment, issueAttachmentUploadUrl } from "./assets/AttachmentUpload.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
+import { makeGitCwdGuard } from "./workspace/gitCwdGuard.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as KnownWorkspaces from "./workspace/KnownWorkspaces.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
@@ -1287,6 +1288,7 @@ type WsRpcServices =
   | ThreadLaunchService.ThreadLaunchService
   | ThreadManagementService.ThreadManagementService
   | ProjectLibrary.ProjectLibrary
+  | KnownWorkspaces.KnownWorkspaces
   | NestedRepositories.NestedRepositories
   | ThreadSearch.ThreadSearch
   | TraceDiagnostics.TraceDiagnostics
@@ -1366,6 +1368,7 @@ const makeWsRpcLayer = (
       const directEndpoints = yield* DirectEndpoints.DirectEndpoints;
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
       const review = yield* ReviewService.ReviewService;
+      const gitCwdGuard = makeGitCwdGuard(yield* KnownWorkspaces.KnownWorkspaces);
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
       const terminalManager = yield* TerminalManager.TerminalManager;
@@ -2669,15 +2672,24 @@ const makeWsRpcLayer = (
           }),
         [WS_METHODS.assetsPersistChatAttachments]: (input) =>
           persistChatAttachments(input).pipe(Effect.map((attachments) => ({ attachments }))),
-        [WS_METHODS.subscribeVcsStatus]: (input) => vcsStatusBroadcaster.streamStatus(input),
+        [WS_METHODS.subscribeVcsStatus]: (input) =>
+          Stream.unwrap(
+            gitCwdGuard
+              .asGitManagerError("ws.subscribeVcsStatus", input.cwd)
+              .pipe(Effect.as(vcsStatusBroadcaster.streamStatus(input))),
+          ),
         [WS_METHODS.subscribeWorktreeSetup]: (input) => worktreeSetupTracker.stream(input.threadId),
         [WS_METHODS.worktreeSetupCancel]: (input) =>
           worktreeSetupTracker
             .cancel(input.threadId)
             .pipe(Effect.map((cancelled) => ({ cancelled }))),
-        [WS_METHODS.vcsRefreshStatus]: (input) => vcsStatusBroadcaster.refreshStatus(input.cwd),
+        [WS_METHODS.vcsRefreshStatus]: (input) =>
+          gitCwdGuard
+            .asGitManagerError("ws.vcsRefreshStatus", input.cwd)
+            .pipe(Effect.andThen(vcsStatusBroadcaster.refreshStatus(input.cwd))),
         [WS_METHODS.vcsPull]: (input) =>
-          gitWorkflow.pullCurrentBranch(input.cwd).pipe(
+          gitCwdGuard.asGitCommandError("ws.vcsPull", input.cwd).pipe(
+            Effect.andThen(gitWorkflow.pullCurrentBranch(input.cwd)),
             Effect.matchCauseEffect({
               onFailure: (cause) => Effect.failCause(cause),
               onSuccess: (result) =>
@@ -2686,60 +2698,80 @@ const makeWsRpcLayer = (
           ),
         [WS_METHODS.gitRunStackedAction]: (input) =>
           Stream.callback<GitActionProgressEvent, GitManagerServiceError>((queue) =>
-            gitWorkflow
-              .runStackedAction(input, {
-                actionId: input.actionId,
-                progressReporter: {
-                  publish: (event) => Queue.offer(queue, event).pipe(Effect.asVoid),
-                },
-              })
-              .pipe(
-                Effect.matchCauseEffect({
-                  onFailure: (cause) => Queue.failCause(queue, cause),
-                  onSuccess: (result) =>
-                    (input.threadId === undefined
-                      ? Effect.void
-                      : linkCreatedPullRequest({
-                          threadId: input.threadId,
-                          result,
-                          commandId: serverCommandId("pr-created-link"),
-                        }).pipe(
-                          Effect.provideService(Orchestrator.OrchestratorV2, orchestrationEngine),
-                          Effect.provideService(ProjectService.ProjectService, projectService),
-                        )
-                    ).pipe(
-                      Effect.andThen(
-                        refreshPushedPullRequests(input, result).pipe(
-                          Effect.provideService(Orchestrator.OrchestratorV2, orchestrationEngine),
-                          Effect.provideService(ProjectStore.ProjectStoreV2, projectStore),
-                          Effect.provideService(
-                            PullRequestService.PullRequestService,
-                            pullRequests,
-                          ),
-                        ),
-                      ),
-                      Effect.andThen(refreshGitStatus(input.cwd)),
-                      Effect.andThen(Queue.end(queue).pipe(Effect.asVoid)),
-                    ),
+            gitCwdGuard.asGitManagerError("ws.gitRunStackedAction", input.cwd).pipe(
+              Effect.andThen(
+                gitWorkflow.runStackedAction(input, {
+                  actionId: input.actionId,
+                  progressReporter: {
+                    publish: (event) => Queue.offer(queue, event).pipe(Effect.asVoid),
+                  },
                 }),
               ),
+              Effect.matchCauseEffect({
+                onFailure: (cause) => Queue.failCause(queue, cause),
+                onSuccess: (result) =>
+                  (input.threadId === undefined
+                    ? Effect.void
+                    : linkCreatedPullRequest({
+                        threadId: input.threadId,
+                        result,
+                        commandId: serverCommandId("pr-created-link"),
+                      }).pipe(
+                        Effect.provideService(Orchestrator.OrchestratorV2, orchestrationEngine),
+                        Effect.provideService(ProjectService.ProjectService, projectService),
+                      )
+                  ).pipe(
+                    Effect.andThen(
+                      refreshPushedPullRequests(input, result).pipe(
+                        Effect.provideService(Orchestrator.OrchestratorV2, orchestrationEngine),
+                        Effect.provideService(ProjectStore.ProjectStoreV2, projectStore),
+                        Effect.provideService(PullRequestService.PullRequestService, pullRequests),
+                      ),
+                    ),
+                    Effect.andThen(refreshGitStatus(input.cwd)),
+                    Effect.andThen(Queue.end(queue).pipe(Effect.asVoid)),
+                  ),
+              }),
+            ),
           ),
-        [WS_METHODS.gitResolvePullRequest]: (input) => gitWorkflow.resolvePullRequest(input),
+        [WS_METHODS.gitResolvePullRequest]: (input) =>
+          gitCwdGuard
+            .asGitManagerError("ws.gitResolvePullRequest", input.cwd)
+            .pipe(Effect.andThen(gitWorkflow.resolvePullRequest(input))),
         [WS_METHODS.gitPreparePullRequestThread]: (input) =>
-          gitWorkflow
-            .preparePullRequestThread(input)
-            .pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
-        [WS_METHODS.vcsListRefs]: (input) => gitWorkflow.listRefs(input),
+          gitCwdGuard.asGitManagerError("ws.gitPreparePullRequestThread", input.cwd).pipe(
+            Effect.andThen(gitWorkflow.preparePullRequestThread(input)),
+            Effect.tap(() => refreshGitStatus(input.cwd)),
+          ),
+        [WS_METHODS.vcsListRefs]: (input) =>
+          gitCwdGuard
+            .asGitCommandError("ws.vcsListRefs", input.cwd)
+            .pipe(Effect.andThen(gitWorkflow.listRefs(input))),
         [WS_METHODS.vcsCreateWorktree]: (input) =>
-          gitWorkflow.createWorktree(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+          gitCwdGuard.asGitCommandError("ws.vcsCreateWorktree", input.cwd).pipe(
+            Effect.andThen(gitWorkflow.createWorktree(input)),
+            Effect.tap(() => refreshGitStatus(input.cwd)),
+          ),
         [WS_METHODS.vcsRemoveWorktree]: (input) =>
-          gitWorkflow.removeWorktree(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+          gitCwdGuard.asGitCommandError("ws.vcsRemoveWorktree", input.cwd).pipe(
+            Effect.andThen(gitWorkflow.removeWorktree(input)),
+            Effect.tap(() => refreshGitStatus(input.cwd)),
+          ),
         [WS_METHODS.vcsCreateRef]: (input) =>
-          gitWorkflow.createRef(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+          gitCwdGuard.asGitCommandError("ws.vcsCreateRef", input.cwd).pipe(
+            Effect.andThen(gitWorkflow.createRef(input)),
+            Effect.tap(() => refreshGitStatus(input.cwd)),
+          ),
         [WS_METHODS.vcsSwitchRef]: (input) =>
-          gitWorkflow.switchRef(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+          gitCwdGuard.asGitCommandError("ws.vcsSwitchRef", input.cwd).pipe(
+            Effect.andThen(gitWorkflow.switchRef(input)),
+            Effect.tap(() => refreshGitStatus(input.cwd)),
+          ),
         [WS_METHODS.vcsInit]: (input) =>
-          vcsProvisioning.initRepository(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+          gitCwdGuard.asVcsError("ws.vcsInit", input.cwd).pipe(
+            Effect.andThen(vcsProvisioning.initRepository(input)),
+            Effect.tap(() => refreshGitStatus(input.cwd)),
+          ),
         [WS_METHODS.reviewGetDiffPreview]: (input) => review.getDiffPreview(input),
         [WS_METHODS.reviewGetDiffFileContents]: (input) => review.getDiffFileContents(input),
         [WS_METHODS.terminalOpen]: (input) => terminalManager.open(input),

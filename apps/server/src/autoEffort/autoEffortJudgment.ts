@@ -289,7 +289,6 @@ export function parseJevAnswer(body: unknown): EffortVerdict | undefined {
   const choice = answers?.effort?.choice;
   if (!isEffortLevel(choice)) return undefined;
   const sure = answers.effort.confidence ?? answers.effort.probabilities?.[choice];
-  if (typeof sure === "number" && sure < 0.5) return undefined;
   const teamChoice = answers.team?.choice;
   const teamSure = answers.team?.confidence ?? answers.team?.probabilities?.[teamChoice];
   return {

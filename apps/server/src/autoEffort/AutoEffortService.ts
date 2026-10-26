@@ -10,6 +10,7 @@ import { isSpentAccount } from "@t3tools/shared/usageLimitSwitchCandidates";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -43,6 +44,8 @@ import {
 /** Past this a turn starts on its manual effort: a judge must not hold the prompt up. */
 const JUDGE_DEADLINE_MS = 3_000;
 const JEV_TIMEOUT_MS = 1_000;
+/** Below this Jev's pick waits for Haiku, and stands only when Haiku has no answer. */
+const JEV_SURE_THRESHOLD = 0.5;
 const JEV_URL = "https://api.typesafe.ai/v1/systemone";
 const CLAUDE_DRIVER = ProviderDriverKind.make("claudeAgent");
 
@@ -112,6 +115,14 @@ interface LaunchJudgment {
 }
 
 const percent = (value: number) => `${Math.round(value * 100)}% sure`;
+
+const isSure = (verdict: EffortVerdict) =>
+  verdict.sure === undefined || verdict.sure >= JEV_SURE_THRESHOLD;
+
+const markedLow = (verdict: EffortVerdict): EffortVerdict => ({
+  ...verdict,
+  why: `${verdict.why ?? "unsure"} (low)`,
+});
 
 /** The team half of the notice line. */
 function teamNoticeText(launch: LaunchJudgment): string {
@@ -191,40 +202,43 @@ const make = Effect.gen(function* () {
     if (instanceId === undefined) return Option.none<EffortVerdict>();
     const instance = yield* instanceRegistry.getInstance(instanceId);
     if (instance?.judgeEffort === undefined) return Option.none<EffortVerdict>();
-    const reply = yield* instance.judgeEffort(judgeQuestion(input));
+    const reply = yield* instance
+      .judgeEffort(judgeQuestion(input))
+      .pipe(Effect.timeoutOption(JUDGE_DEADLINE_MS), Effect.map(Option.flatten));
     return Option.flatMap(reply, (text) => Option.fromNullishOr(parseJudgeVerdict(text)));
   });
 
-  const judge = Effect.fn("AutoEffortService.judge")(
-    function* (
-      request: AutoEffortRequest,
-      input: JudgeInput,
-      providers: ReadonlyArray<ServerProvider>,
-    ) {
-      const settings = yield* serverSettings.getSettings.pipe(Effect.option);
-      const judgeSetting = Option.match(settings, {
-        onNone: () => "auto" as const,
-        onSome: (value) => value.autoEffortJudge,
-      });
-      const key = judgeSetting === "haiku" ? Option.none<string>() : yield* jevKey;
-      if (Option.isSome(key)) {
-        const verdict = yield* askJev(key.value, input);
-        if (Option.isSome(verdict)) {
-          return Option.some<Judged>({ verdict: verdict.value, by: "jev" });
-        }
-      }
-      const instanceId = judgeInstance(
-        request,
-        providers,
-        Option.getOrUndefined(settings)?.textGenerationModelSelection.instanceId,
-        yield* Clock.currentTimeMillis,
-      );
-      const verdict = yield* askHaiku(instanceId, input);
-      return Option.map(verdict, (value): Judged => ({ verdict: value, by: "haiku", instanceId }));
-    },
-    Effect.timeoutOption(JUDGE_DEADLINE_MS),
-    Effect.map(Option.flatten),
-  );
+  // Haiku starts with Jev so it has the whole deadline when Jev turns out unsure; each
+  // judge carries its own timeout, so Jev's unsure pick survives a Haiku that runs out.
+  const judge = Effect.fn("AutoEffortService.judge")(function* (
+    request: AutoEffortRequest,
+    input: JudgeInput,
+    providers: ReadonlyArray<ServerProvider>,
+  ) {
+    const settings = yield* serverSettings.getSettings.pipe(Effect.option);
+    const judgeSetting = Option.match(settings, {
+      onNone: () => "auto" as const,
+      onSome: (value) => value.autoEffortJudge,
+    });
+    const instanceId = judgeInstance(
+      request,
+      providers,
+      Option.getOrUndefined(settings)?.textGenerationModelSelection.instanceId,
+      yield* Clock.currentTimeMillis,
+    );
+    const haiku = yield* askHaiku(instanceId, input).pipe(Effect.forkChild);
+    const key = judgeSetting === "haiku" ? Option.none<string>() : yield* jevKey;
+    const jev = Option.isSome(key) ? yield* askJev(key.value, input) : Option.none<EffortVerdict>();
+    if (Option.isSome(jev) && isSure(jev.value)) {
+      yield* Fiber.interrupt(haiku);
+      return Option.some<Judged>({ verdict: jev.value, by: "jev" });
+    }
+    const haikuVerdict = yield* Fiber.join(haiku);
+    if (Option.isSome(haikuVerdict)) {
+      return Option.some<Judged>({ verdict: haikuVerdict.value, by: "haiku", instanceId });
+    }
+    return Option.map(jev, (verdict): Judged => ({ verdict: markedLow(verdict), by: "jev" }));
+  });
 
   const judgeTeam = Effect.fn("AutoEffortService.judgeTeam")(function* (request: AutoTeamRequest) {
     const stored = (yield* Ref.get(launchJudged)).get(request.threadId);
@@ -324,8 +338,8 @@ const make = Effect.gen(function* () {
         : launch !== undefined && Option.isSome(launch.judged)
           ? launch.judged
           : previous !== undefined &&
-            request.attachmentCount === 0 &&
-            isFollowUp(request.text, request.previousAssistantText)
+              request.attachmentCount === 0 &&
+              isFollowUp(request.text, request.previousAssistantText)
             ? Option.some<Judged>({ verdict: { effort: previous }, by: "follow-up" })
             : yield* judge(request, input, providers);
 

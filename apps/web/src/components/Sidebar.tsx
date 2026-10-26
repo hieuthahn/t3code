@@ -192,6 +192,7 @@ import {
   timeBucketMarker,
   projectBucketMarker,
   statusBucketMarker,
+  coordinatorBucketMarker,
   settledGroupIdOfMarker,
   settledGroupMarker,
   sidebarMarkerId,
@@ -267,6 +268,7 @@ import {
   fanoutRowThreads,
   resolveFanoutGroupIds,
 } from "./sidebar/fanoutGroups";
+import { groupByCoordinator } from "./sidebar/coordinatorGroups";
 import { bucketByStatus, sidebarStatusBucketOf } from "./sidebar/sidebarStatusBuckets";
 import {
   attachLineageRows,
@@ -582,6 +584,7 @@ function useSidebarThreads(input: {
         label: bucket.label,
         projectGroupId: null,
         statusBucket: null,
+        coordinator: false,
         pinned: false,
         threadCount: threadCountByBucket.get(bucket.bucket) ?? bucket.items.length,
         ...bucketRowsOf(marker, bucket.items),
@@ -614,6 +617,7 @@ function useSidebarThreads(input: {
         label: group.label,
         projectGroupId: group.id,
         statusBucket: null,
+        coordinator: false,
         pinned: pinnedProjectIds.includes(group.id),
         threadCount: threadCountByGroupId.get(group.id) ?? group.threads.length,
         ...bucketRowsOf(marker, group.threads),
@@ -630,12 +634,54 @@ function useSidebarThreads(input: {
         label: bucket.label,
         projectGroupId: null,
         statusBucket: bucket.bucket,
+        coordinator: false,
         pinned: false,
         threadCount: bucket.items.length,
         ...bucketRowsOf(marker, bucket.items),
       };
     });
-  // Settled threads have all finished, so status grouping leaves the shelf grouped by date.
+  const coordinatorBucketRowsOf = (
+    list: readonly EnvironmentThreadShell[],
+    section: SidebarSection,
+  ) =>
+    groupByCoordinator(list, {
+      keyOf: threadShellKey,
+      titleOf: (thread) => thread.title,
+      childrenByParentKey: lineageChildrenByParentKey,
+    }).map((group) => {
+      const marker = coordinatorBucketMarker(section, group.id);
+      const collapsed = collapsedBucketMarkers.includes(marker);
+      const rowsOf = (): FanoutRow<EnvironmentThreadShell>[] => {
+        if (group.coordinator === null) return bucketRowsOf(marker, group.threads).rows;
+        if (collapsed) {
+          return routeThreadOnly(group.threads, routeRowThreadKey).map((thread) => ({
+            kind: "thread",
+            thread,
+            nested: false,
+          }));
+        }
+        return attachLineageRows([{ kind: "thread", thread: group.coordinator, nested: false }], {
+          childrenByParentKey: lineageChildrenByParentKey,
+          keyOf: threadShellKey,
+          collapsedGroupIds: collapsedFanoutGroupIdSet,
+          routeThreadKey: routeRowThreadKey,
+          describeChildren: describeChildSessions,
+          headerlessParentKeys: new Set([group.id]),
+        });
+      };
+      return {
+        marker,
+        label: group.label,
+        projectGroupId: null,
+        statusBucket: null,
+        coordinator: group.coordinator !== null,
+        pinned: false,
+        threadCount: group.childCount,
+        expanded: !collapsed,
+        rows: rowsOf(),
+      };
+    });
+  // Settled threads have all finished, so status and coordinator grouping leave the shelf grouped by date.
   const compactBucketRowsOf = compactGroupBy === "project" ? projectBucketRowsOf : timeBucketRowsOf;
   const settledProjectGroups =
     settledGroupsEnabled && !compactModeEnabled
@@ -702,7 +748,9 @@ function useSidebarThreads(input: {
     ? null
     : compactGroupBy === "status"
       ? statusBucketRowsOf(activeThreads, "active")
-      : compactBucketRowsOf(activeThreads, "active", sidebarThreadTimeMs);
+      : compactGroupBy === "coordinator"
+        ? coordinatorBucketRowsOf(activeThreads, "active")
+        : compactBucketRowsOf(activeThreads, "active", sidebarThreadTimeMs);
   const activeRows =
     activeBuckets !== null
       ? activeBuckets.flatMap((bucket) => bucket.rows)
@@ -3776,6 +3824,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                   expanded={compactBucket.expanded}
                                   onToggle={() => toggleBucket(compactBucket.marker)}
                                   status={compactBucket.statusBucket ?? undefined}
+                                  coordinator={compactBucket.coordinator}
                                   project={
                                     compactBucket.projectGroupId === null
                                       ? undefined

@@ -61,9 +61,12 @@ export function attachLineageRows<T extends ThreadRef>(
     readonly collapsedGroupIds: ReadonlySet<string>;
     readonly routeThreadKey: string | null;
     readonly describeChildren: (children: readonly T[]) => string;
+    /** Parents whose children row directly under them, with no collapsible header. */
+    readonly headerlessParentKeys?: ReadonlySet<string>;
   },
 ): FanoutRow<T>[] {
   const { childrenByParentKey, keyOf, collapsedGroupIds, routeThreadKey, describeChildren } = input;
+  const headerlessParentKeys = input.headerlessParentKeys ?? new Set<string>();
   if (childrenByParentKey.size === 0) return [...rows];
   const placed = new Set<string>();
   const result: FanoutRow<T>[] = [];
@@ -76,6 +79,11 @@ export function attachLineageRows<T extends ThreadRef>(
       (child) => !placed.has(keyOf(child)),
     );
     if (children.length === 0) return;
+    if (headerlessParentKeys.has(parentKey)) {
+      for (const child of children)
+        pushWithChildren({ kind: "thread", thread: child, nested: true });
+      return;
+    }
     const id = lineageGroupId(parentKey);
     const collapsed = collapsedGroupIds.has(id);
     result.push({

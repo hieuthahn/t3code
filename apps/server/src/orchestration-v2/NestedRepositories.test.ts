@@ -344,4 +344,64 @@ it.layer(layerTest)("NestedRepositories", (it) => {
       assert.deepEqual(yield* tags(project), { [threadId]: ["backend", "wt"] });
     }),
   );
+  it.effect("leaves submodules out, in the project root and in a thread worktree", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.realPath(
+        yield* fs.makeTempDirectory({ prefix: "nested-submodules-" }),
+      );
+      const worktree = yield* fs.realPath(
+        yield* fs.makeTempDirectory({ prefix: "nested-submodules-wt-" }),
+      );
+      yield* gitDirectory(path.join(root, ".git"), "main");
+      yield* gitDirectory(path.join(root, ".git/modules/sub"), "main");
+      yield* write(path.join(root, "sub/.git"), "gitdir: ../.git/modules/sub\n");
+      yield* gitDirectory(path.join(root, "backend/.git"), "develop");
+      const adminDirectory = path.join(root, ".git/worktrees/wt");
+      yield* gitDirectory(adminDirectory, "feature/x");
+      yield* gitDirectory(path.join(adminDirectory, "modules/sub"), "main");
+      yield* write(path.join(worktree, ".git"), `gitdir: ${adminDirectory}\n`);
+      yield* write(path.join(worktree, "sub/.git"), `gitdir: ${adminDirectory}/modules/sub\n`);
+      yield* gitDirectory(path.join(root, "backend/.git/worktrees/wt"), "feature/x");
+      yield* write(
+        path.join(worktree, "backend/.git"),
+        `gitdir: ${path.join(root, "backend/.git/worktrees/wt")}\n`,
+      );
+      const project = ProjectId.make("project:submodules");
+      const threadId = ThreadId.make("thread:submodules");
+      yield* createProject(project, root);
+      yield* seed([thread(threadId, project, { worktreePath: worktree })]);
+
+      const service = yield* NestedRepositories.NestedRepositories;
+      assert.deepEqual(
+        (yield* service.list(project)).map((repository) => repository.path),
+        ["backend"],
+      );
+      assert.deepEqual(yield* service.list(project, threadId), [
+        { path: "backend", name: "backend", branch: "feature/x", originUrl: null },
+      ]);
+    }),
+  );
+
+  it.effect("tags a thread that edits a file under its worktree's inner repository", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* makeWorkspace();
+      const worktree = yield* fs.makeTempDirectory({ prefix: "nested-tags-wt-" });
+      const project = ProjectId.make("project:worktree-tags");
+      const threadId = ThreadId.make("thread:worktree-tags");
+      yield* createProject(project, root);
+      yield* seed([
+        thread(threadId, project, { worktreePath: worktree }),
+        tool(threadId, "w1", 1, { file_path: path.join(worktree, "backend/src/x.ts") }),
+        fileChange(threadId, "w2", 2, [
+          { operation: "edit", path: path.join(worktree, "apps/admin/src/y.vue") },
+        ]),
+      ]);
+
+      assert.deepEqual(yield* tags(project), { [threadId]: ["apps/admin", "backend"] });
+    }),
+  );
 });

@@ -178,6 +178,12 @@ export const VcsRemoveWorktreeInput = Schema.Struct({
 });
 export type VcsRemoveWorktreeInput = typeof VcsRemoveWorktreeInput.Type;
 
+export const VcsRemoveWorktreeResult = Schema.Struct({
+  /** Inner repositories whose worktree held uncommitted changes when it was removed. */
+  dirtyNestedRepositories: NonNegativeInt,
+});
+export type VcsRemoveWorktreeResult = typeof VcsRemoveWorktreeResult.Type;
+
 export const VcsCreateRefInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
   refName: TrimmedNonEmptyStringSchema,

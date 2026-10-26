@@ -2152,7 +2152,7 @@ const makeWsRpcLayer = (
             ),
           ),
         [ORCHESTRATION_V2_WS_METHODS.listNestedRepositories]: (input) =>
-          nestedRepositories.list(input.projectId).pipe(
+          nestedRepositories.list(input.projectId, input.threadId).pipe(
             Effect.map((repositories) => ({ repositories })),
             Effect.mapError(
               (cause) =>
@@ -3289,6 +3289,7 @@ const makeWsRpcLayer = (
           gitCwdGuard.asGitCommandWrite("ws.vcsRemoveWorktree", input.cwd).pipe(
             Effect.andThen(gitWorkflow.removeWorktree(input)),
             Effect.tap(() => refreshGitStatus(input.cwd)),
+            Effect.map((result) => (result.dirtyNestedRepositories > 0 ? result : undefined)),
           ),
         [WS_METHODS.vcsCreateRef]: (input) =>
           gitCwdGuard.asGitCommandWrite("ws.vcsCreateRef", input.cwd).pipe(

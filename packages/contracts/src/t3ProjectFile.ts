@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 
-import { ThreadEnvMode, WorktreeSubmodules } from "./environment.ts";
+import { ThreadEnvMode, WorktreeNestedRepositories, WorktreeSubmodules } from "./environment.ts";
 import { ProjectScriptIcon } from "./project.ts";
 import type { ProjectScopedServerSettingKey, ServerSettings } from "./settings.ts";
 
@@ -96,6 +96,12 @@ export const T3ProjectFile = Schema.Struct({
         'How new worktrees populate git submodules: "recursive" (the default) initializes nested submodules too, "top-level" initializes only those declared by this repository, and "none" leaves every submodule empty for a setup script to handle. A project or environment setting in T3 Code overrides this.',
     }),
   ),
+  worktreeNestedRepositories: Schema.optionalKey(
+    WorktreeNestedRepositories.annotate({
+      description:
+        'Which gitignored inner repositories new worktrees get their own worktree of: "all", "none", or a list of paths relative to this repository. When unset, worktrees include every inner repository unless the project has more than 8, then none. A project or environment setting in T3 Code overrides this.',
+    }),
+  ),
   scripts: Schema.optionalKey(
     Schema.Array(T3ProjectFileScript)
       .annotate({
@@ -114,6 +120,7 @@ export type T3ProjectFile = typeof T3ProjectFile.Type;
 export const PROJECT_FILE_BACKED_SETTINGS = {
   defaultThreadEnvMode: { field: "defaultThreadEnvMode", builtIn: "local" },
   worktreeSubmodules: { field: "worktreeSubmodules", builtIn: "recursive" },
+  worktreeNestedRepositories: { field: "worktreeNestedRepositories", builtIn: "all" },
 } as const satisfies {
   // providerInstances overrides individual fields, so it cannot use whole-setting file inheritance.
   readonly [K in ProjectScopedServerSettingKey & keyof ServerSettings]?: {

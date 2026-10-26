@@ -153,13 +153,15 @@ export type SidebarListMarker =
   | `${typeof FANOUT_GROUP_MARKER_PREFIX}${string}`
   | `${typeof TIME_BUCKET_MARKER_PREFIX}${string}`
   | `${typeof PROJECT_BUCKET_MARKER_PREFIX}${string}`
-  | `${typeof STATUS_BUCKET_MARKER_PREFIX}${string}`;
+  | `${typeof STATUS_BUCKET_MARKER_PREFIX}${string}`
+  | `${typeof COORDINATOR_BUCKET_MARKER_PREFIX}${string}`;
 
 const SETTLED_GROUP_MARKER_PREFIX = "settled-group:";
 const FANOUT_GROUP_MARKER_PREFIX = "fanout-group:";
 const TIME_BUCKET_MARKER_PREFIX = "time-bucket:";
 const PROJECT_BUCKET_MARKER_PREFIX = "project-bucket:";
 const STATUS_BUCKET_MARKER_PREFIX = "status-bucket:";
+const COORDINATOR_BUCKET_MARKER_PREFIX = "coordinator-bucket:";
 
 export function sidebarMarkerId(marker: SidebarListMarker): string {
   return `${SIDEBAR_MARKER_PREFIX}${marker}`;
@@ -195,6 +197,13 @@ export function statusBucketMarker(
   bucket: SidebarStatusBucket,
 ): SidebarListMarker {
   return `${STATUS_BUCKET_MARKER_PREFIX}${section}:${bucket}`;
+}
+
+export function coordinatorBucketMarker(
+  section: SidebarSection,
+  groupId: string,
+): SidebarListMarker {
+  return `${COORDINATOR_BUCKET_MARKER_PREFIX}${section}:${groupId}`;
 }
 
 export type SidebarListItem =

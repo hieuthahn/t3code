@@ -170,3 +170,23 @@ describe("attachLineageRows", () => {
     expect(rows.filter((entry) => entry.kind === "thread")).toHaveLength(2);
   });
 });
+
+describe("attachLineageRows with a headerless parent", () => {
+  it("rows the parent's children directly under it with no group header", () => {
+    const lead = thread("lead");
+    const worker = thread("worker", { parent: "lead" });
+    const helper = thread("helper", { parent: "worker" });
+    const childrenByParentKey = resolveLineageChildren([lead, worker, helper], keyOf);
+    const rows = attachLineageRows([row(lead)], {
+      childrenByParentKey,
+      keyOf,
+      collapsedGroupIds: new Set(),
+      routeThreadKey: null,
+      describeChildren,
+      headerlessParentKeys: new Set([keyOf(lead)]),
+    });
+    expect(
+      rows.map((entry) => (entry.kind === "group" ? entry.group.id : entry.thread.id)),
+    ).toEqual(["lead", "worker", lineageGroupId(keyOf(worker)), "helper"]);
+  });
+});

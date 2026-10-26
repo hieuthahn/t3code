@@ -6,6 +6,7 @@ import {
   Columns3Icon,
   FolderIcon,
   GripVerticalIcon,
+  NetworkIcon,
   PinIcon,
   PinOffIcon,
 } from "lucide-react";
@@ -188,7 +189,7 @@ export function SidebarSettledGroupHeader(props: {
   );
 }
 
-/** Head a compact date group, or a project group when `project` is given (null for Scratch or Other). */
+/** Head a compact date group, a project group when `project` is given (null for Scratch or Other), or a coordinator thread's group. */
 export function SidebarBucketHeader(props: {
   marker: SidebarListMarker;
   label: string;
@@ -197,6 +198,7 @@ export function SidebarBucketHeader(props: {
   onToggle: () => void;
   project?: ProjectFaviconProject | null | undefined;
   status?: SidebarStatusBucket | undefined;
+  coordinator?: boolean | undefined;
   pinned?: boolean | undefined;
   onPinnedChange?: ((pinned: boolean) => void) | undefined;
   onContextMenu?: ((position: { x: number; y: number }) => void) | undefined;
@@ -210,7 +212,8 @@ export function SidebarBucketHeader(props: {
     | undefined;
 }) {
   const isProject = props.project !== undefined;
-  const isNamedGroup = isProject || props.status !== undefined;
+  const isCoordinator = props.coordinator === true;
+  const isNamedGroup = isProject || props.status !== undefined || isCoordinator;
   const canPin = isProject && props.onPinnedChange !== undefined;
   const reorder = isProject ? props.reorder : undefined;
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
@@ -223,7 +226,15 @@ export function SidebarBucketHeader(props: {
     <SortableSidebarMarker
       marker={props.marker}
       data-testid="sidebar-bucket-header"
-      data-kind={isProject ? "project" : props.status !== undefined ? "status" : "date"}
+      data-kind={
+        isProject
+          ? "project"
+          : props.status !== undefined
+            ? "status"
+            : isCoordinator
+              ? "coordinator"
+              : "date"
+      }
       className={cn("mx-0.5 h-7", isNamedGroup && "not-first:h-9")}
     >
       <div
@@ -265,6 +276,11 @@ export function SidebarBucketHeader(props: {
                 <FolderIcon className="size-3.5 text-sidebar-muted-foreground" />
               )}
             </span>
+          ) : isCoordinator ? (
+            <NetworkIcon
+              aria-hidden
+              className="mb-px size-3.5 shrink-0 text-sidebar-muted-foreground"
+            />
           ) : props.status !== undefined ? (
             <span aria-hidden className="mb-px flex size-3.5 shrink-0 items-center justify-center">
               <span
@@ -272,7 +288,7 @@ export function SidebarBucketHeader(props: {
               />
             </span>
           ) : null}
-          {isProject ? (
+          {isProject || isCoordinator ? (
             <Tooltip>
               <TooltipTrigger render={<span className="min-w-0 truncate" />}>
                 {props.label}

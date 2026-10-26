@@ -73,6 +73,8 @@ export const makeClaudeEffortJudge = Effect.fn("makeClaudeEffortJudge")(function
   const instanceScope = yield* Effect.scope;
   const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, environment);
   const warmRef = yield* Ref.make(Option.none<WarmProcess>());
+  const closeInBackground = (warm: WarmProcess) =>
+    Effect.asVoid(Effect.forkIn(Scope.close(warm.scope, Exit.void), instanceScope));
 
   const spawnWarm = Effect.gen(function* () {
     const scope = yield* Scope.fork(instanceScope);
@@ -149,6 +151,7 @@ export const makeClaudeEffortJudge = Effect.fn("makeClaudeEffortJudge")(function
     Effect.tap(() => Effect.forkIn(replaceWarm, instanceScope)),
   );
 
+  // Closing waits up to forceKillAfter for the process to exit, which a deadline must not wait on.
   const answer = (warm: WarmProcess, question: string) =>
     Effect.acquireUseRelease(
       Effect.succeed(warm),
@@ -157,7 +160,7 @@ export const makeClaudeEffortJudge = Effect.fn("makeClaudeEffortJudge")(function
           warm.input,
           `${encodeJson({ type: "user", message: { role: "user", content: question } })}\n`,
         ).pipe(Effect.andThen(Deferred.await(warm.answer)), Effect.map(Option.some)),
-      () => Scope.close(warm.scope, Exit.void),
+      () => closeInBackground(warm),
     );
 
   if (claudeSettings.enabled && options?.warmAtStart !== false) {

@@ -309,6 +309,7 @@ const makeHarness = (options: HarnessOptions = {}) => {
           fetchWorktreeBaseCommit,
           createWorktree,
           removeWorktree,
+          listNestedWorktrees: () => Effect.succeed([]),
           deleteLocalBranch,
           ...options.git,
         } satisfies Partial<GitWorkflowService.GitWorkflowService["Service"]>),
@@ -533,6 +534,38 @@ describe("t3_worktree_handoff", () => {
       expect(harness.removeWorktree).toHaveBeenCalledWith({
         cwd: workspaceRoot,
         path: "/worktrees/project/feature/dispatch-defect",
+        force: true,
+      });
+    });
+  });
+
+  it.effect("deletes the inner repository branches when it backs out", () => {
+    const harness = makeHarness({
+      threadAttachedOnRecheck: true,
+      git: {
+        listNestedWorktrees: () =>
+          Effect.succeed([
+            {
+              path: "backend",
+              root: `${workspaceRoot}/backend`,
+              worktree: "/worktrees/project/feature/raced/backend",
+              branch: "feature/raced",
+            },
+            {
+              path: "ios",
+              root: `${workspaceRoot}/ios`,
+              worktree: "/worktrees/project/feature/raced/ios",
+              branch: null,
+            },
+          ]),
+      },
+    });
+    return Effect.gen(function* () {
+      yield* Effect.exit(runHandoff(harness, { branch: "feature/raced" }));
+      expect(harness.deleteLocalBranch).toHaveBeenCalledTimes(2);
+      expect(harness.deleteLocalBranch).toHaveBeenLastCalledWith({
+        cwd: `${workspaceRoot}/backend`,
+        refName: "feature/raced",
         force: true,
       });
     });

@@ -52,6 +52,7 @@ import {
   type AcpRegistryListSessionsInput,
   type AcpRegistrySetProviderInput,
   OrchestrationGetFullThreadDiffError,
+  OrchestrationListProjectLibraryError,
   OrchestrationSearchThreadsError,
   OrchestrationV2SearchThreadError,
   OrchestrationGetTurnDiffError,
@@ -165,6 +166,7 @@ import {
   projectThreadProjectionForWire,
 } from "./orchestration-v2/WireProjection.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
+import * as ProjectLibrary from "./orchestration-v2/ProjectLibrary.ts";
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
 import * as OrchestrationEventStore from "./persistence/OrchestrationEventStore.ts";
 import { userFacingDispatchErrorMessage } from "./orchestration-v2/UserFacingErrors.ts";
@@ -1279,6 +1281,7 @@ type WsRpcServices =
   | TerminalManager.TerminalManager
   | ThreadLaunchService.ThreadLaunchService
   | ThreadManagementService.ThreadManagementService
+  | ProjectLibrary.ProjectLibrary
   | ThreadSearch.ThreadSearch
   | TraceDiagnostics.TraceDiagnostics
   | TurnRecapHub.TurnRecapHub
@@ -2987,6 +2990,7 @@ const makeWsOrchestrationRpcLayer = (
       const applicationEvents = yield* OrchestrationEventStore.OrchestrationEventStore;
       const projectStore = yield* ProjectStore.ProjectStoreV2;
       const threadSearch = yield* ThreadSearch.ThreadSearch;
+      const projectLibrary = yield* ProjectLibrary.ProjectLibrary;
       const analytics = yield* AnalyticsService.AnalyticsService;
       const originProps = clientAnalyticsProps;
       const recordClientCommandAnalytics = (command: OrchestrationV2Command) => {
@@ -3168,6 +3172,16 @@ const makeWsOrchestrationRpcLayer = (
               (cause) =>
                 new OrchestrationSearchThreadsError({
                   message: "Failed to search threads",
+                  cause,
+                }),
+            ),
+          ),
+        [ORCHESTRATION_V2_WS_METHODS.listProjectLibrary]: (input) =>
+          projectLibrary.list(input).pipe(
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationListProjectLibraryError({
+                  message: "Failed to load project library",
                   cause,
                 }),
             ),

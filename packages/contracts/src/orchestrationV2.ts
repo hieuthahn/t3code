@@ -3545,6 +3545,7 @@ export const ORCHESTRATION_V2_WS_METHODS = {
   getTurnDiff: "orchestration.getTurnDiff",
   getFullThreadDiff: "orchestration.getFullThreadDiff",
   searchThreads: "orchestration.searchThreads",
+  listProjectLibrary: "orchestration.listProjectLibrary",
   searchThread: "orchestration.searchThread",
   searchThreadStream: "orchestration.searchThreadStream",
   getArchivedShellSnapshot: "orchestration.getArchivedShellSnapshot",

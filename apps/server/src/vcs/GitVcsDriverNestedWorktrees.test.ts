@@ -531,6 +531,37 @@ describe("nested repository worktrees", () => {
       }),
     );
 
+    it.effect("refreshes the cached branches of the inner repositories", () =>
+      Effect.gen(function* () {
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const path = yield* Path.Path;
+        const project = yield* makeProject(["alpha"]);
+        const inner = path.join(project.root, "alpha");
+        const innerBranches = () =>
+          driver
+            .listRefs({ cwd: inner, refKind: "local" })
+            .pipe(Effect.map((result) => result.refs.map((ref) => ref.name)));
+        yield* driver.listRefs({ cwd: inner, refresh: true });
+        const target = project.worktreePath("cached");
+        yield* driver.createWorktree({
+          cwd: project.root,
+          path: target,
+          refName: yield* baseRef(project.root),
+          newRefName: "t3code/cached",
+        });
+        assert.include(yield* innerBranches(), "t3code/cached");
+
+        yield* driver.renameBranch({
+          cwd: target,
+          oldBranch: "t3code/cached",
+          newBranch: "feature/cached",
+        });
+        const renamed = yield* innerBranches();
+        assert.include(renamed, "feature/cached");
+        assert.notInclude(renamed, "t3code/cached");
+      }),
+    );
+
     it.effect("lists the inner worktrees with their branches", () =>
       Effect.gen(function* () {
         const driver = yield* GitVcsDriver.GitVcsDriver;

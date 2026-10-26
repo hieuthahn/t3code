@@ -20,7 +20,9 @@ import type {
   OrchestrationV2GetTurnItemResult,
   ProjectContentMatch,
   ProjectEntry,
+  OrchestrationProjectLibraryCursor,
   ProjectEntryKind,
+  ProjectId,
   ThreadId,
   TurnItemId,
   VcsListRefsResult,
@@ -443,6 +445,22 @@ export function useCheckpointDiff(
     turnTarget === null ? null : orchestrationEnvironment.turnDiff(turnTarget),
   );
   return fullThreadTarget === null ? turn : fullThread;
+}
+
+export function useProjectLibraryPage(target: {
+  readonly environmentId: EnvironmentId;
+  readonly projectId: ProjectId;
+  readonly cursor: OrchestrationProjectLibraryCursor | null;
+}) {
+  return useEnvironmentQuery(
+    orchestrationEnvironment.projectLibrary({
+      environmentId: target.environmentId,
+      input:
+        target.cursor === null
+          ? { projectId: target.projectId }
+          : { projectId: target.projectId, cursor: target.cursor },
+    }),
+  );
 }
 
 /** Reads one item's detail from somewhere other than the environment, as the guest page does. */

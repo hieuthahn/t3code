@@ -203,7 +203,7 @@ const makeHarness = (options: HarnessOptions = {}) => {
   const removeWorktree = vi.fn((_: unknown) =>
     options.removeWorktreeFails
       ? (Effect.fail("simulated worktree removal failure") as never)
-      : Effect.void,
+      : Effect.succeed({ dirtyNestedRepositories: 0 }),
   );
   const deleteLocalBranch = vi.fn((_: unknown) =>
     options.deleteLocalBranchFails

@@ -791,8 +791,20 @@ export const make = Effect.gen(function* () {
             Effect.map(({ settings }) => settings.worktreeSubmodules),
             Effect.orElseSucceed(() => null),
           );
+    const nestedRepositories =
+      options?.nestedRepositories !== undefined
+        ? options.nestedRepositories
+        : yield* projectSettingsFor(input).pipe(
+            Effect.map(({ settings }) => settings.worktreeNestedRepositories),
+            Effect.orElseSucceed(() => null),
+          );
     const worktreesDirectory = yield* readWorktreesDirectory;
-    return yield* gitCore.createWorktree(input, { worktreesDirectory, ...options, submodules });
+    return yield* gitCore.createWorktree(input, {
+      worktreesDirectory,
+      ...options,
+      submodules,
+      nestedRepositories,
+    });
   });
 
   const readRepositoryInstructions = Effect.fn("GitManager.readRepositoryInstructions")(
@@ -3022,6 +3034,10 @@ export const make = Effect.gen(function* () {
           worktreesDirectory: yield* readWorktreesDirectory,
           submodules: yield* projectSettingsFor(input).pipe(
             Effect.map(({ settings }) => settings.worktreeSubmodules),
+            Effect.orElseSucceed(() => null),
+          ),
+          nestedRepositories: yield* projectSettingsFor(input).pipe(
+            Effect.map(({ settings }) => settings.worktreeNestedRepositories),
             Effect.orElseSucceed(() => null),
           ),
         },

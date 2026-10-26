@@ -30,6 +30,8 @@ import {
   type ReviewDiffFileStat,
   type ReviewDiffPreviewSource,
   type VcsRef,
+  type VcsRemoveWorktreeInput,
+  type WorktreeNestedRepositories,
 } from "@t3tools/contracts";
 import { dedupeRemoteBranchesWithLocalMatches, normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -39,6 +41,7 @@ import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
 import { resolveProjectFileBackedSetting } from "@t3tools/shared/projectSettings";
 import { gitCommandDuration, gitCommandsTotal, withMetrics } from "../observability/Metrics.ts";
+import { discoverNestedRepositories } from "../workspace/nestedRepositoryDiscovery.ts";
 import * as GitVcsDriver from "./GitVcsDriver.ts";
 import { removeEmptyDirectory } from "./removeEmptyDirectory.ts";
 import { explicitBareRepositoryEnv, gitConfigEnv } from "./VcsProcess.ts";
@@ -54,6 +57,7 @@ import * as ServerConfig from "../config.ts";
 const DEFAULT_TIMEOUT_MS = 30_000;
 const gitProcesses = Semaphore.makeUnsafe(8);
 const WORKTREE_ADD_TIMEOUT_MS = 300_000;
+const NESTED_WORKTREES_DEFAULT_LIMIT = 8;
 const WORKTREE_REMOVE_TIMEOUT_MS = Duration.toMillis(Duration.minutes(5));
 const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
 const OUTPUT_TRUNCATED_MARKER = "\n\n[truncated]";
@@ -3708,6 +3712,124 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     },
   );
 
+  const discoverNested = (root: string) =>
+    discoverNestedRepositories(root).pipe(
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, path),
+    );
+
+  const normalizeNestedPath = (value: string) =>
+    value.trim().replaceAll("\\", "/").replace(/^\.\//, "").replace(/\/+$/, "");
+
+  /** Creates a worktree of each included inner repository at the same path inside `worktreePath`. */
+  const createNestedWorktrees = Effect.fn("createNestedWorktrees")(function* (input: {
+    readonly root: string;
+    readonly worktreePath: string;
+    readonly branch: string;
+    readonly setting: WorktreeNestedRepositories | null;
+  }) {
+    const discovered = yield* discoverNested(input.root);
+    if (discovered.length === 0) return;
+    const projectFile =
+      input.setting !== null
+        ? null
+        : yield* fileSystem
+            .readFileString(path.join(input.worktreePath, T3_PROJECT_FILE_NAME))
+            .pipe(
+              Effect.flatMap((contents) => {
+                const file = parseT3ProjectFile(contents);
+                return file === null
+                  ? Effect.logWarning("t3.json is invalid; using the default nested repositories", {
+                      worktreePath: input.worktreePath,
+                    }).pipe(Effect.as(null))
+                  : Effect.succeed(file);
+              }),
+              Effect.orElseSucceed(() => null),
+            );
+    const mode = resolveProjectFileBackedSetting(
+      "worktreeNestedRepositories",
+      input.setting,
+      projectFile,
+    );
+    const isBuiltInDefault =
+      input.setting === null && projectFile?.worktreeNestedRepositories === undefined;
+    if (
+      mode.value === "none" ||
+      (isBuiltInDefault && discovered.length > NESTED_WORKTREES_DEFAULT_LIMIT)
+    ) {
+      return;
+    }
+    const wanted =
+      mode.value === "all" ? null : new Set(mode.value.map((entry) => normalizeNestedPath(entry)));
+    const included = discovered.filter(
+      (repository) => wanted === null || wanted.has(repository.path),
+    );
+
+    const created: Array<{ repositoryRoot: string; path: string; branch: string }> = [];
+    yield* Effect.forEach(
+      included,
+      Effect.fn("GitVcsDriver.createWorktree.nestedRepository")(function* (repository) {
+        const repositoryRoot = path.join(input.root, repository.path);
+        const target = path.join(input.worktreePath, repository.path);
+        if (yield* fileSystem.exists(target).pipe(Effect.orElseSucceed(() => false))) {
+          return yield* Effect.logWarning(
+            "nested repository worktree skipped: path already exists",
+            {
+              path: repository.path,
+            },
+          );
+        }
+        const head = yield* executeGit(
+          "GitVcsDriver.createWorktree.nestedHead",
+          repositoryRoot,
+          ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"],
+          { allowNonZeroExit: true, timeoutMs: 5_000 },
+        );
+        if (head.exitCode !== 0) {
+          return yield* Effect.logWarning("nested repository worktree skipped: no commits", {
+            path: repository.path,
+          });
+        }
+        const branch = yield* resolveAvailableBranchName(repositoryRoot, input.branch);
+        yield* executeGitWithStableDiagnostics(
+          "GitVcsDriver.createWorktree.nested",
+          repositoryRoot,
+          ["worktree", "add", "-b", branch, "--", target, head.stdout.trim()],
+          {
+            fallbackErrorDetail: "git worktree add failed for a nested repository",
+            timeoutMs: WORKTREE_ADD_TIMEOUT_MS,
+          },
+        );
+        created.push({ repositoryRoot, path: target, branch });
+      }),
+      { discard: true },
+    ).pipe(
+      Effect.onError(() =>
+        Effect.forEach(
+          created.toReversed(),
+          (entry) =>
+            executeGit(
+              "GitVcsDriver.createWorktree.rollbackNested",
+              entry.repositoryRoot,
+              ["worktree", "remove", "--force", "--", entry.path],
+              { allowNonZeroExit: true, timeoutMs: WORKTREE_REMOVE_TIMEOUT_MS },
+            ).pipe(
+              Effect.andThen(
+                executeGit(
+                  "GitVcsDriver.createWorktree.rollbackNested",
+                  entry.repositoryRoot,
+                  ["branch", "-D", "--", entry.branch],
+                  { allowNonZeroExit: true, timeoutMs: 10_000 },
+                ),
+              ),
+              Effect.ignoreCause({ log: true }),
+            ),
+          { discard: true },
+        ),
+      ),
+    );
+  });
+
   const createWorktree: GitVcsDriver.GitVcsDriver["Service"]["createWorktree"] = Effect.fn(
     "createWorktree",
   )(function* (input, options) {
@@ -3836,6 +3958,24 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         }),
       );
     }
+
+    yield* createNestedWorktrees({
+      root: input.cwd,
+      worktreePath,
+      branch: targetBranch,
+      setting: options?.nestedRepositories ?? null,
+    }).pipe(
+      Effect.tapError(() =>
+        removeWorktree({ cwd: input.cwd, path: worktreePath, force: true }).pipe(
+          Effect.andThen(
+            input.newRefName
+              ? deleteLocalBranch({ cwd: input.cwd, refName: input.newRefName, force: true })
+              : Effect.void,
+          ),
+          Effect.ignoreCause({ log: true }),
+        ),
+      ),
+    );
 
     if (input.newRefName && input.baseRefName) {
       const base = yield* resolveBranchBase(input.cwd, input.baseRefName);
@@ -4194,9 +4334,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     return empty && (yield* removeEmptyDirectory(target));
   });
 
-  const removeWorktree: GitVcsDriver.GitVcsDriver["Service"]["removeWorktree"] = Effect.fn(
-    "removeWorktree",
-  )(function* (input) {
+  const removeSingleWorktree = Effect.fn("removeSingleWorktree")(function* (
+    input: VcsRemoveWorktreeInput,
+  ) {
     // Git also matches a worktree by its short name, which can name a different
     // folder than this path. Resolving it once keeps Git, the Windows deletion
     // in removeLinkedWorktree, and the leftover cleanup below on one directory.
@@ -4265,6 +4405,71 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       stdoutLength: result.stdout.length,
       stderrLength: result.stderr.length,
     });
+  });
+
+  /** Whether `directory` is a linked worktree of the repository at `repositoryRoot`. */
+  const isLinkedWorktreeOf = Effect.fn("isLinkedWorktreeOf")(function* (
+    repositoryRoot: string,
+    directory: string,
+  ) {
+    const pointer = (yield* fileSystem
+      .readFileString(path.join(directory, ".git"))
+      .pipe(Effect.orElseSucceed(() => ""))).match(/^gitdir:\s*(.+?)\s*$/m)?.[1];
+    if (pointer === undefined) return false;
+    const adminDirectory = path.resolve(directory, pointer);
+    const real = (target: string) =>
+      fileSystem.realPath(target).pipe(Effect.orElseSucceed(() => target));
+    return (
+      (yield* real(path.dirname(adminDirectory))) ===
+      path.join(yield* real(path.join(repositoryRoot, ".git")), "worktrees")
+    );
+  });
+
+  const removeWorktree: GitVcsDriver.GitVcsDriver["Service"]["removeWorktree"] = Effect.fn(
+    "removeWorktree",
+  )(function* (input) {
+    const target = path.resolve(input.cwd, input.path);
+    const nested = (yield* discoverNested(input.cwd)).map((repository) => ({
+      root: path.join(input.cwd, repository.path),
+      worktree: path.join(target, repository.path),
+    }));
+    const linked = yield* Effect.filter(nested, (entry) =>
+      isLinkedWorktreeOf(entry.root, entry.worktree),
+    );
+    const dirty = yield* Effect.filter(linked, (entry) =>
+      executeGit(
+        "GitVcsDriver.removeWorktree.nestedStatus",
+        entry.worktree,
+        ["-c", "status.showUntrackedFiles=normal", "status", "--porcelain"],
+        { allowNonZeroExit: true, timeoutMs: 30_000 },
+      ).pipe(Effect.map((result) => result.exitCode === 0 && result.stdout !== "")),
+    );
+    const blocking = input.force === true ? undefined : dirty[0];
+    if (blocking !== undefined) {
+      return yield* new GitCommandError({
+        ...gitCommandContext({
+          operation: "GitVcsDriver.removeWorktree",
+          cwd: blocking.root,
+          args: ["worktree", "remove", "--", blocking.worktree],
+        }),
+        detail: `'${blocking.worktree}' contains modified or untracked files, use --force to delete it`,
+      });
+    }
+    for (const entry of linked) {
+      yield* removeSingleWorktree({ ...input, cwd: entry.root, path: entry.worktree });
+    }
+    yield* removeSingleWorktree(input);
+    // Also covers a worktree that was deleted by hand, which leaves only stale metadata.
+    yield* Effect.forEach(
+      nested,
+      (entry) =>
+        executeGit("GitVcsDriver.removeWorktree.pruneNested", entry.root, ["worktree", "prune"], {
+          allowNonZeroExit: true,
+          timeoutMs: 15_000,
+        }).pipe(Effect.ignoreCause({ log: true })),
+      { discard: true },
+    );
+    return { dirtyNestedRepositories: dirty.length };
   });
 
   const pruneWorktrees: GitVcsDriver.GitVcsDriver["Service"]["pruneWorktrees"] = Effect.fn(

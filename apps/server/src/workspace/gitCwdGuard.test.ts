@@ -147,6 +147,43 @@ it.effect(
     }).pipe(Effect.provide(NodeServices.layer)),
 );
 
+it.effect(
+  "accepts a git write in a thread worktree and in the inner repository worktree inside it",
+  () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const projectRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-cwd-guard-hora-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-cwd-guard-base-" });
+      const inner = `${projectRoot}/backend`;
+      yield* fs.makeDirectory(inner);
+      for (const repository of [projectRoot, inner]) {
+        git(repository, "init", "-q");
+        git(repository, "config", "user.email", "t@example.com");
+        git(repository, "config", "user.name", "T");
+        yield* fs.writeFileString(`${repository}/a.txt`, "a");
+        git(repository, "add", "a.txt");
+        git(repository, "commit", "-q", "-m", "initial");
+      }
+      const worktree = `${baseDir}/worktrees/outer/feature`;
+      git(projectRoot, "worktree", "add", "-q", "-b", "feature", worktree);
+      git(inner, "worktree", "add", "-q", "-b", "feature", `${worktree}/backend`);
+      yield* fs.makeDirectory(`${worktree}/backend/src`);
+
+      yield* Effect.gen(function* () {
+        const guard = makeGitCwdGuard(yield* KnownWorkspaces.KnownWorkspaces);
+        yield* guard.asGitCommandWrite("test", worktree);
+        yield* guard.asGitCommandWrite("test", `${worktree}/backend`);
+        yield* guard.asGitManagerWrite("test", `${worktree}/backend`);
+        yield* guard.asVcsError("test", `${worktree}/backend`);
+
+        const subfolder = yield* guard
+          .asGitCommandWrite("test", `${worktree}/backend/src`)
+          .pipe(Effect.flip);
+        assert.match(subfolder.message, /inside another git repository/);
+      }).pipe(Effect.provide(layer(projectRoot, baseDir)));
+    }).pipe(Effect.provide(NodeServices.layer)),
+);
+
 it.effect("allows a write at a project root that sits inside a larger repo", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;

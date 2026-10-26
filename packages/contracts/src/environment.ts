@@ -53,6 +53,16 @@ export type ThreadEnvMode = typeof ThreadEnvMode.Type;
 
 export const WorktreeSubmodules = Schema.Literals(["recursive", "top-level", "none"]);
 export type WorktreeSubmodules = typeof WorktreeSubmodules.Type;
+
+/**
+ * Which gitignored inner repositories a new worktree gets a worktree of: every
+ * one, none, or the listed paths relative to the project root.
+ */
+export const WorktreeNestedRepositories = Schema.Union([
+  Schema.Literals(["all", "none"]),
+  Schema.Array(TrimmedNonEmptyString.check(Schema.isMaxLength(512))).check(Schema.isMaxLength(100)),
+]);
+export type WorktreeNestedRepositories = typeof WorktreeNestedRepositories.Type;
 export type ExecutionEnvironmentPlatform = typeof ExecutionEnvironmentPlatform.Type;
 
 export const ServerSelfUpdateMethod = Schema.Literals(["boot-service", "respawn", "desktop-app"]);

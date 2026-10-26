@@ -13,6 +13,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlSchema from "effect/sql/SqlSchema";
 
+import { discoverNestedRepositories } from "../workspace/nestedRepositoryDiscovery.ts";
 import { makeCoalescedCache } from "./CoalescedCache.ts";
 import {
   relativeToWorkspace,
@@ -32,130 +33,6 @@ export class NestedRepositoriesError extends Schema.TaggedError<NestedRepositori
     return `Nested repositories ${this.operation} failed.`;
   }
 }
-
-const MAX_SCAN_DEPTH = 2;
-const SCAN_CONCURRENCY = 16;
-const CACHE_TTL_MILLIS = 10_000;
-const CACHE_MAX_ENTRIES = 64;
-const BUILD_OUTPUT_NAMES: ReadonlySet<string> = new Set([
-  "dist",
-  "build",
-  "target",
-  "vendor",
-  "Pods",
-  "DerivedData",
-]);
-
-const isScannableName = (name: string, depth: number) =>
-  !name.startsWith(".") &&
-  name !== "node_modules" &&
-  !(depth >= MAX_SCAN_DEPTH && BUILD_OUTPUT_NAMES.has(name));
-
-/** Reads the repositories under a workspace root; unreadable entries are skipped. */
-const discover = Effect.fn("NestedRepositories.discover")(function* (workspaceRoot: string) {
-  const fs = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-
-  const readText = (file: string) => fs.readFileString(file).pipe(Effect.orElseSucceed(() => null));
-  const isDirectory = (target: string) =>
-    fs.stat(target).pipe(
-      Effect.map((info) => info.type === "Directory"),
-      Effect.orElseSucceed(() => false),
-    );
-
-  /** Locates the git directory behind a `.git` directory or a `gitdir:` pointer file. */
-  const resolveGitDirectory = Effect.fn("NestedRepositories.resolveGitDirectory")(function* (
-    repositoryPath: string,
-  ) {
-    const dotGit = path.join(repositoryPath, ".git");
-    if (yield* isDirectory(dotGit)) return dotGit;
-    const pointer = (yield* readText(dotGit))?.match(/^gitdir:\s*(.+?)\s*$/m)?.[1];
-    return pointer === undefined ? null : path.resolve(repositoryPath, pointer);
-  });
-
-  /** A worktree's config lives in the common directory named by its `commondir` file. */
-  const readOriginUrl = Effect.fn("NestedRepositories.readOriginUrl")(function* (
-    gitDirectory: string,
-  ) {
-    const commonPointer = (yield* readText(path.join(gitDirectory, "commondir")))?.trim();
-    const commonDirectory =
-      commonPointer === undefined ? gitDirectory : path.resolve(gitDirectory, commonPointer);
-    const config = yield* readText(path.join(commonDirectory, "config"));
-    if (config === null) return null;
-    let inOrigin = false;
-    for (const line of config.split("\n")) {
-      const trimmed = line.trim();
-      if (trimmed.startsWith("[")) inOrigin = /^\[remote\s+"origin"\]$/.test(trimmed);
-      else if (inOrigin) {
-        const url = trimmed.match(/^url\s*=\s*(.+)$/)?.[1];
-        if (url !== undefined) return url.trim();
-      }
-    }
-    return null;
-  });
-
-  const describeRepository = Effect.fn("NestedRepositories.describeRepository")(function* (
-    relativePath: string,
-  ) {
-    const gitDirectory = yield* resolveGitDirectory(path.join(workspaceRoot, relativePath));
-    const head = gitDirectory === null ? null : yield* readText(path.join(gitDirectory, "HEAD"));
-    return {
-      path: relativePath,
-      name: relativePath.split("/").at(-1) ?? relativePath,
-      branch: head?.match(/^ref:\s*refs\/heads\/(.+?)\s*$/m)?.[1] ?? null,
-      originUrl: gitDirectory === null ? null : yield* readOriginUrl(gitDirectory),
-    } satisfies OrchestrationNestedRepository;
-  });
-
-  type Entry = {
-    readonly relativePath: string;
-    readonly kind: "repository" | "directory" | "skip";
-  };
-  const classify = Effect.fn("NestedRepositories.classify")(function* (
-    relativeDirectory: string,
-    name: string,
-    depth: number,
-  ) {
-    const relativePath = relativeDirectory === "" ? name : `${relativeDirectory}/${name}`;
-    if (
-      !isScannableName(name, depth) ||
-      !(yield* isDirectory(path.join(workspaceRoot, relativePath)))
-    ) {
-      return { relativePath, kind: "skip" } satisfies Entry;
-    }
-    const hasGit = yield* fs
-      .exists(path.join(workspaceRoot, relativePath, ".git"))
-      .pipe(Effect.orElseSucceed(() => false));
-    return { relativePath, kind: hasGit ? "repository" : "directory" } satisfies Entry;
-  });
-
-  const walk = Effect.fn("NestedRepositories.walk")(function* (
-    relativeDirectory: string,
-    depth: number,
-  ): Effect.fn.Return<ReadonlyArray<string>> {
-    const names = yield* fs
-      .readDirectory(path.join(workspaceRoot, relativeDirectory))
-      .pipe(Effect.orElseSucceed(() => []));
-    const entries = yield* Effect.forEach(
-      names.toSorted(),
-      (name) => classify(relativeDirectory, name, depth),
-      { concurrency: SCAN_CONCURRENCY },
-    );
-    const nested = yield* Effect.forEach(
-      entries.filter((entry) => entry.kind === "directory" && depth < MAX_SCAN_DEPTH),
-      (entry) => walk(entry.relativePath, depth + 1),
-      { concurrency: SCAN_CONCURRENCY },
-    );
-    return [
-      ...entries.filter((entry) => entry.kind === "repository").map((entry) => entry.relativePath),
-      ...nested.flat(),
-    ];
-  });
-  const found = yield* walk("", 1);
-  return yield* Effect.forEach(found.toSorted(), describeRepository, {
-    concurrency: SCAN_CONCURRENCY,
-  });
-});
 
 const ProjectRootRequest = Schema.Struct({ projectId: ProjectId });
 const ProjectRootRow = Schema.Struct({ workspaceRoot: Schema.String });
@@ -197,11 +74,16 @@ interface ThreadTouches {
   readonly counts: Readonly<Record<string, Readonly<Record<string, number>>>>;
 }
 
+const CACHE_TTL_MILLIS = 10_000;
+const CACHE_MAX_ENTRIES = 64;
+
 export class NestedRepositories extends Context.Service<
   NestedRepositories,
   {
+    /** With a thread id, lists the repositories under that thread's worktree when it has one. */
     readonly list: (
       projectId: ProjectId,
+      threadId?: ThreadId,
     ) => Effect.Effect<ReadonlyArray<OrchestrationNestedRepository>, NestedRepositoriesError>;
     readonly threadTags: (
       projectId: ProjectId,
@@ -237,6 +119,19 @@ export const make = Effect.gen(function* () {
       SELECT workspace_root AS "workspaceRoot"
       FROM projection_projects
       WHERE project_id = ${projectId} AND deleted_at IS NULL
+    `,
+  });
+
+  const threadWorktree = SqlSchema.findOneOption({
+    Request: Schema.Struct({ projectId: ProjectId, threadId: ThreadId }),
+    Result: Schema.Struct({ worktreePath: Schema.String }),
+    execute: ({ projectId, threadId }) => sql`
+      SELECT json_extract(payload_json, '$.worktreePath') AS "worktreePath"
+      FROM orchestration_v2_projection_threads
+      WHERE thread_id = ${threadId}
+        AND project_id = ${projectId}
+        AND deleted_at IS NULL
+        AND json_extract(payload_json, '$.worktreePath') IS NOT NULL
     `,
   });
 
@@ -281,7 +176,10 @@ export const make = Effect.gen(function* () {
     });
 
   const scan = (workspaceRoot: string) =>
-    scanCache(workspaceRoot, discover(workspaceRoot).pipe(Effect.provideContext(services)));
+    scanCache(
+      workspaceRoot,
+      discoverNestedRepositories(workspaceRoot).pipe(Effect.provideContext(services)),
+    );
 
   const rootOf = (projectId: ProjectId) =>
     sql
@@ -293,9 +191,14 @@ export const make = Effect.gen(function* () {
       );
 
   const list: NestedRepositories["Service"]["list"] = Effect.fn("NestedRepositories.list")(
-    function* (projectId) {
+    function* (projectId, threadId) {
       const root = yield* rootOf(projectId);
-      return Option.isNone(root) ? [] : yield* scan(root.value);
+      if (Option.isNone(root)) return [];
+      if (threadId === undefined) return yield* scan(root.value);
+      const worktree = yield* sql
+        .withTransaction(threadWorktree({ projectId, threadId }))
+        .pipe(NodeSqliteClient.readOnly, Effect.mapError(toError));
+      return yield* scan(Option.isSome(worktree) ? worktree.value.worktreePath : root.value);
     },
   );
 

@@ -31,6 +31,8 @@ import {
   type VcsRemoveWorktreeInput,
   type VcsStatusInput,
   type VcsStatusResult,
+  type VcsRemoveWorktreeResult,
+  type WorktreeNestedRepositories,
   type WorktreeSubmodules,
 } from "@t3tools/contracts";
 import { isMissingExecutable } from "@t3tools/source-control-core/server/discovery";
@@ -149,6 +151,11 @@ export interface CreateWorktreeOptions {
    * checkout's own t3.json.
    */
   readonly submodules?: WorktreeSubmodules | null;
+  /**
+   * Null (or omitted) defers to the checkout's t3.json, then to every inner
+   * repository when the project has at most 8 and none above that.
+   */
+  readonly nestedRepositories?: WorktreeNestedRepositories | null;
   readonly worktreesDirectory?: string;
 }
 
@@ -398,7 +405,7 @@ export class GitVcsDriver extends Context.Service<
     ) => Effect.Effect<void, GitCommandError>;
     readonly removeWorktree: (
       input: VcsRemoveWorktreeInput,
-    ) => Effect.Effect<void, GitCommandError>;
+    ) => Effect.Effect<VcsRemoveWorktreeResult, GitCommandError>;
     readonly pruneWorktrees: (input: {
       readonly cwd: string;
     }) => Effect.Effect<void, GitCommandError>;

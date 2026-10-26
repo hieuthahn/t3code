@@ -168,6 +168,14 @@ itself, or **Skip** to leave them for a setup script. It resolves in the same or
 workspace default: a `"worktreeSubmodules"` value in the `t3.json` of the branch being checked out
 applies when the project and environment are both on **Inherit**.
 
+Projects whose gitignored inner repositories are cloned side by side, such as a backend and an iOS
+app under one outer repository, get a worktree of each inner repository inside the new worktree, on
+a branch with the same name. Set `"worktreeNestedRepositories"` in `t3.json` to `"all"`, `"none"`, or
+a list of paths like `["backend"]` to choose which ones. Without it, a project with 8 or fewer inner
+repositories includes all of them and a project with more includes none. Submodules are not
+included, and an inner repository with no commits is skipped. Removing the worktree removes the inner
+ones too.
+
 ## Worktree location
 
 New worktrees go in the `worktrees` folder of the T3 home directory. To put them somewhere else,

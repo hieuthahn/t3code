@@ -150,6 +150,7 @@ import {
   GitPullRequestRefInput,
   VcsPullResult,
   VcsRemoveWorktreeInput,
+  VcsRemoveWorktreeResult,
   GitResolvePullRequestResult,
   GitRunStackedActionInput,
   VcsStatusInput,
@@ -1505,6 +1506,8 @@ const WsVcsCreateWorktreeRpc = Rpc.make(WS_METHODS.vcsCreateWorktree, {
 
 const WsVcsRemoveWorktreeRpc = Rpc.make(WS_METHODS.vcsRemoveWorktree, {
   payload: VcsRemoveWorktreeInput,
+  // Undefined unless an inner repository was dirty, so clients that expect void still decode.
+  success: Schema.UndefinedOr(VcsRemoveWorktreeResult),
   error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
 });
 

@@ -12,7 +12,11 @@ export const OrchestrationNestedRepository = Schema.Struct({
 });
 export type OrchestrationNestedRepository = typeof OrchestrationNestedRepository.Type;
 
-export const OrchestrationListNestedRepositoriesInput = Schema.Struct({ projectId: ProjectId });
+export const OrchestrationListNestedRepositoriesInput = Schema.Struct({
+  projectId: ProjectId,
+  /** Lists the repositories under this thread's worktree instead of the project root. */
+  threadId: Schema.optional(ThreadId),
+});
 export type OrchestrationListNestedRepositoriesInput =
   typeof OrchestrationListNestedRepositoriesInput.Type;
 

@@ -413,5 +413,69 @@ describe("nested repository worktrees", () => {
         );
       }),
     );
+
+    it.effect("renames the inner branches with the outer branch of a worktree", () =>
+      Effect.gen(function* () {
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const path = yield* Path.Path;
+        const project = yield* makeProject(["alpha", "beta"]);
+        const target = project.worktreePath("renamed");
+        yield* driver.createWorktree({
+          cwd: project.root,
+          path: target,
+          refName: yield* baseRef(project.root),
+          newRefName: "t3code/temp",
+        });
+        yield* git(path.join(target, "beta"), ["switch", "-q", "-c", "own-branch"]);
+
+        const renamed = yield* driver.renameBranch({
+          cwd: target,
+          oldBranch: "t3code/temp",
+          newBranch: "feature/renamed",
+        });
+
+        assert.equal(renamed.branch, "feature/renamed");
+        assert.equal(
+          yield* git(path.join(target, "alpha"), ["branch", "--show-current"]),
+          "feature/renamed",
+        );
+        assert.equal(
+          yield* git(path.join(target, "beta"), ["branch", "--show-current"]),
+          "own-branch",
+        );
+        assert.include(
+          yield* git(path.join(project.root, "beta"), ["branch", "--list", "t3code/temp"]),
+          "t3code/temp",
+        );
+      }),
+    );
+
+    it.effect("leaves inner repositories alone when renaming a branch of the main checkout", () =>
+      Effect.gen(function* () {
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const path = yield* Path.Path;
+        const project = yield* makeProject(["alpha"]);
+        const outerBranch = yield* baseRef(project.root);
+        yield* git(path.join(project.root, "alpha"), ["switch", "-q", "-c", outerBranch]).pipe(
+          Effect.ignore,
+        );
+        const innerBefore = yield* git(path.join(project.root, "alpha"), [
+          "branch",
+          "--show-current",
+        ]);
+
+        yield* driver.renameBranch({
+          cwd: project.root,
+          oldBranch: outerBranch,
+          newBranch: "renamed-outer",
+          exactName: true,
+        });
+
+        assert.equal(
+          yield* git(path.join(project.root, "alpha"), ["branch", "--show-current"]),
+          innerBefore,
+        );
+      }),
+    );
   });
 });

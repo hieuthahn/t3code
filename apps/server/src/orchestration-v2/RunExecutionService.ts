@@ -41,6 +41,8 @@ import * as Stream from "effect/Stream";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as McpAppModelContext from "../mcpApps/McpAppModelContext.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as ProjectMemoryService from "../projectMemory/ProjectMemoryService.ts";
+import { withProjectMemoryDigest } from "../projectMemory/projectMemoryDigest.ts";
 import * as TokenSaver from "../tokenSaver/TokenSaverService.ts";
 import { resolveTeamTurn } from "../team/teamRules.ts";
 import * as CheckpointService from "./CheckpointService.ts";
@@ -620,6 +622,9 @@ export const layer: Layer.Layer<
     const promptSuggestions = yield* Effect.serviceOption(PromptSuggestionHub.PromptSuggestionHub);
     const turnRecaps = yield* Effect.serviceOption(TurnRecapHub.TurnRecapHub);
     const tokenSaverService = yield* Effect.serviceOption(TokenSaver.TokenSaverService);
+    const projectMemoryService = yield* Effect.serviceOption(
+      ProjectMemoryService.ProjectMemoryService,
+    );
 
     const writeFinalRunEvents = Effect.fn("RunExecutionService.writeFinalRunEvents")(
       function* (input: {
@@ -1615,6 +1620,19 @@ export const layer: Layer.Layer<
           tokenSaver?.instructions === undefined ? "off" : tokenSaver.profileKey,
         );
         const team = resolveTeamTurn(input.appThread, input.session.driver);
+        // Once, in the first run's user text: a system prompt that changes would break the prompt cache.
+        const memoryDigest =
+          Option.isNone(projectMemoryService) || input.run.ordinal !== 1
+            ? undefined
+            : yield* projectMemoryService.value
+                .digest(input.appThread.projectId)
+                .pipe(
+                  Effect.catch((cause) =>
+                    Effect.logWarning("Failed to read the project memory digest.", { cause }).pipe(
+                      Effect.as(undefined),
+                    ),
+                  ),
+                );
         const turnInput = {
           appThread: input.appThread,
           threadId: input.run.threadId,
@@ -1632,7 +1650,13 @@ export const layer: Layer.Layer<
           attemptId: input.attemptId,
           rootNodeId: input.rootNode.id,
           providerThread: input.providerThread,
-          message: input.message,
+          message:
+            memoryDigest === undefined
+              ? input.message
+              : {
+                  ...input.message,
+                  text: withProjectMemoryDigest(input.message.text, memoryDigest),
+                },
           modelSelection: input.modelSelection,
           runtimePolicy: input.runtimePolicy,
           ...(appContext.length === 0 ? {} : { appContext }),

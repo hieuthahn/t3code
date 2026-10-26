@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 
 import { enqueueChildMerge } from "../../../mergeQueue/mergeEnqueueTool.ts";
 import * as PeerForwarding from "../../../peer/PeerForwarding.ts";
+import { appendProjectMemory, readProjectMemory } from "../../../projectMemory/projectMemoryMcp.ts";
 import * as TeamService from "../../../team/TeamService.ts";
 import * as PeerLinkRequests from "../../../peer/PeerLinkRequests.ts";
 import * as PeerLinks from "../../../peer/PeerLinks.ts";
@@ -116,6 +117,8 @@ const handlers = {
       return yield* team.assign(scope, input);
     }),
   ),
+  project_memory_read: McpToolAccess.readsAsCaller(() => readProjectMemory),
+  project_memory_append: McpToolAccess.actsAsCaller(appendProjectMemory),
   team_finish: McpToolAccess.actsAsCaller((input) =>
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.McpInvocationContext;

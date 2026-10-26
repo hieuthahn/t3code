@@ -16,6 +16,7 @@ import {
   type OrchestrationV2Subagent,
   type OrchestrationV2TurnItem,
   ProviderDriverKind,
+  ProjectId,
   ProviderInstanceId,
   ProviderSessionId,
   ProviderThreadId,
@@ -45,6 +46,7 @@ import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter"
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import * as McpAppModelContext from "../mcpApps/McpAppModelContext.ts";
+import * as ProjectMemoryService from "../projectMemory/ProjectMemoryService.ts";
 import * as RunExecutionService from "./RunExecutionService.ts";
 import * as RunFinalizationService from "./RunFinalizationService.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
@@ -898,6 +900,99 @@ it.effect("passes the thread's MCP app context to the provider under a safe key"
       ),
     ),
   ),
+);
+
+it.effect.each([
+  { ordinal: 1, framed: true },
+  { ordinal: 2, framed: false },
+])(
+  "puts the project memory digest in the user text of run $ordinal: $framed",
+  ({ ordinal, framed }) =>
+    Effect.gen(function* () {
+      const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
+      const started = yield* Deferred.make<ProviderAdapter.ProviderAdapterV2TurnInput>();
+      const threadId = ThreadId.make(`thread:run-execution-memory-${ordinal}`);
+      const providerInstanceId = ProviderInstanceId.make("codex");
+      const attemptId = RunAttemptId.make(`attempt:run-execution-memory-${ordinal}`);
+      const session = {
+        events: Stream.never,
+        startTurn: (input: ProviderAdapter.ProviderAdapterV2TurnInput) =>
+          Deferred.succeed(started, input),
+      } as unknown as ProviderAdapter.ProviderAdapterV2SessionRuntime;
+
+      yield* runExecution.startRootRun({
+        commandId: CommandId.make(`command:run-execution-memory-${ordinal}`),
+        appThread: {
+          id: threadId,
+          projectId: ProjectId.make("project:memory"),
+        } as OrchestrationV2AppThread,
+        providerSessionId: ProviderSessionId.make(`session:run-execution-memory-${ordinal}`),
+        session,
+        run: {
+          id: RunId.make(`run:run-execution-memory-${ordinal}`),
+          threadId,
+          ordinal,
+          providerInstanceId,
+        } as OrchestrationV2Run,
+        rootNode: {
+          id: NodeId.make(`node:run-execution-memory-${ordinal}`),
+        } as OrchestrationV2ExecutionNode,
+        checkpointScope: {
+          id: CheckpointScopeId.make(`checkpoint-scope:run-execution-memory-${ordinal}`),
+        } as OrchestrationV2CheckpointScope,
+        providerThread: {
+          id: ProviderThreadId.make(`provider-thread:run-execution-memory-${ordinal}`),
+          driver,
+        } as OrchestrationV2ProviderThread,
+        attempt: { id: attemptId, providerTurnId: null } as OrchestrationV2RunAttempt,
+        attemptId,
+        providerTurnOrdinal: 1,
+        message: {
+          messageId: MessageId.make(`message:run-execution-memory-${ordinal}`),
+          text: "Fix the bug.",
+          attachments: [],
+          createdBy: "user",
+          creationSource: "web",
+        },
+        modelSelection: { instanceId: providerInstanceId, model: "gpt-5.4" },
+        runtimePolicy: {
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          cwd: process.cwd(),
+        },
+      });
+
+      const input = yield* Deferred.await(started);
+      assert.equal(
+        input.message.text,
+        framed ? "<project_memory>\nDIGEST\n</project_memory>\n\nFix the bug." : "Fix the bug.",
+      );
+    }).pipe(
+      Effect.provide(
+        RunExecutionService.layer.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              Layer.mock(McpAppModelContext.McpAppModelContext)({
+                forThread: () => Effect.succeed([]),
+              }),
+              Layer.mock(ProjectMemoryService.ProjectMemoryService)({
+                digest: () => Effect.succeed("DIGEST"),
+              }),
+              Layer.mock(CheckpointService.CheckpointServiceV2)({
+                captureBaseline: () => Effect.void,
+              }),
+              layerTurnItemPositionsTest,
+              Layer.mock(EventSink.EventSinkV2)({}),
+              IdAllocator.layer,
+              Layer.mock(ProviderEventIngestor.ProviderEventIngestorV2)({
+                ingestNormalized: () => Effect.succeed([]),
+              }),
+              ServerSettings.layerTest(),
+            ),
+          ),
+        ),
+      ),
+    ),
 );
 
 it.effect("fails the run when its ownership check cannot be read before calling the provider", () =>

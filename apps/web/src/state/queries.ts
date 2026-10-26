@@ -20,6 +20,7 @@ import type {
   OrchestrationV2GetTurnItemResult,
   ProjectContentMatch,
   ProjectEntry,
+  OrchestrationProjectLibraryCursor,
   ProjectEntryKind,
   ProjectId,
   ThreadId,
@@ -449,12 +450,15 @@ export function useCheckpointDiff(
 export function useProjectLibraryPage(target: {
   readonly environmentId: EnvironmentId;
   readonly projectId: ProjectId;
-  readonly offset: number;
+  readonly cursor: OrchestrationProjectLibraryCursor | null;
 }) {
   return useEnvironmentQuery(
     orchestrationEnvironment.projectLibrary({
       environmentId: target.environmentId,
-      input: { projectId: target.projectId, offset: target.offset },
+      input:
+        target.cursor === null
+          ? { projectId: target.projectId }
+          : { projectId: target.projectId, cursor: target.cursor },
     }),
   );
 }

@@ -1121,6 +1121,10 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:team:live",
       tag: WS_METHODS.teamSubscribe,
     }),
+    projectMemoryLive: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:server:project-memory:live",
+      tag: WS_METHODS.projectMemorySubscribe,
+    }),
     mergeQueueDiff: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:merge-queue:diff",
       tag: WS_METHODS.mergeQueueDiff,
@@ -1399,6 +1403,31 @@ export function createServerEnvironmentAtoms<R, E>(
       concurrency: {
         mode: "singleFlight",
         key: ({ environmentId, input }) => JSON.stringify([environmentId, input.threadId]),
+      },
+    }),
+    // Off the config lane: an entry takes one write at a time, appends one per project.
+    appendProjectMemory: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:project-memory:append",
+      tag: WS_METHODS.projectMemoryAppend,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.projectId]),
+      },
+    }),
+    editProjectMemory: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:project-memory:edit",
+      tag: WS_METHODS.projectMemoryEdit,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.entryId]),
+      },
+    }),
+    deleteProjectMemory: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:project-memory:delete",
+      tag: WS_METHODS.projectMemoryDelete,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.entryId]),
       },
     }),
     // Like a secret card's answer: off the config lane, one per card at a time.

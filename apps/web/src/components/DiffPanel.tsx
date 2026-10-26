@@ -1,3 +1,4 @@
+import { useThreadRepositories } from "./chat/useThreadRepositories";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { useAtomValue } from "@effect/atom-react";
 import type { FileDiffContentsLoader, FileDiffMetadata } from "@pierre/diffs";
@@ -234,10 +235,23 @@ export default function DiffPanel({
         }
       : null,
   );
-  const activeCwd = activeThread?.worktreePath ?? activeProject?.workspaceRoot;
+  const repositories = useThreadRepositories(
+    activeThread && activeProjectId && activeProject
+      ? {
+          environmentId: activeThread.environmentId,
+          projectId: activeProjectId,
+          threadId: activeThread.id,
+          projectName: activeProject.title,
+          workspaceRoot: activeProject.workspaceRoot,
+          worktreePath: activeThread.worktreePath,
+        }
+      : null,
+  );
+  const activeCwd =
+    activeThread?.worktreePath ?? repositories.repositoryCwd ?? activeProject?.workspaceRoot;
   const activeRepositoryRoot = activeThread?.worktreePath
     ? undefined
-    : activeProject?.repositoryIdentity?.rootPath;
+    : (repositories.repositoryCwd ?? activeProject?.repositoryIdentity?.rootPath);
   const serverConfig = useAtomValue(
     serverEnvironment.configValueAtom(activeThread?.environmentId ?? null),
   );

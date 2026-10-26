@@ -78,6 +78,8 @@ interface BranchToolbarBranchSelectorProps {
   ref?: Ref<BranchToolbarBranchSelectorHandle>;
   className?: string;
   displayMode?: "toolbar" | "panel";
+  /** A nested repository to target instead of the project checkout; thread metadata stays untouched. */
+  repositoryCwd?: string | null;
   environmentId: EnvironmentId;
   threadId: ThreadId;
   draftId?: DraftId;
@@ -100,6 +102,7 @@ export function BranchToolbarBranchSelector({
   ref,
   className,
   displayMode = "toolbar",
+  repositoryCwd = null,
   environmentId,
   threadId,
   draftId,
@@ -146,13 +149,15 @@ export function BranchToolbarBranchSelector({
 
   const activeThreadId = serverThread?.id ?? (draftThread ? threadId : undefined);
   const activeThreadBranch =
-    activeThreadBranchOverride !== undefined
-      ? activeThreadBranchOverride
-      : (serverThread?.branch ?? draftThread?.branch ?? null);
+    repositoryCwd !== null
+      ? null
+      : activeThreadBranchOverride !== undefined
+        ? activeThreadBranchOverride
+        : (serverThread?.branch ?? draftThread?.branch ?? null);
   const activeWorktreePath = forceNewWorktree
     ? null
     : (serverThread?.worktreePath ?? draftThread?.worktreePath ?? null);
-  const activeProjectCwd = activeProject?.workspaceRoot ?? null;
+  const activeProjectCwd = repositoryCwd ?? activeProject?.workspaceRoot ?? null;
   const branchCwd = activeWorktreePath ?? activeProjectCwd;
   const hasServerThread = serverThread !== null;
   const canUpdateThreadBranch = !hasServerThread || canOperateThread;
@@ -171,6 +176,7 @@ export function BranchToolbarBranchSelector({
     automatic = false,
   ) => {
     if (
+      repositoryCwd !== null ||
       !activeThreadId ||
       !activeProject ||
       (hasServerThread && !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope))

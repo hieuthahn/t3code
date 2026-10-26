@@ -226,4 +226,17 @@ describe("Git action targets across thread navigation", () => {
       input: { threadId: "first", action: "commit_push_pr" },
     });
   });
+
+  it("posts the nested repository cwd and follows a switch back to the outer repo", async () => {
+    setup();
+    await using screen = await render(control("thread", "/repo/backend"));
+    await userEvent.click(quickAction());
+    await vi.waitFor(() => expect(state.actions.length).toBe(1));
+    expect(state.actions.at(-1)).toMatchObject({ scope: { cwd: "/repo/backend" } });
+
+    await screen.rerender(control("thread", "/repo"));
+    await userEvent.click(quickAction());
+    await vi.waitFor(() => expect(state.actions.length).toBe(2));
+    expect(state.actions.at(-1)).toMatchObject({ scope: { cwd: "/repo" } });
+  });
 });

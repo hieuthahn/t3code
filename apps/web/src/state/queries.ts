@@ -406,27 +406,35 @@ export function useProjectLibraryPage(target: {
   );
 }
 
-export function useNestedRepositories(target: {
-  readonly environmentId: EnvironmentId;
-  readonly projectId: ProjectId;
-}) {
+export function useNestedRepositories(
+  target: {
+    readonly environmentId: EnvironmentId;
+    readonly projectId: ProjectId;
+  } | null,
+) {
   return useEnvironmentQuery(
-    orchestrationEnvironment.nestedRepositories({
-      environmentId: target.environmentId,
-      input: { projectId: target.projectId },
-    }),
+    target === null
+      ? null
+      : orchestrationEnvironment.nestedRepositories({
+          environmentId: target.environmentId,
+          input: { projectId: target.projectId },
+        }),
   );
 }
 
-export function useThreadRepositoryTags(target: {
-  readonly environmentId: EnvironmentId;
-  readonly projectId: ProjectId;
-}) {
+export function useThreadRepositoryTags(
+  target: {
+    readonly environmentId: EnvironmentId;
+    readonly projectId: ProjectId;
+  } | null,
+) {
   return useEnvironmentQuery(
-    orchestrationEnvironment.threadRepositoryTags({
-      environmentId: target.environmentId,
-      input: { projectId: target.projectId },
-    }),
+    target === null
+      ? null
+      : orchestrationEnvironment.threadRepositoryTags({
+          environmentId: target.environmentId,
+          input: { projectId: target.projectId },
+        }),
   );
 }
 

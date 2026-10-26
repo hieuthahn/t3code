@@ -93,6 +93,7 @@ interface BranchToolbarProps {
   threadId: ThreadId;
   projectId: ProjectId;
   worktreePath: string | null;
+  repositoryCwd?: string | null;
   isServerThread: boolean;
   showGitControls: boolean;
   draftId?: DraftId;
@@ -614,6 +615,7 @@ export const BranchToolbar = memo(function BranchToolbar({
   threadId,
   projectId,
   worktreePath,
+  repositoryCwd = null,
   isServerThread,
   showGitControls,
   draftId,
@@ -734,6 +736,7 @@ export const BranchToolbar = memo(function BranchToolbar({
           <BranchToolbarBranchSelector
             displayMode="panel"
             className="w-full"
+            repositoryCwd={repositoryCwd}
             environmentId={environmentId}
             threadId={threadId}
             {...(draftId ? { draftId } : {})}

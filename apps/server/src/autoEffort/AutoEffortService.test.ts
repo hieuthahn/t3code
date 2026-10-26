@@ -503,10 +503,13 @@ describe("AutoEffortService team verdict", () => {
           },
         },
       },
-      ({ service, haikuQuestions }) =>
+      ({ service }) =>
         Effect.gen(function* () {
           expect(yield* service.judgeTeam(teamRequest())).toBe(true);
-          expect(yield* Ref.get(haikuQuestions)).toEqual([]);
+          const resolution = yield* service.resolve(request({ firstTurn: true }));
+          expect(resolution.notice).toBe(
+            "Auto effort: high · by Jev · 70% sure · team: Strong team, 90% sure",
+          );
         }),
     ),
   );

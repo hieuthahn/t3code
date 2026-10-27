@@ -49,7 +49,9 @@ import {
   draftTeam,
   initialTeamSetup,
   leadGuidanceBytesLeft,
+  sameTeamSetup,
   teamControlName,
+  teamSetupLabel,
   upsertTeamProfile,
 } from "./teamSetupDraft";
 
@@ -149,12 +151,17 @@ export function ComposerTeamControl(props: {
     updateDraftComposerSettings(threadKey, { team: on ? "auto" : undefined });
     if (canWriteSettings) updateSettings({ team: { autoNewThreads: on } });
   };
+  const defaultSetup = settings.defaultSetup;
   const autoTeamName =
-    settings.defaultSetup === null
+    defaultSetup === null
       ? undefined
-      : settings.profiles.find(
-          (profile) => JSON.stringify(profile.setup) === JSON.stringify(settings.defaultSetup),
-        )?.name;
+      : settings.profiles.find((profile) => sameTeamSetup(profile.setup, defaultSetup))?.name;
+  const profileLabel = teamSetupLabel({
+    setup,
+    profiles: settings.profiles,
+    pickedId: profileId,
+    defaultSetup: settings.defaultSetup,
+  });
   const saveProfiles = (profiles: ReadonlyArray<TeamProfile>) =>
     updateSettings({ team: { profiles: [...profiles] } });
 
@@ -234,7 +241,8 @@ export function ComposerTeamControl(props: {
 
           <TeamProfileBar
             profiles={settings.profiles}
-            selectedId={profileId}
+            selectedId={profileLabel.profileId}
+            unmatchedName={profileLabel.name}
             canWrite={canWriteSettings}
             onSelect={(profile) => {
               setProfileId(profile.id);

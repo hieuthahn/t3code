@@ -53,6 +53,7 @@ import {
   useEnvironmentModelPreferences,
   useBalanceNewThreads,
   useModelPickerMergeAccounts,
+  useUpdateEnvironmentSettings,
   useToggleEnvironmentModelFavorite,
 } from "~/hooks/useSettings";
 import { announce } from "~/lib/announce";
@@ -506,6 +507,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const toggleFavorite = useToggleEnvironmentModelFavorite(props.environmentId);
   const mergeAccounts = useModelPickerMergeAccounts(props.environmentId);
   const balanceNewThreads = useBalanceNewThreads(props.environmentId);
+  const updateEnvironmentSettings = useUpdateEnvironmentSettings(props.environmentId);
   const multiSelectMode = onToggleModel !== undefined && props.multiSelectMode === true;
   const activeGroupKey = activeEntry?.continuationGroupKey;
   const groupAccounts =
@@ -600,6 +602,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     if (props.multiSelectMode === true) return;
     const instanceId = pick === "auto" ? props.activeInstanceId : pick;
     const entry = instanceEntries.find((candidate) => candidate.instanceId === instanceId);
+    if (entry) {
+      updateEnvironmentSettings({ defaultAccountByDriver: { [entry.driverKind]: pick } });
+    }
     const options = modelOptionsByInstance.get(instanceId);
     const model =
       entry && options ? resolveSelectableModel(entry.driverKind, props.model, options) : null;
@@ -1206,7 +1211,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                       <Tooltip>
                         <TooltipTrigger render={<Toggle value="auto">Auto</Toggle>} />
                         <TooltipPopup side="top">
-                          Each new thread starts on the signed-in account with the most quota left.
+                          New threads of this provider start on the account you pick here.
                         </TooltipPopup>
                       </Tooltip>
                       {groupAccounts.map((entry, index) => {

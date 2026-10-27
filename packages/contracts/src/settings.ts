@@ -1718,7 +1718,9 @@ export const ServerSettingsPatch = Schema.Struct({
   autoResumeLimitedThreads: Schema.optionalKey(Schema.Boolean),
   limitedThreadSwitch: Schema.optionalKey(LimitedThreadSwitchMode),
   modelPickerMergeAccounts: Schema.optionalKey(Schema.Boolean),
-  defaultAccountByDriver: Schema.optionalKey(Schema.Record(ProviderDriverKind, DefaultAccountChoice)),
+  defaultAccountByDriver: Schema.optionalKey(
+    Schema.Record(ProviderDriverKind, DefaultAccountChoice),
+  ),
   earlyAccountSwitch: Schema.optionalKey(Schema.Boolean),
   midTurnAccountSwitch: Schema.optionalKey(Schema.Boolean),
   balanceNewThreads: Schema.optionalKey(Schema.Boolean),

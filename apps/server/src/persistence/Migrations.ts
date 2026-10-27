@@ -75,11 +75,11 @@ import Migration0069 from "./Migrations/069_ThreadMessageSearch.ts";
 import Migration0070 from "./Migrations/070_PeerLinks.ts";
 import Migration0071 from "./Migrations/071_PeerLinkFence.ts";
 import Migration0072 from "./Migrations/072_WaitingLinkRequestIndex.ts";
-import Migration0073 from "./Migrations/071_TokenSaverAttempts.ts";
-import Migration0074 from "./Migrations/072_MergeQueueItems.ts";
-import Migration0075 from "./Migrations/073_TeamRuns.ts";
-import Migration0076 from "./Migrations/074_ProjectMemory.ts";
-import Migration0077 from "./Migrations/075_AutoTeamVerdicts.ts";
+import Migration0073 from "./Migrations/073_TokenSaverAttempts.ts";
+import Migration0074 from "./Migrations/074_MergeQueueItems.ts";
+import Migration0075 from "./Migrations/075_TeamRuns.ts";
+import Migration0076 from "./Migrations/076_ProjectMemory.ts";
+import Migration0077 from "./Migrations/077_AutoTeamVerdicts.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],

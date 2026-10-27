@@ -16,7 +16,7 @@ layer("makeItemTransition", (it) => {
   it.effect("moves an item only out of the statuses the caller expects", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      yield* runMigrations({ toMigrationInclusive: 72 });
+      yield* runMigrations({ toMigrationInclusive: 74 });
       yield* sql`INSERT INTO merge_queue_items ${sql.insert({
         item_id: itemId,
         project_id: "project",

@@ -8,11 +8,11 @@ import { runMigrations } from "../Migrations.ts";
 
 const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })));
 
-layer("072_MergeQueueItems", (it) => {
+layer("074_MergeQueueItems", (it) => {
   it.effect("adds an empty merge queue table indexed by trunk and status", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      yield* runMigrations({ toMigrationInclusive: 72 });
+      yield* runMigrations({ toMigrationInclusive: 74 });
 
       const rows = yield* sql<{ count: number }>`SELECT COUNT(*) AS count FROM merge_queue_items`;
       assert.equal(rows[0]?.count, 0);

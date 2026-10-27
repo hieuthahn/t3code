@@ -8,11 +8,11 @@ import { runMigrations } from "../Migrations.ts";
 
 const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })));
 
-layer("073_TeamRuns", (it) => {
+layer("075_TeamRuns", (it) => {
   it.effect("adds empty team run and assignment tables, one key per run", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      yield* runMigrations({ toMigrationInclusive: 73 });
+      yield* runMigrations({ toMigrationInclusive: 75 });
 
       const runs = yield* sql<{ count: number }>`SELECT COUNT(*) AS count FROM team_runs`;
       assert.equal(runs[0]?.count, 0);

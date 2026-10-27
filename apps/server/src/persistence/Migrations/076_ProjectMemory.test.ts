@@ -4,7 +4,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import * as SqlitePersistence from "../Sqlite.ts";
 
-it.layer(SqlitePersistence.layerMemory)("074_ProjectMemory", (it) => {
+it.layer(SqlitePersistence.layerMemory)("076_ProjectMemory", (it) => {
   it.effect("keeps one row per entry id", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;

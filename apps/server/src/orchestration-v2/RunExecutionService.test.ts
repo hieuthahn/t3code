@@ -929,9 +929,9 @@ it.effect.each([
       yield* runExecution.startRootRun({
         commandId: CommandId.make(`command:run-execution-memory-${ordinal}`),
         appThread: {
-          id: threadId,
+          ...rootAppThread(threadId),
           projectId: ProjectId.make("project:memory"),
-        } as OrchestrationV2AppThread,
+        },
         providerSessionId: ProviderSessionId.make(`session:run-execution-memory-${ordinal}`),
         session,
         run: {

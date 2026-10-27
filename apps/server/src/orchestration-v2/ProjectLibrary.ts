@@ -93,7 +93,7 @@ interface LastTouch {
   readonly changedAt: IsoDateTime;
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const home = NodeOS.homedir();

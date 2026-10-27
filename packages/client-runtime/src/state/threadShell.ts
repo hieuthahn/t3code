@@ -46,11 +46,9 @@ const isChildRunLive = (
       thread.status === "waiting";
 
 /**
- * Whether a thread shows under its parent rather than in thread lists: a
- * subagent, a side question (a tab beside its parent), or a task a linked
- * environment delegated here whose parent the client lists
- * (`delegatedUnderParent`, by thread key). A task whose parent the client
- * cannot list stays in the lists, so its work is never out of reach.
+ * Whether a thread shows under its parent: a subagent, a side question, or a
+ * delegated task whose parent the client lists (`delegatedUnderParent`).
+ * A task whose parent the client cannot list stays in the lists.
  */
 export function isShownUnderParent(
   ref: ScopedThreadRef,

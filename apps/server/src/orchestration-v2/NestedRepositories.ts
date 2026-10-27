@@ -98,7 +98,7 @@ export class NestedRepositories extends Context.Service<
   }
 >()("t3/orchestration-v2/NestedRepositories") {}
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const services = yield* Effect.context<FileSystem.FileSystem | Path.Path>();

@@ -2074,7 +2074,7 @@ const make = Effect.gen(function* () {
     callerScope: McpInvocationScope,
     input: ChildPlanInput,
   ) {
-    const { scope, threadId, runId, key, turnItemId, record, readCard } = yield* prepareChildPlan(
+    const { scope, threadId, key, turnItemId, record, readCard } = yield* prepareChildPlan(
       callerScope,
       input,
     );

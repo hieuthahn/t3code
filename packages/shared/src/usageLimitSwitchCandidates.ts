@@ -48,6 +48,23 @@ const toCandidate = (
   return { instanceId: provider.instanceId, usedPercent, resetsAtMs };
 };
 
+const eligiblePeers = (
+  input: {
+    readonly providers: ReadonlyArray<ServerProvider>;
+    readonly currentInstanceId: ProviderInstanceId;
+    readonly model?: string | undefined;
+  },
+  current: ServerProvider,
+  groupKey: string,
+): ReadonlyArray<ServerProvider> =>
+  input.providers.filter(
+    (provider) =>
+      provider.instanceId !== input.currentInstanceId &&
+      provider.driver === current.driver &&
+      provider.continuation?.groupKey === groupKey &&
+      canTakeOver(provider, input.model),
+  );
+
 /** Tell whether an account is signed out or has a live usage window already full. */
 export const isSpentAccount = (
   providers: ReadonlyArray<ServerProvider>,
@@ -87,18 +104,10 @@ export const rankUsageLimitSwitchCandidates = (input: {
   if (current === undefined || groupKey === undefined) {
     return [];
   }
-  const candidates = input.providers
-    .filter(
-      (provider) =>
-        provider.instanceId !== input.currentInstanceId &&
-        provider.driver === current.driver &&
-        provider.continuation?.groupKey === groupKey &&
-        canTakeOver(provider, input.model),
-    )
-    .flatMap((provider) => {
-      const candidate = toCandidate(provider, input.nowMs);
-      return candidate === undefined ? [] : [candidate];
-    });
+  const candidates = eligiblePeers(input, current, groupKey).flatMap((provider) => {
+    const candidate = toCandidate(provider, input.nowMs);
+    return candidate === undefined ? [] : [candidate];
+  });
   const score = (candidate: UsageLimitSwitchCandidate): number =>
     FULL_PERCENT -
     (candidate.usedPercent ?? FULL_PERCENT) -
@@ -108,6 +117,73 @@ export const rankUsageLimitSwitchCandidates = (input: {
   const measured = candidates
     .filter((candidate) => candidate.usedPercent !== undefined)
     .sort((left, right) => score(right) - score(left) || resetOrder(left) - resetOrder(right));
+  const unmeasured = candidates.filter((candidate) => candidate.usedPercent === undefined);
+  return [...measured, ...unmeasured];
+};
+
+export interface AskSwitchCandidate extends UsageLimitSwitchCandidate {
+  /** Percent of the soonest-resetting window that goes unused if nothing runs before it resets. */
+  readonly lostPercent: number | undefined;
+}
+
+const toAskCandidate = (
+  provider: ServerProvider,
+  nowMs: number,
+): AskSwitchCandidate | undefined => {
+  const base = toCandidate(provider, nowMs);
+  if (base === undefined) return undefined;
+  if (base.usedPercent === undefined) return { ...base, lostPercent: undefined };
+  let soonest: { readonly resetsAtMs: number; readonly usedPercent: number } | undefined;
+  for (const window of provider.usageLimits?.windows ?? []) {
+    const resetsAtMs = window.resetsAt === undefined ? undefined : Date.parse(window.resetsAt);
+    if (resetsAtMs === undefined || resetsAtMs <= nowMs) continue;
+    if (
+      soonest === undefined ||
+      resetsAtMs < soonest.resetsAtMs ||
+      (resetsAtMs === soonest.resetsAtMs && window.usedPercent < soonest.usedPercent)
+    ) {
+      soonest = { resetsAtMs, usedPercent: window.usedPercent };
+    }
+  }
+  return {
+    instanceId: base.instanceId,
+    usedPercent: base.usedPercent,
+    resetsAtMs: soonest?.resetsAtMs,
+    lostPercent: soonest === undefined ? undefined : FULL_PERCENT - soonest.usedPercent,
+  };
+};
+
+/**
+ * Rank peers for the Ask dialog: the soonest live reset first, since unused quota there is lost.
+ * A peer with no reset time ranks after those with one, a tie falls to the most room left, and
+ * a peer full in any live window never appears. Peers without a reading come last.
+ */
+export const rankAskSwitchCandidates = (input: {
+  readonly providers: ReadonlyArray<ServerProvider>;
+  readonly currentInstanceId: ProviderInstanceId;
+  readonly nowMs: number;
+  readonly model?: string | undefined;
+}): ReadonlyArray<AskSwitchCandidate> => {
+  const current = input.providers.find(
+    (provider) => provider.instanceId === input.currentInstanceId,
+  );
+  const groupKey = current?.continuation?.groupKey;
+  if (current === undefined || groupKey === undefined) {
+    return [];
+  }
+  const candidates = eligiblePeers(input, current, groupKey).flatMap((provider) => {
+    const candidate = toAskCandidate(provider, input.nowMs);
+    return candidate === undefined ? [] : [candidate];
+  });
+  const resetOrder = (candidate: AskSwitchCandidate): number =>
+    candidate.resetsAtMs ?? Number.POSITIVE_INFINITY;
+  const measured = candidates
+    .filter((candidate) => candidate.usedPercent !== undefined)
+    .sort(
+      (left, right) =>
+        resetOrder(left) - resetOrder(right) ||
+        (left.usedPercent ?? FULL_PERCENT) - (right.usedPercent ?? FULL_PERCENT),
+    );
   const unmeasured = candidates.filter((candidate) => candidate.usedPercent === undefined);
   return [...measured, ...unmeasured];
 };

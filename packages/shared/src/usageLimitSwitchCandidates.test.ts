@@ -7,6 +7,7 @@ import {
   pickNewThreadAccount,
   pickRepresentativeAccount,
   pinnedAccountWarning,
+  rankAskSwitchCandidates,
   rankUsageLimitSwitchCandidates,
   resolveAccountSwitchThresholds,
 } from "./usageLimitSwitchCandidates.ts";
@@ -204,6 +205,121 @@ describe("rankUsageLimitSwitchCandidates", () => {
   it("returns nothing when the current instance has no continuation group", () => {
     const withoutGroup = makeProvider({ instanceId: "a", groupKey: null });
     assert.deepEqual(rank([withoutGroup, providers[1]!]), []);
+  });
+});
+
+describe("rankAskSwitchCandidates", () => {
+  const current = makeProvider({
+    instanceId: "a",
+    usage: { usedPercent: 100, resetsInMinutes: 60 },
+  });
+  const askRank = (providers: ReadonlyArray<ServerProvider>) =>
+    rankAskSwitchCandidates({ providers, currentInstanceId: id("a"), nowMs: NOW }).map(
+      (candidate) => candidate.instanceId,
+    );
+
+  it("puts the soonest reset first, even over a peer with more room", () => {
+    const providers = [
+      current,
+      makeProvider({ instanceId: "roomy", usage: { usedPercent: 10, resetsInMinutes: 200 } }),
+      makeProvider({ instanceId: "soon", usage: { usedPercent: 60, resetsInMinutes: 20 } }),
+    ];
+    assert.deepEqual(askRank(providers), [id("soon"), id("roomy")]);
+  });
+
+  it("never ranks an exhausted peer first, however soon it resets", () => {
+    const providers = [
+      current,
+      makeProvider({ instanceId: "spent", usage: { usedPercent: 100, resetsInMinutes: 5 } }),
+      makeProvider({ instanceId: "open", usage: { usedPercent: 50, resetsInMinutes: 300 } }),
+    ];
+    assert.deepEqual(askRank(providers), [id("open")]);
+  });
+
+  it("skips a peer full in any live window even when another window resets sooner", () => {
+    const providers = [
+      current,
+      makeProvider({
+        instanceId: "weeklyFull",
+        usage: [
+          { id: "five_hour", usedPercent: 10, resetsInMinutes: 30 },
+          { id: "weekly", kind: "weekly", usedPercent: 100, resetsInMinutes: 3000 },
+        ],
+      }),
+      makeProvider({ instanceId: "open", usage: { usedPercent: 50, resetsInMinutes: 300 } }),
+    ];
+    assert.deepEqual(askRank(providers), [id("open")]);
+  });
+
+  it("ranks a peer with no reset time after peers that have one", () => {
+    const providers = [
+      current,
+      makeProvider({
+        instanceId: "undated",
+        usage: { usedPercent: 5, resetsInMinutes: 0 },
+      }),
+      makeProvider({ instanceId: "dated", usage: { usedPercent: 90, resetsInMinutes: 600 } }),
+    ];
+    const undated = providers[1] as unknown as {
+      usageLimits: { windows: Array<{ resetsAt?: string }> };
+    };
+    delete undated.usageLimits.windows[0]!.resetsAt;
+    assert.deepEqual(askRank(providers), [id("dated"), id("undated")]);
+  });
+
+  it("falls back to the most room left when reset times are equal", () => {
+    const providers = [
+      current,
+      makeProvider({ instanceId: "fuller", usage: { usedPercent: 70, resetsInMinutes: 90 } }),
+      makeProvider({ instanceId: "emptier", usage: { usedPercent: 20, resetsInMinutes: 90 } }),
+    ];
+    assert.deepEqual(askRank(providers), [id("emptier"), id("fuller")]);
+  });
+
+  it("reports the quota the soonest window loses if it goes unused", () => {
+    const [candidate] = rankAskSwitchCandidates({
+      providers: [
+        current,
+        makeProvider({
+          instanceId: "b",
+          usage: [
+            { id: "five_hour", usedPercent: 30, resetsInMinutes: 45 },
+            { id: "weekly", kind: "weekly", usedPercent: 80, resetsInMinutes: 3000 },
+          ],
+        }),
+      ],
+      currentInstanceId: id("a"),
+      nowMs: NOW,
+    });
+    assert.strictEqual(candidate?.lostPercent, 70);
+    assert.strictEqual(candidate?.resetsAtMs, NOW + 45 * 60_000);
+  });
+
+  it("lists a peer without a reading last, with no figure for lost quota", () => {
+    const result = rankAskSwitchCandidates({
+      providers: [
+        current,
+        makeProvider({ instanceId: "blind", unavailable: true }),
+        makeProvider({ instanceId: "seen", usage: { usedPercent: 40, resetsInMinutes: 500 } }),
+      ],
+      currentInstanceId: id("a"),
+      nowMs: NOW,
+    });
+    assert.deepEqual(
+      result.map((candidate) => candidate.instanceId),
+      [id("seen"), id("blind")],
+    );
+    assert.strictEqual(result[1]?.lostPercent, undefined);
+  });
+
+  it("leaves the auto ranking on headroom first", () => {
+    const providers = [
+      current,
+      makeProvider({ instanceId: "roomy", usage: { usedPercent: 10, resetsInMinutes: 200 } }),
+      makeProvider({ instanceId: "soon", usage: { usedPercent: 60, resetsInMinutes: 20 } }),
+      makeProvider({ instanceId: "spent", usage: { usedPercent: 100, resetsInMinutes: 5 } }),
+    ];
+    assert.deepEqual(rank(providers), [id("roomy"), id("soon")]);
   });
 });
 

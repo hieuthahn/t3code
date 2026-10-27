@@ -41,6 +41,7 @@ import {
   type MaintainScrollAtEndOptions,
 } from "@legendapp/list/react";
 import { type TimelineEntry } from "../../session-logic";
+import { splitAccountSwitchNotices } from "./accountSwitchMarker";
 import type { CodexArtifactTemplate } from "@t3tools/shared/codexArtifactTemplates";
 import { type ChatFileAttachment, type TurnDiffSummary } from "../../types";
 import { ArrowRightIcon, BotIcon, Minimize2Icon } from "lucide-react";
@@ -307,7 +308,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   isCompacting = false,
   awaitingUser = false,
   listRef,
-  timelineEntries,
+  timelineEntries: allTimelineEntries,
   findExpanded = false,
   findQuery = "",
   activeFindMatch = null,
@@ -360,6 +361,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
   historyControls,
   loadEarlier = null,
 }: MessagesTimelineProps) {
+  const { entries: timelineEntries, reasons: accountSwitchReasons } =
+    splitAccountSwitchNotices(allTimelineEntries);
   const listIdentityKey = displayThreadKey ?? routeThreadKey;
   // The remembered position is a snapshot taken when the list identity changes;
   // scrolling keeps rewriting the stored entry, which must not move the restore.
@@ -912,6 +915,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     workspaceRoot,
     skills,
     runs,
+    accountSwitchReasons,
     activeThreadEnvironmentId,
     onRevertToTurnCount,
     onRunShellCommand,

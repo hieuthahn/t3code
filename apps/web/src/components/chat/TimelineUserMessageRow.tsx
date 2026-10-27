@@ -132,12 +132,16 @@ function AccountSwitchDivider({ runId }: { runId: RunId | null }) {
     useAtomValue(serverEnvironment.providersValueAtom(ctx.activeThreadEnvironmentId)) ??
     EMPTY_SERVER_PROVIDERS;
   const marker = resolveAccountSwitchMarker({ runId, runs: ctx.runs, providers });
-  if (marker === null) return null;
+  const reason = runId === null ? undefined : ctx.accountSwitchReasons.get(runId);
+  if (marker === null && reason === undefined) return null;
   return (
     <TimelineSystemDivider
       icon={ArrowLeftRightIcon}
       label="Switched account"
-      detail={`${marker.fromLabel} → ${marker.toLabel}${marker.afterFailedRun ? " after the last run failed" : ""}`}
+      detail={
+        reason ??
+        `${marker?.fromLabel} → ${marker?.toLabel}${marker?.afterFailedRun ? " after the last run failed" : ""}`
+      }
     />
   );
 }

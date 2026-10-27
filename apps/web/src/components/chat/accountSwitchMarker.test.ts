@@ -1,7 +1,7 @@
 import { ProviderInstanceId, RunId, type ServerProvider } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { resolveAccountSwitchMarker } from "./accountSwitchMarker";
+import { resolveAccountSwitchMarker, resolveRunAccountLabel } from "./accountSwitchMarker";
 import type { HandoffTimelineRun } from "./V2LifecycleRow";
 
 const provider = (instanceId: string, displayName: string, groupKey = "claude:home:/shared") =>
@@ -61,5 +61,29 @@ describe("resolveAccountSwitchMarker", () => {
       expect(resolveAccountSwitchMarker({ runId: RunId.make(runId), runs, providers })).toBeNull();
     }
     expect(resolveAccountSwitchMarker({ runId: null, runs, providers })).toBeNull();
+  });
+});
+
+describe("resolveRunAccountLabel", () => {
+  const shared = [
+    provider("viet", "Claude viet.nguyen@openreach.tech"),
+    provider("dung", "Claude dung.nguyen@openreach.tech"),
+  ];
+  const runs = [run("run-1", 1, "viet"), run("run-2", 2, "dung")];
+
+  it("names the account each run answered from with the short label", () => {
+    expect(resolveRunAccountLabel({ runId: RunId.make("run-2"), runs, providers: shared })).toEqual(
+      { label: "dung", name: "Claude dung.nguyen@openreach.tech" },
+    );
+  });
+
+  it("says nothing for a lone account or an unknown run", () => {
+    const lone = [provider("viet", "Claude viet"), provider("dung", "Claude dung", "other")];
+    expect(
+      resolveRunAccountLabel({ runId: RunId.make("run-1"), runs, providers: lone }),
+    ).toBeNull();
+    expect(
+      resolveRunAccountLabel({ runId: RunId.make("missing"), runs, providers: shared }),
+    ).toBeNull();
   });
 });

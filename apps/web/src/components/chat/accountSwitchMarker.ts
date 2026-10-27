@@ -1,5 +1,6 @@
 import type { ProviderInstanceId, RunId, ServerProvider } from "@t3tools/contracts";
 
+import { shortAccountLabels } from "./modelPickerAccountGroups";
 import type { HandoffTimelineRun } from "./V2LifecycleRow";
 
 const NOT_EXECUTED_STATUSES = new Set(["preparing", "queued", "cancelled", "rolled_back"]);
@@ -47,4 +48,32 @@ export function resolveAccountSwitchMarker(input: {
     toLabel: to.displayName ?? to.instanceId,
     afterFailedRun: previous.status === "failed",
   };
+}
+
+/**
+ * Name the account a run answered from, when several accounts share its history and a
+ * reply could have come from any of them; null for a lone account.
+ */
+export function resolveRunAccountLabel(input: {
+  readonly runId: RunId | null;
+  readonly runs: ReadonlyArray<HandoffTimelineRun>;
+  readonly providers: ReadonlyArray<ServerProvider>;
+}): { readonly label: string; readonly name: string } | null {
+  if (input.runId === null) return null;
+  const run = input.runs.find((candidate) => candidate.id === input.runId);
+  const account = input.providers.find(
+    (provider) => provider.instanceId === run?.providerInstanceId,
+  );
+  const groupKey = account?.continuation?.groupKey;
+  if (account === undefined || groupKey === undefined) return null;
+  const members = input.providers.filter(
+    (provider) =>
+      provider.driver === account.driver && provider.continuation?.groupKey === groupKey,
+  );
+  if (members.length < 2) return null;
+  const name = account.displayName ?? account.instanceId;
+  const labels = shortAccountLabels(
+    members.map((provider) => provider.displayName ?? provider.instanceId),
+  );
+  return { label: labels[members.indexOf(account)] ?? name, name };
 }

@@ -56,6 +56,7 @@ describe("V2 preview upgrade", () => {
         [74, "MergeQueueItems"],
         [75, "TeamRuns"],
         [76, "ProjectMemory"],
+        [77, "AutoTeamVerdicts"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       assert.deepStrictEqual(yield* sql`SELECT * FROM orchestration_v2_legacy_imports`, imports);
@@ -155,6 +156,7 @@ describe("V2 preview upgrade", () => {
         [74, "MergeQueueItems"],
         [75, "TeamRuns"],
         [76, "ProjectMemory"],
+        [77, "AutoTeamVerdicts"],
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );

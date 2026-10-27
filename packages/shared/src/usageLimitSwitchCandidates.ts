@@ -154,15 +154,17 @@ const toAskCandidate = (
 };
 
 /**
- * Rank peers for the Ask dialog: the soonest live reset first, since unused quota there is lost.
- * A peer with no reset time ranks after those with one, a tie falls to the most room left, and
- * a peer full in any live window never appears. Peers without a reading come last.
+ * Rank peers for the Ask dialog: peers under their weekly threshold first, then the soonest live
+ * reset, since unused quota there is lost. A peer with no reset time ranks after those with one,
+ * a tie falls to the most room left, and a peer full in any live window never appears. Peers
+ * without a reading come last.
  */
 export const rankAskSwitchCandidates = (input: {
   readonly providers: ReadonlyArray<ServerProvider>;
   readonly currentInstanceId: ProviderInstanceId;
   readonly nowMs: number;
   readonly model?: string | undefined;
+  readonly thresholdsFor?: (instanceId: ProviderInstanceId) => AccountSwitchThresholds;
 }): ReadonlyArray<AskSwitchCandidate> => {
   const current = input.providers.find(
     (provider) => provider.instanceId === input.currentInstanceId,
@@ -177,10 +179,22 @@ export const rankAskSwitchCandidates = (input: {
   });
   const resetOrder = (candidate: AskSwitchCandidate): number =>
     candidate.resetsAtMs ?? Number.POSITIVE_INFINITY;
+  const nearWeeklyLimit = (candidate: AskSwitchCandidate): number => {
+    if (input.thresholdsFor === undefined) return 0;
+    const provider = input.providers.find((entry) => entry.instanceId === candidate.instanceId);
+    const windows = provider === undefined ? undefined : liveWindows(provider, input.nowMs);
+    const { weeklyPercent } = input.thresholdsFor(candidate.instanceId);
+    return windows?.some(
+      (window) => window.kind !== "session" && window.usedPercent >= weeklyPercent,
+    )
+      ? 1
+      : 0;
+  };
   const measured = candidates
     .filter((candidate) => candidate.usedPercent !== undefined)
     .sort(
       (left, right) =>
+        nearWeeklyLimit(left) - nearWeeklyLimit(right) ||
         resetOrder(left) - resetOrder(right) ||
         (left.usedPercent ?? FULL_PERCENT) - (right.usedPercent ?? FULL_PERCENT),
     );

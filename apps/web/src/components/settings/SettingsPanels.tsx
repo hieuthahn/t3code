@@ -1079,7 +1079,7 @@ export function GeneralSettingsPanel() {
         <SettingsRow
           serverScoped
           {...searchableSetting("early-account-switch")}
-          description="Before a new message, move the thread to another account that shares its history once its account passes a threshold below. The other account must sit 20 points under each threshold."
+          description="Once an account passes a threshold below, move the thread to another account that shares its history, before a new message or between steps of a running turn. The other account must sit 20 points under each threshold."
           settingKeys={[
             "earlyAccountSwitch",
             "earlySwitchSessionThreshold",

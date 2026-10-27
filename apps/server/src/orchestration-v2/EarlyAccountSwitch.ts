@@ -13,17 +13,42 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import {
   type AccountChoice,
+  type AccountChoiceReason,
   type AccountSwitchThresholds,
   chooseAccountForTurn,
   isSpentAccount,
   pickNewThreadAccount,
+  rankUsageLimitSwitchCandidates,
   resolveAccountSwitchThresholds,
 } from "@t3tools/shared/usageLimitSwitchCandidates";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as AccountSwitchJournal from "./AccountSwitchJournal.ts";
 
 const THREAD_COOLDOWN_MS = 30 * 60_000;
 const NEW_THREAD_ASSIGNMENT_WINDOW_MS = 60 * 60_000;
+const USAGE_STALE_MS = 60_000;
+const USAGE_REFRESH_TIMEOUT = "5 seconds";
+const MAX_PEER_REFRESHES = 3;
+
+const JOURNAL_REASONS: Partial<
+  Record<AccountChoiceReason, AccountSwitchJournal.AccountSwitchReason>
+> = {
+  "near-limit": "near-limit",
+  "current-signed-out": "signed-out",
+  "requested-spent": "usage-limit",
+};
+
+/** Tell whether an account's usage reading is old enough to read again before deciding. */
+const isUsageStale = (
+  providers: ReadonlyArray<ServerProvider>,
+  instanceId: ProviderInstanceId,
+  nowMs: number,
+): boolean => {
+  const limits = providers.find((provider) => provider.instanceId === instanceId)?.usageLimits;
+  if (limits?.unavailable?.reason === "unsupported") return false;
+  return limits === undefined || nowMs - Date.parse(limits.checkedAt) > USAGE_STALE_MS;
+};
 
 type MessageDispatch = Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }>;
 
@@ -49,6 +74,44 @@ export const isEarlySwitchCandidate = (
   command.restartContinuationOfRunId === undefined &&
   command.usageLimitContinuationOfRunId === undefined &&
   command.delegatedCompletion === undefined;
+
+/**
+ * Point a user's unpinned pick of another account in the thread's history group back at the
+ * thread's account, because in auto mode the server moves threads and a draft can lag behind.
+ */
+export const followThreadAccount = (
+  command: MessageDispatch,
+  thread: EarlySwitchThread,
+  providers: ReadonlyArray<ServerProvider>,
+): MessageDispatch => {
+  const selection = command.modelSelection;
+  const threadInstanceId = thread.modelSelection.instanceId;
+  if (
+    selection === undefined ||
+    selection.accountChoice === "pinned" ||
+    selection.instanceId === threadInstanceId ||
+    thread.hasStartedRun === false ||
+    command.createdBy !== "user" ||
+    command.manualContinuationOfRunId !== undefined ||
+    command.restartContinuationOfRunId !== undefined ||
+    command.usageLimitContinuationOfRunId !== undefined ||
+    command.delegatedCompletion !== undefined
+  ) {
+    return command;
+  }
+  const groupOf = (instanceId: ProviderInstanceId) =>
+    providers.find((provider) => provider.instanceId === instanceId)?.continuation?.groupKey;
+  const group = groupOf(selection.instanceId);
+  const threadOffersModel =
+    providers
+      .find((provider) => provider.instanceId === threadInstanceId)
+      ?.models.some(
+        (model) => model.slug === selection.model || model.aliases?.includes(selection.model),
+      ) === true;
+  return group !== undefined && group === groupOf(threadInstanceId) && threadOffersModel
+    ? { ...command, modelSelection: { ...selection, instanceId: threadInstanceId } }
+    : command;
+};
 
 /**
  * Decide the account a user turn runs on, given the providers, the thread's last early
@@ -151,17 +214,57 @@ export const make = Effect.gen(function* () {
     return EarlyAccountSwitch.of({ rewrite: (command) => Effect.succeed(command) });
   }
   const registry = registryOption.value;
+  const journal = yield* AccountSwitchJournal.AccountSwitchJournal;
   const lastSwitchRef = yield* Ref.make(new Map<ThreadId, number>());
   const unmeasuredLoggedRef = yield* Ref.make(new Set<string>());
+  const refreshAttemptsRef = yield* Ref.make(new Map<ProviderInstanceId, number>());
   const newThreadAssignmentsRef = yield* Ref.make<
     ReadonlyArray<{ readonly instanceId: ProviderInstanceId; readonly atMs: number }>
   >([]);
+  const refreshStale = Effect.fn("EarlyAccountSwitch.refreshStale")(function* (
+    providers: ReadonlyArray<ServerProvider>,
+    instanceIds: ReadonlyArray<ProviderInstanceId>,
+    nowMs: number,
+  ) {
+    const attempts = yield* Ref.get(refreshAttemptsRef);
+    const due = [...new Set(instanceIds)].filter(
+      (instanceId) =>
+        isUsageStale(providers, instanceId, nowMs) &&
+        nowMs - (attempts.get(instanceId) ?? 0) > USAGE_STALE_MS,
+    );
+    if (due.length === 0) return false;
+    yield* Ref.update(refreshAttemptsRef, (current) => {
+      const next = new Map(current);
+      for (const instanceId of due) next.set(instanceId, nowMs);
+      return next;
+    });
+    yield* Effect.forEach(
+      due,
+      (instanceId) =>
+        registry.refreshInstance(instanceId).pipe(
+          Effect.timeout(USAGE_REFRESH_TIMEOUT),
+          Effect.catchCause(() => Effect.void),
+        ),
+      { concurrency: "unbounded", discard: true },
+    );
+    return true;
+  });
   const rewrite = Effect.fn("EarlyAccountSwitch.rewrite")(function* (
-    command: MessageDispatch,
+    requested: MessageDispatch,
     thread: EarlySwitchThread,
   ) {
     const preferences = yield* settings.getSettings;
     const balanceNewThread = preferences.modelPickerMergeAccounts && thread.hasStartedRun === false;
+    const command = preferences.modelPickerMergeAccounts
+      ? followThreadAccount(requested, thread, yield* registry.getProviders)
+      : requested;
+    if (command !== requested) {
+      yield* Effect.logInfo("orchestration-v2.early-switch.followed-thread", {
+        threadId: thread.id,
+        requested: requested.modelSelection?.instanceId,
+        to: thread.modelSelection.instanceId,
+      });
+    }
     if (
       !(preferences.earlyAccountSwitch || balanceNewThread) ||
       !isEarlySwitchCandidate(command, thread)
@@ -179,23 +282,48 @@ export const make = Effect.gen(function* () {
         (recentAssignments.get(assignment.instanceId) ?? 0) + 1,
       );
     }
-    const plan = planEarlySwitch({
-      command,
-      switchPinned: preferences.switchPinnedAccounts,
-      switchNearLimit: preferences.earlyAccountSwitch,
-      ...(balanceNewThread ? { newThread: { recentAssignments } } : {}),
-      thread,
-      providers: yield* registry.getProviders,
-      thresholdsFor: resolveAccountSwitchThresholds({
-        defaults: {
-          sessionPercent: preferences.earlySwitchSessionThreshold,
-          weeklyPercent: preferences.earlySwitchWeeklyThreshold,
-        },
-        instances: preferences.providerInstances,
-      }),
-      lastSwitchAtMs: (yield* Ref.get(lastSwitchRef)).get(thread.id),
-      nowMs,
+    const thresholdsFor = resolveAccountSwitchThresholds({
+      defaults: {
+        sessionPercent: preferences.earlySwitchSessionThreshold,
+        weeklyPercent: preferences.earlySwitchWeeklyThreshold,
+      },
+      instances: preferences.providerInstances,
     });
+    const lastSwitchAtMs = (yield* Ref.get(lastSwitchRef)).get(thread.id);
+    const planWith = (providers: ReadonlyArray<ServerProvider>) =>
+      planEarlySwitch({
+        command,
+        switchPinned: preferences.switchPinnedAccounts,
+        switchNearLimit: preferences.earlyAccountSwitch,
+        ...(balanceNewThread ? { newThread: { recentAssignments } } : {}),
+        thread,
+        providers,
+        thresholdsFor,
+        lastSwitchAtMs,
+        nowMs,
+      });
+    let providers = yield* registry.getProviders;
+    let plan = planWith(providers);
+    if (plan.choice !== null && plan.choice.reason !== "new-thread") {
+      const selection = command.modelSelection ?? thread.modelSelection;
+      const readAgain = Effect.gen(function* () {
+        providers = yield* registry.getProviders;
+        plan = planWith(providers);
+      });
+      yield* Effect.gen(function* () {
+        if (yield* refreshStale(providers, [selection.instanceId], nowMs)) yield* readAgain;
+        if (plan.choice?.pressure === undefined) return;
+        const peers = rankUsageLimitSwitchCandidates({
+          providers,
+          currentInstanceId: selection.instanceId,
+          nowMs,
+          model: selection.model,
+        })
+          .slice(0, MAX_PEER_REFRESHES)
+          .map((candidate) => candidate.instanceId);
+        if (yield* refreshStale(providers, peers, nowMs)) yield* readAgain;
+      }).pipe(Effect.timeout(USAGE_REFRESH_TIMEOUT), Effect.ignore);
+    }
     const choice = plan.choice;
     if (choice?.reason === "new-thread") {
       yield* Ref.set(newThreadAssignmentsRef, [
@@ -230,6 +358,16 @@ export const make = Effect.gen(function* () {
       return plan.command;
     }
     yield* Ref.update(lastSwitchRef, (current) => new Map(current).set(thread.id, nowMs));
+    const journalReason = JOURNAL_REASONS[choice.reason];
+    if (journalReason !== undefined) {
+      const pressure = AccountSwitchJournal.notePressure(providers, from, choice.pressure);
+      yield* journal.record(thread.id, {
+        from,
+        to: choice.instanceId,
+        reason: journalReason,
+        ...(pressure === undefined ? {} : { pressure }),
+      });
+    }
     yield* Effect.logInfo("orchestration-v2.early-switch.switched", {
       threadId: thread.id,
       from,

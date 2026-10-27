@@ -336,6 +336,9 @@ function RootRouteErrorView({ error }: ErrorComponentProps) {
         <Button size="sm" variant="outline" onClick={() => window.location.reload()}>
           Reload app
         </Button>
+        <Button size="sm" variant="outline" onClick={() => void router.navigate({ to: "/" })}>
+          Go home
+        </Button>
         <CopyErrorButton report={report} />
       </div>
 

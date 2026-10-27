@@ -9,6 +9,7 @@ import {
   leadGuidanceBytesLeft,
   teamControlName,
   teamModelSuffix,
+  teamSetupLabel,
   teamWithArchitect,
   upsertTeamProfile,
 } from "./teamSetupDraft";
@@ -129,5 +130,60 @@ describe("draftTeam", () => {
     const own: TeamSetup = { ...saved, architect };
     expect(draftTeam(own, off)).toEqual(own);
     expect(draftTeam(null, on)).toBeNull();
+  });
+});
+
+describe("teamSetupLabel", () => {
+  const strong = { id: "strong", name: "Strong team", setup: saved };
+  const other: TeamSetup = { architect, workers: [architect], limits: DEFAULT_TEAM_LIMITS };
+
+  it("names the profile the setup matches even when none was picked", () => {
+    expect(
+      teamSetupLabel({
+        setup: { ...saved },
+        profiles: [strong],
+        pickedId: null,
+        defaultSetup: null,
+      }),
+    ).toEqual({ profileId: "strong", name: "Strong team" });
+  });
+
+  it("matches a setup whose keys were written in another order", () => {
+    const reordered = { limits: saved.limits, workers: saved.workers, architect: saved.architect };
+    expect(
+      teamSetupLabel({ setup: reordered, profiles: [strong], pickedId: null, defaultSetup: null })
+        .profileId,
+    ).toBe("strong");
+  });
+
+  it("keeps the picked profile when two profiles hold the same setup", () => {
+    const twin = { ...strong, id: "twin", name: "Twin" };
+    expect(
+      teamSetupLabel({
+        setup: saved,
+        profiles: [strong, twin],
+        pickedId: "twin",
+        defaultSetup: null,
+      }),
+    ).toEqual({ profileId: "twin", name: "Twin" });
+  });
+
+  it("drops the picked profile once the setup is edited away from it", () => {
+    expect(
+      teamSetupLabel({ setup: other, profiles: [strong], pickedId: "strong", defaultSetup: null }),
+    ).toEqual({ profileId: null, name: "Unsaved setup" });
+  });
+
+  it("calls the saved default Default when no profile matches it", () => {
+    expect(
+      teamSetupLabel({ setup: other, profiles: [strong], pickedId: null, defaultSetup: other }),
+    ).toEqual({ profileId: null, name: "Default" });
+  });
+
+  it("prefers a profile's name over Default when both match", () => {
+    expect(
+      teamSetupLabel({ setup: saved, profiles: [strong], pickedId: null, defaultSetup: saved })
+        .name,
+    ).toBe("Strong team");
   });
 });

@@ -74,14 +74,13 @@ export function useComposerProviderModel(
   });
   const defaultAccountByDriver = useDefaultAccountByDriver(environmentId);
   const mergeAccounts = useModelPickerMergeAccounts(environmentId);
-  const defaultAccountEntry = threadStarted
-    ? null
-    : resolveDefaultAccountInstance({
-        entries: providerInstanceEntries,
-        selected: selection.selectedProviderEntry,
-        defaults: defaultAccountByDriver,
-        mergeAccounts,
-      });
+  const defaultAccountEntry = resolveDefaultAccountInstance({
+    entries: providerInstanceEntries,
+    selected: selection.selectedProviderEntry,
+    defaults: defaultAccountByDriver,
+    mergeAccounts,
+    keepOwnAccount: threadStarted || draftModelState.modelSelectionExplicit === true,
+  });
   const selectedProviderEntry = defaultAccountEntry ?? selection.selectedProviderEntry;
   const selectedInstanceId =
     selectedProviderEntry?.instanceId ?? NO_PROVIDER_MODEL_SELECTION.instanceId;

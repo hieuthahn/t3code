@@ -1211,7 +1211,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                       <Tooltip>
                         <TooltipTrigger render={<Toggle value="auto">Auto</Toggle>} />
                         <TooltipPopup side="top">
-                          New threads of this provider start on the account you pick here.
+                          {balanceNewThreads
+                            ? "Each new thread starts on the signed-in account with the most quota left."
+                            : "New threads stay on the account they already use."}
                         </TooltipPopup>
                       </Tooltip>
                       {groupAccounts.map((entry, index) => {

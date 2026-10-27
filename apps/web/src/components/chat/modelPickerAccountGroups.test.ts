@@ -390,6 +390,7 @@ describe("resolveDefaultAccountInstance", () => {
       selected: claude[0],
       defaults: defaults as never,
       mergeAccounts: true,
+      keepOwnAccount: false,
       ...overrides,
     })?.instanceId ?? null;
 
@@ -414,6 +415,7 @@ describe("resolveDefaultAccountInstance", () => {
         selected: codex[0],
         defaults: { claudeAgent: id("dung") } as never,
         mergeAccounts: true,
+        keepOwnAccount: false,
       }),
     ).toBeNull();
     expect(
@@ -422,6 +424,7 @@ describe("resolveDefaultAccountInstance", () => {
         selected: claude[0],
         defaults: { codex: id("codex-a") } as never,
         mergeAccounts: true,
+        keepOwnAccount: false,
       }),
     ).toBeNull();
   });
@@ -443,6 +446,10 @@ describe("resolveDefaultAccountInstance", () => {
   it("ignores a saved account outside the thread's account group", () => {
     const split = [account("hieu"), account("other", { group: "claude:home:/elsewhere" })];
     expect(resolve({ claudeAgent: "other" }, { entries: split, selected: split[0] })).toBeNull();
+  });
+
+  it("keeps the account of a started thread or of a draft the user picked by hand", () => {
+    expect(resolve({ claudeAgent: "dung" }, { keepOwnAccount: true })).toBeNull();
   });
 
   it("does nothing with merge accounts off", () => {

@@ -117,15 +117,17 @@ interface DefaultAccountEntry extends GroupableEntry {
 /**
  * Find the account a new thread starts on: the saved default of the selected account's provider
  * when it is a usable sibling in the same history group, otherwise null (Auto, as before).
+ * `keepOwnAccount` is true once the thread has started or its account was picked by hand.
  */
 export function resolveDefaultAccountInstance<T extends DefaultAccountEntry>(input: {
   readonly entries: ReadonlyArray<T>;
   readonly selected: T | undefined;
   readonly defaults: Readonly<Partial<Record<ProviderDriverKind, DefaultAccountChoice>>>;
   readonly mergeAccounts: boolean;
+  readonly keepOwnAccount: boolean;
 }): T | null {
   const { selected } = input;
-  if (!input.mergeAccounts || selected === undefined) return null;
+  if (input.keepOwnAccount || !input.mergeAccounts || selected === undefined) return null;
   const choice = input.defaults[selected.driverKind];
   if (choice === undefined || choice === "auto") return null;
   const target = input.entries.find((entry) => entry.instanceId === choice);

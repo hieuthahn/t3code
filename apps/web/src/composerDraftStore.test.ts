@@ -1586,6 +1586,25 @@ describe("composerDraftStore modelSelection", () => {
     );
   });
 
+  it("keeps a pinned account when a trait edit rewrites the selection", () => {
+    const store = useComposerDraftStore.getState();
+    store.setModelSelection(threadRef, {
+      ...modelSelection(CODEX_DRIVER, "gpt-5.4", { reasoningEffort: "low" }),
+      accountChoice: "pinned",
+    });
+
+    store.setProviderModelOptions(
+      threadRef,
+      CODEX_DRIVER,
+      toSelections({ reasoningEffort: "xhigh" }),
+    );
+
+    expect(
+      draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionByProvider[CODEX_INSTANCE]
+        ?.accountChoice,
+    ).toBe("pinned");
+  });
+
   // regression: #6011 new threads ignored project default models unless edits are marked explicit
   it("marks trait edits as explicit model intent", () => {
     const store = useComposerDraftStore.getState();

@@ -398,6 +398,13 @@ describe("resolveDefaultAccountInstance", () => {
     expect(resolve({})).toBeNull();
   });
 
+  it("keeps the saved default after a trait edit but yields to another picked account", () => {
+    expect(resolve({ claudeAgent: "dung" }, { explicitDraftInstanceId: id("dung") })).toBe(
+      id("dung"),
+    );
+    expect(resolve({ claudeAgent: "dung" }, { explicitDraftInstanceId: id("ai") })).toBeNull();
+  });
+
   it("starts on Auto when the saved default is auto", () => {
     expect(resolve({ claudeAgent: "auto" })).toBeNull();
   });

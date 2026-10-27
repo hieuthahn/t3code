@@ -117,7 +117,8 @@ interface DefaultAccountEntry extends GroupableEntry {
 /**
  * Find the account a new thread starts on: the saved default of the selected account's provider
  * when it is a usable sibling in the same history group, otherwise null (Auto, as before).
- * `keepOwnAccount` is true once the thread has started or its account was picked by hand.
+ * `keepOwnAccount` is true once the thread has started. `explicitDraftInstanceId` is the account
+ * the draft was last set on by hand or by a trait edit, so only a different account overrides the default.
  */
 export function resolveDefaultAccountInstance<T extends DefaultAccountEntry>(input: {
   readonly entries: ReadonlyArray<T>;
@@ -125,6 +126,7 @@ export function resolveDefaultAccountInstance<T extends DefaultAccountEntry>(inp
   readonly defaults: Readonly<Partial<Record<ProviderDriverKind, DefaultAccountChoice>>>;
   readonly mergeAccounts: boolean;
   readonly keepOwnAccount: boolean;
+  readonly explicitDraftInstanceId?: ProviderInstanceId | null;
 }): T | null {
   const { selected } = input;
   if (input.keepOwnAccount || !input.mergeAccounts || selected === undefined) return null;
@@ -140,6 +142,8 @@ export function resolveDefaultAccountInstance<T extends DefaultAccountEntry>(inp
   ) {
     return null;
   }
+  const draftInstanceId = input.explicitDraftInstanceId ?? null;
+  if (draftInstanceId !== null && draftInstanceId !== target.instanceId) return null;
   return target;
 }
 

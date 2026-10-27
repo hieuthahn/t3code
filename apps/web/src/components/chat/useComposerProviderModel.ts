@@ -79,7 +79,9 @@ export function useComposerProviderModel(
     selected: selection.selectedProviderEntry,
     defaults: defaultAccountByDriver,
     mergeAccounts,
-    keepOwnAccount: threadStarted || draftModelState.modelSelectionExplicit === true,
+    keepOwnAccount: threadStarted,
+    explicitDraftInstanceId:
+      draftModelState.modelSelectionExplicit === true ? draftModelState.activeProvider : null,
   });
   const selectedProviderEntry = defaultAccountEntry ?? selection.selectedProviderEntry;
   const selectedInstanceId =

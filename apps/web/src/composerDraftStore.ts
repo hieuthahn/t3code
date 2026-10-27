@@ -3061,11 +3061,16 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             const nextMap = { ...base.modelSelectionByProvider };
             const currentForProvider = nextMap[instanceKey];
             if (providerOpts) {
-              nextMap[instanceKey] = createModelSelection(
-                instanceKey,
-                currentForProvider?.model ?? fallbackModel,
-                providerOpts,
-              );
+              nextMap[instanceKey] = {
+                ...createModelSelection(
+                  instanceKey,
+                  currentForProvider?.model ?? fallbackModel,
+                  providerOpts,
+                ),
+                ...(currentForProvider?.accountChoice === "pinned"
+                  ? { accountChoice: "pinned" as const }
+                  : {}),
+              };
             } else if (currentForProvider && (currentForProvider.options?.length ?? 0) > 0) {
               const { options: _, ...rest } = currentForProvider;
               nextMap[instanceKey] = rest as ModelSelection;

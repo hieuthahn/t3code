@@ -313,6 +313,9 @@ export const LoadBalancingWeights = Schema.Record(
   Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 100 })),
 );
 
+export const DefaultAccountChoice = Schema.Union([Schema.Literal("auto"), ProviderInstanceId]);
+export type DefaultAccountChoice = typeof DefaultAccountChoice.Type;
+
 export const DiffColorScheme = Schema.Literals(["red-green", "blue-orange"]);
 
 export const ChatWidth = Schema.Literals(["comfortable", "wide", "full"]);
@@ -1332,6 +1335,10 @@ export const ServerSettings = Schema.Struct({
   ),
   /** Show one model row per account group in the model picker and pick the account itself. */
   modelPickerMergeAccounts: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /** Account a new thread starts on, per provider driver: "auto" or a provider instance id. */
+  defaultAccountByDriver: Schema.Record(ProviderDriverKind, DefaultAccountChoice).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
   /** Move a thread to a roomier account at a turn boundary once a usage threshold is crossed. */
   earlyAccountSwitch: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /** Interrupt a running turn and continue it on a roomier account. Needs `earlyAccountSwitch`. */
@@ -1711,6 +1718,7 @@ export const ServerSettingsPatch = Schema.Struct({
   autoResumeLimitedThreads: Schema.optionalKey(Schema.Boolean),
   limitedThreadSwitch: Schema.optionalKey(LimitedThreadSwitchMode),
   modelPickerMergeAccounts: Schema.optionalKey(Schema.Boolean),
+  defaultAccountByDriver: Schema.optionalKey(Schema.Record(ProviderDriverKind, DefaultAccountChoice)),
   earlyAccountSwitch: Schema.optionalKey(Schema.Boolean),
   midTurnAccountSwitch: Schema.optionalKey(Schema.Boolean),
   balanceNewThreads: Schema.optionalKey(Schema.Boolean),

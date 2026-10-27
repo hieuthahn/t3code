@@ -250,6 +250,7 @@ describe("pendingSwitchStep", () => {
 
 const runSweeps = (input: {
   readonly earlyAccountSwitch: boolean;
+  readonly midTurnAccountSwitch?: boolean;
   readonly openItems?: ReadonlyArray<OrchestrationV2TurnItem>;
   readonly peerPercent?: number;
 }) =>
@@ -297,7 +298,10 @@ const runSweeps = (input: {
           projections,
           threads,
           journalLayer,
-          ServerSettings.layerTest({ earlyAccountSwitch: input.earlyAccountSwitch }),
+          ServerSettings.layerTest({
+            earlyAccountSwitch: input.earlyAccountSwitch,
+            midTurnAccountSwitch: input.midTurnAccountSwitch ?? true,
+          }),
         ),
       ),
     );
@@ -329,6 +333,14 @@ describe("mid-turn account switch sweep", () => {
     Effect.gen(function* () {
       const result = yield* runSweeps({ earlyAccountSwitch: false });
       assert.deepEqual(result.dispatched, []);
+    }),
+  );
+
+  it.effect("does nothing while mid-turn switching is off", () =>
+    Effect.gen(function* () {
+      const result = yield* runSweeps({ earlyAccountSwitch: true, midTurnAccountSwitch: false });
+      assert.deepEqual(result.dispatched, []);
+      assert.equal(result.snapshots, 0);
     }),
   );
 

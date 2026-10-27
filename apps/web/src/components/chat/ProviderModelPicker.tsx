@@ -52,6 +52,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   triggerClassName?: string;
   triggerLabel?: string;
   triggerSuffix?: string | undefined;
+  autoAccountLabel?: string | undefined;
+  autoAccountName?: string | undefined;
   triggerTooltip?: ReactNode;
   triggerAriaLabel?: string;
   onOpenChange?: (open: boolean) => void;
@@ -201,7 +203,14 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   const allModelNames = selectedEntries
     ? selectedEntries.map((selection) => selection.label).join(", ") || "Choose models"
     : undefined;
-  const triggerTooltipText = props.triggerLabel ?? allModelNames ?? triggerLabel;
+  const showAutoAccount =
+    !selectedEntries && props.autoAccountLabel !== undefined && props.autoAccountName !== undefined;
+  const triggerSuffix =
+    props.triggerSuffix ?? (showAutoAccount ? `· ${props.autoAccountLabel}` : undefined);
+  const triggerTooltipText = [
+    props.triggerLabel ?? allModelNames ?? triggerLabel,
+    ...(showAutoAccount ? [`Auto mode, running on ${props.autoAccountName}`] : []),
+  ].join(" · ");
   const triggerTooltipContent =
     props.triggerTooltip === undefined ? (
       shortcutLabel ? (
@@ -296,10 +305,10 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
               }
             >
               {props.triggerLabel ?? multipleLabel ?? triggerTitle}
-              {props.triggerSuffix === undefined || selectedEntries ? null : (
+              {triggerSuffix === undefined || selectedEntries ? null : (
                 <>
                   {" "}
-                  <span className="text-muted-foreground">{props.triggerSuffix}</span>
+                  <span className="text-muted-foreground">{triggerSuffix}</span>
                 </>
               )}
             </TooltipTrigger>

@@ -5,6 +5,7 @@ import { type AppModelOption } from "../../modelSelection";
 import { CircleAlertIcon } from "lucide-react";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerControl, ComposerControlSeparator } from "./ComposerControl";
+import { resolveThreadAutoAccount } from "./modelPickerAccountGroups";
 import { ComposerTeamControl } from "./ComposerTeamControl";
 import { ComposerTokenSaverControl, supportsTokenSaver } from "./ComposerTokenSaverControl";
 import { TeamModelsTooltip } from "./TeamModelsTooltip";
@@ -28,7 +29,7 @@ import { useState } from "react";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { useDraftComposerSettings } from "~/draftComposerSettingsStore";
-import { useEnvironmentSettings } from "~/hooks/useSettings";
+import { useEnvironmentSettings, useModelPickerMergeAccounts } from "~/hooks/useSettings";
 import { cn } from "~/lib/utils";
 import { useThreadShell } from "~/state/entities";
 import {
@@ -78,6 +79,7 @@ export function ComposerControlsBar(props: {
   selectedModelSelection: ModelSelection;
   onProviderModelSelect: ChatComposerProps["onProviderModelSelect"];
   activeThreadModelSelection: ChatComposerProps["activeThreadModelSelection"];
+  threadStarted: boolean;
   selectedModelForPickerWithCustomFallback: string;
   lockedProvider: ChatComposerProps["lockedProvider"];
   lockedContinuationGroupKey: string | null;
@@ -127,6 +129,7 @@ export function ComposerControlsBar(props: {
     selectedModelSelection,
     onProviderModelSelect,
     activeThreadModelSelection,
+    threadStarted,
     selectedModelForPickerWithCustomFallback,
     lockedProvider,
     lockedContinuationGroupKey,
@@ -157,6 +160,15 @@ export function ComposerControlsBar(props: {
             <TeamModelsTooltip team={team} modelOptionsByInstance={modelOptionsByInstance} />
           ),
         };
+  const mergeAccounts = useModelPickerMergeAccounts(environmentId);
+  const autoAccount = resolveThreadAutoAccount({
+    mergeAccounts,
+    accountPinned: selectedModelSelection.accountChoice === "pinned",
+    threadStarted: routeKind === "server" && threadStarted,
+    threadInstanceId: activeThreadModelSelection?.instanceId,
+    selectedInstanceId,
+    entries: providerInstanceEntries,
+  });
   const [tokenSaverOpen, setTokenSaverOpen] = useState(false);
   const [overflowAnchor, setOverflowAnchor] = useState<HTMLDivElement | null>(null);
   // The mode block, which holds the Saver button, is the first to hide when the footer is tight.
@@ -319,6 +331,8 @@ export function ComposerControlsBar(props: {
       onOpenChange={onModelPickerOpenChange}
       getModelDisabledReason={getModelDisabledReason}
       onOpenProviderSetup={onOpenProviderSetup}
+      autoAccountLabel={autoAccount?.label}
+      autoAccountName={autoAccount?.name}
       {...teamPickerProps}
     />
   );

@@ -8,6 +8,7 @@ import {
   mergeModelPickerAccountModels,
   mergeModelPickerAccountTabs,
   resolveModelPickerAccountAction,
+  resolveThreadAutoAccount,
   sameAccountGroup,
   shortAccountLabels,
 } from "./modelPickerAccountGroups";
@@ -257,5 +258,73 @@ describe("accountBarOffersSignIn", () => {
         barInstanceIds: [id("viet")],
       }),
     ).toBe(false);
+  });
+});
+
+describe("resolveThreadAutoAccount", () => {
+  const named = (instanceId: string, displayName: string, group: string | null = GROUP) => ({
+    ...entry(instanceId, group),
+    displayName,
+  });
+  const entries = [
+    named("home", "Claude Home"),
+    named("work", "Claude Work"),
+    named("solo", "Solo", null),
+  ];
+  const base = {
+    mergeAccounts: true,
+    accountPinned: false,
+    threadStarted: true,
+    threadInstanceId: id("work"),
+    selectedInstanceId: id("home"),
+    entries,
+  };
+
+  it("names the account the server placed the thread on, not the one the draft holds", () => {
+    expect(resolveThreadAutoAccount(base)).toEqual({ label: "Work", name: "Claude Work" });
+    expect(resolveThreadAutoAccount({ ...base, selectedInstanceId: id("work") })?.label).toBe(
+      "Work",
+    );
+  });
+
+  it("follows the thread when the server moves it to another account", () => {
+    expect(resolveThreadAutoAccount({ ...base, threadInstanceId: id("home") })?.label).toBe("Home");
+  });
+
+  it("stays quiet when pinned, merge is off, or the thread has not run", () => {
+    expect(resolveThreadAutoAccount({ ...base, accountPinned: true })).toBeNull();
+    expect(resolveThreadAutoAccount({ ...base, mergeAccounts: false })).toBeNull();
+    expect(resolveThreadAutoAccount({ ...base, threadStarted: false })).toBeNull();
+    expect(resolveThreadAutoAccount({ ...base, threadInstanceId: undefined })).toBeNull();
+  });
+
+  it("stays quiet when no other account shares the history", () => {
+    expect(
+      resolveThreadAutoAccount({
+        ...base,
+        threadInstanceId: id("solo"),
+        selectedInstanceId: id("solo"),
+      }),
+    ).toBeNull();
+    expect(
+      resolveThreadAutoAccount({ ...base, entries: [named("work", "Claude Work")] }),
+    ).toBeNull();
+  });
+
+  it("stays quiet when the thread's account is missing or the draft left its group", () => {
+    expect(resolveThreadAutoAccount({ ...base, threadInstanceId: id("gone") })).toBeNull();
+    expect(resolveThreadAutoAccount({ ...base, selectedInstanceId: id("solo") })).toBeNull();
+  });
+
+  it("uses the email when names share no first word", () => {
+    const mixed = [named("a", "viet@x.com"), named("b", "dung@x.com")];
+    expect(
+      resolveThreadAutoAccount({
+        ...base,
+        entries: mixed,
+        threadInstanceId: id("b"),
+        selectedInstanceId: id("a"),
+      })?.label,
+    ).toBe("dung");
   });
 });

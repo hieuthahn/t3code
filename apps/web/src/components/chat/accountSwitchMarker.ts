@@ -80,6 +80,15 @@ export function resolveRunAccountLabel(input: {
 
 const ACCOUNT_SWITCH_NOTICE_SUFFIX = ":signal:account-switch";
 
+interface AccountSwitchSplit<Entry> {
+  readonly entries: ReadonlyArray<Entry>;
+  readonly reasons: ReadonlyMap<RunId, string>;
+}
+
+// useIncrementalTimelineRows sets state during render when its entries change identity, so a
+// fresh array on every call made MessagesTimeline re-render forever.
+const splitsByEntries = new WeakMap<ReadonlyArray<unknown>, AccountSwitchSplit<unknown>>();
+
 /**
  * Take the server's account switch notices out of the timeline, keyed by run, so their reason
  * reads in the switch divider instead of as a second row.
@@ -92,7 +101,9 @@ export function splitAccountSwitchNotices<
   },
 >(
   entries: ReadonlyArray<Entry>,
-): { readonly entries: ReadonlyArray<Entry>; readonly reasons: ReadonlyMap<RunId, string> } {
+): AccountSwitchSplit<Entry> {
+  const cached = splitsByEntries.get(entries) as AccountSwitchSplit<Entry> | undefined;
+  if (cached) return cached;
   const reasons = new Map<RunId, string>();
   const kept = entries.filter((entry) => {
     const runId = entry.entry?.runId;
@@ -102,5 +113,7 @@ export function splitAccountSwitchNotices<
     if (entry.entry?.label) reasons.set(runId, entry.entry.label);
     return false;
   });
-  return reasons.size === 0 ? { entries, reasons } : { entries: kept, reasons };
+  const split = reasons.size === 0 ? { entries, reasons } : { entries: kept, reasons };
+  splitsByEntries.set(entries, split);
+  return split;
 }

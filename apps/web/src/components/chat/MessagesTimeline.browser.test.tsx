@@ -237,6 +237,29 @@ describe("MessagesTimeline messages", () => {
   });
 });
 
+describe("MessagesTimeline account switch notices", () => {
+  it("renders a thread whose run switched accounts", async () => {
+    setup();
+    const runId = RunId.make("run-2");
+    await using screen = await renderTimeline([
+      message("Continue", { runId }),
+      {
+        id: "turn-item:run:run-2:signal:account-switch",
+        kind: "work",
+        createdAt: CREATED_AT,
+        entry: {
+          id: "work-account-switch",
+          createdAt: CREATED_AT,
+          label: "Switched to Claude hieu from Claude viet",
+          tone: "info",
+          runId,
+        },
+      },
+    ]);
+    expect(screen.text()).toContain("Continue");
+  });
+});
+
 describe("MessagesTimeline automation prompts", () => {
   it("folds an automation prompt into a bubble titled by its task", async () => {
     setup({ scheduledTasks: [{ id: TASK_ID, title: "Nightly triage" }] });

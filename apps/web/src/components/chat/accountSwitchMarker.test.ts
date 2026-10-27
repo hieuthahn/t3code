@@ -119,4 +119,12 @@ describe("splitAccountSwitchNotices", () => {
     const entries = [other];
     expect(splitAccountSwitchNotices(entries).entries).toBe(entries);
   });
+
+  it("returns the same split for the same list", () => {
+    const entries = [notice, other];
+    const first = splitAccountSwitchNotices(entries);
+    const second = splitAccountSwitchNotices(entries);
+    expect(second.entries).toBe(first.entries);
+    expect(second.reasons).toBe(first.reasons);
+  });
 });

@@ -345,6 +345,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["usage limit threshold percent 5 hour weekly early switch account rotate slider"],
   },
   {
+    id: "mid-turn-account-switch",
+    title: "Switch accounts during a turn",
+    to: "/settings/general",
+    searchTerms: ["mid turn running interrupt account switch prompt cache rotate"],
+  },
+  {
     id: "switch-pinned-accounts",
     title: "Switch pinned accounts too",
     to: "/settings/general",

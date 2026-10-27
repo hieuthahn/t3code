@@ -1365,6 +1365,8 @@ export const ServerSettings = Schema.Struct({
   modelPickerMergeAccounts: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /** Move a thread to a roomier account at a turn boundary once a usage threshold is crossed. */
   earlyAccountSwitch: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /** Interrupt a running turn and continue it on a roomier account. Needs `earlyAccountSwitch`. */
+  midTurnAccountSwitch: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   earlySwitchSessionThreshold: AccountSwitchThresholdPercent.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_ACCOUNT_SWITCH_THRESHOLD_PERCENT)),
   ),
@@ -1758,6 +1760,7 @@ export const ServerSettingsPatch = Schema.Struct({
   limitedThreadSwitch: Schema.optionalKey(LimitedThreadSwitchMode),
   modelPickerMergeAccounts: Schema.optionalKey(Schema.Boolean),
   earlyAccountSwitch: Schema.optionalKey(Schema.Boolean),
+  midTurnAccountSwitch: Schema.optionalKey(Schema.Boolean),
   earlySwitchSessionThreshold: Schema.optionalKey(AccountSwitchThresholdPercent),
   earlySwitchWeeklyThreshold: Schema.optionalKey(AccountSwitchThresholdPercent),
   switchPinnedAccounts: Schema.optionalKey(Schema.Boolean),

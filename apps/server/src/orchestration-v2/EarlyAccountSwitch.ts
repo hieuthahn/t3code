@@ -254,7 +254,10 @@ export const make = Effect.gen(function* () {
     thread: EarlySwitchThread,
   ) {
     const preferences = yield* settings.getSettings;
-    const balanceNewThread = preferences.modelPickerMergeAccounts && thread.hasStartedRun === false;
+    const balanceNewThread =
+      preferences.modelPickerMergeAccounts &&
+      preferences.balanceNewThreads &&
+      thread.hasStartedRun === false;
     const command = preferences.modelPickerMergeAccounts
       ? followThreadAccount(requested, thread, yield* registry.getProviders)
       : requested;

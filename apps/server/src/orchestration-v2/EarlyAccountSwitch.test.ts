@@ -299,6 +299,7 @@ describe("EarlyAccountSwitch.rewrite", () => {
   const harness = Effect.fn("EarlyAccountSwitchTest.harness")(function* (input: {
     readonly providers: ReadonlyArray<ServerProvider>;
     readonly mergeAccounts?: boolean;
+    readonly balanceNewThreads?: boolean;
     readonly refresh?: (
       instanceId: ProviderInstanceId,
       publish: (providers: ReadonlyArray<ServerProvider>) => Effect.Effect<void>,
@@ -329,6 +330,9 @@ describe("EarlyAccountSwitch.rewrite", () => {
             ...(input.mergeAccounts === undefined
               ? {}
               : { modelPickerMergeAccounts: input.mergeAccounts }),
+            ...(input.balanceNewThreads === undefined
+              ? {}
+              : { balanceNewThreads: input.balanceNewThreads }),
             earlySwitchSessionThreshold: 90,
             earlySwitchWeeklyThreshold: 90,
           }),
@@ -417,13 +421,40 @@ describe("EarlyAccountSwitch.rewrite", () => {
       assert.isTrue(Option.isNone(yield* stays.journal.take(thread.id, dung)));
       assert.isTrue(Option.isNone(yield* stays.journal.take(thread.id, hieu)));
 
-      const balanced = yield* harness({ providers: pair(provider(hieu, 50), provider(dung, 20)) });
+      const balanced = yield* harness({
+        providers: pair(provider(hieu, 50), provider(dung, 20)),
+        balanceNewThreads: true,
+      });
       const rewritten = yield* balanced.service.rewrite(command(), {
         ...thread,
         hasStartedRun: false,
       });
       assert.equal(rewritten.modelSelection?.instanceId, dung);
       assert.isTrue(Option.isNone(yield* balanced.journal.take(thread.id, dung)));
+    }),
+  );
+
+  it.effect("keeps a new thread on its account unless balanceNewThreads is on", () =>
+    Effect.gen(function* () {
+      const providers = pair(provider(hieu, 50), provider(dung, 20));
+      const fresh = { ...thread, hasStartedRun: false };
+      const off = yield* harness({ providers, mergeAccounts: true, balanceNewThreads: false });
+      assert.isUndefined((yield* off.service.rewrite(command(), fresh)).modelSelection);
+      const unset = yield* harness({ providers, mergeAccounts: true });
+      assert.isUndefined((yield* unset.service.rewrite(command(), fresh)).modelSelection);
+      const on = yield* harness({ providers, mergeAccounts: true, balanceNewThreads: true });
+      assert.equal((yield* on.service.rewrite(command(), fresh)).modelSelection?.instanceId, dung);
+    }),
+  );
+
+  it.effect("leaves a started thread alone whatever balanceNewThreads says", () =>
+    Effect.gen(function* () {
+      const providers = pair(provider(hieu, 50), provider(dung, 20));
+      for (const balanceNewThreads of [false, true]) {
+        const { service } = yield* harness({ providers, mergeAccounts: true, balanceNewThreads });
+        const rewritten = yield* service.rewrite(command(), { ...thread, hasStartedRun: true });
+        assert.isUndefined(rewritten.modelSelection);
+      }
     }),
   );
 
@@ -481,6 +512,7 @@ describe("EarlyAccountSwitch.rewrite", () => {
           provider(hieu, 95, "authenticated", STALE_AT),
           provider(dung, 20, "authenticated", STALE_AT),
         ),
+        balanceNewThreads: true,
       });
       const pinned = command({
         modelSelection: { instanceId: hieu, model: "claude-opus-5-5", accountChoice: "pinned" },

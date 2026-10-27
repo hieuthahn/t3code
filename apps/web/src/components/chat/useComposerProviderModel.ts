@@ -4,6 +4,7 @@ import {
   useComposerDraftModelState,
 } from "../../composerDraftStore";
 import {
+  type EnvironmentId,
   type ModelSelection,
   type ProjectId,
   ProviderDriverKind,
@@ -20,6 +21,8 @@ import {
 import { type UnifiedSettings } from "@t3tools/contracts/settings";
 import { getComposerPromptInjectionState, getComposerProviderState } from "./composerProviderState";
 import { resolveComposerProviderSelection } from "../ChatView.logic";
+import { useDefaultAccountByDriver, useModelPickerMergeAccounts } from "../../hooks/useSettings";
+import { resolveDefaultAccountInstance } from "./modelPickerAccountGroups";
 
 const NO_PROVIDER_MODELS: ServerProvider["models"] = [];
 
@@ -33,6 +36,8 @@ export function useComposerProviderModel(
     readonly providerStatuses: ReadonlyArray<ServerProvider>;
     readonly settings: UnifiedSettings;
     readonly activeProjectId: ProjectId | null;
+    readonly environmentId: EnvironmentId;
+    readonly threadStarted: boolean;
     readonly threadRef: ScopedThreadRef | DraftId;
     readonly threadModelSelection: ModelSelection | null | undefined;
     readonly projectModelSelection: ModelSelection | null | undefined;
@@ -43,6 +48,8 @@ export function useComposerProviderModel(
     providerStatuses,
     settings,
     activeProjectId,
+    environmentId,
+    threadStarted,
     threadRef,
     threadModelSelection,
     projectModelSelection,
@@ -65,10 +72,22 @@ export function useComposerProviderModel(
     lockedProvider,
     lockedInstanceId,
   });
+  const defaultAccountByDriver = useDefaultAccountByDriver(environmentId);
+  const mergeAccounts = useModelPickerMergeAccounts(environmentId);
+  const defaultAccountEntry = resolveDefaultAccountInstance({
+    entries: providerInstanceEntries,
+    selected: selection.selectedProviderEntry,
+    defaults: defaultAccountByDriver,
+    mergeAccounts,
+    keepOwnAccount: threadStarted,
+    explicitDraftInstanceId:
+      draftModelState.modelSelectionExplicit === true ? draftModelState.activeProvider : null,
+  });
+  const selectedProviderEntry = defaultAccountEntry ?? selection.selectedProviderEntry;
   const selectedInstanceId =
-    selection.selectedProviderEntry?.instanceId ?? NO_PROVIDER_MODEL_SELECTION.instanceId;
+    selectedProviderEntry?.instanceId ?? NO_PROVIDER_MODEL_SELECTION.instanceId;
   const selectedProvider: ProviderDriverKind =
-    selection.selectedProviderEntry?.driverKind ?? selection.requestedDriverKind;
+    selectedProviderEntry?.driverKind ?? selection.requestedDriverKind;
   const modelState = deriveEffectiveComposerModelState({
     draft: draftModelState,
     providers: providerStatuses,
@@ -78,7 +97,7 @@ export function useComposerProviderModel(
     projectModelSelection,
     settings,
   });
-  const selectedProviderModels = selection.selectedProviderEntry?.models ?? NO_PROVIDER_MODELS;
+  const selectedProviderModels = selectedProviderEntry?.models ?? NO_PROVIDER_MODELS;
   const composerProviderState = getComposerProviderState({
     provider: selectedProvider,
     model: modelState.selectedModel,
@@ -90,6 +109,8 @@ export function useComposerProviderModel(
   return {
     providerInstanceEntries,
     ...selection,
+    selectedProviderEntry,
+    defaultAccountPinned: defaultAccountEntry !== null,
     selectedInstanceId,
     selectedProvider,
     selectedProviderModels,

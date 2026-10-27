@@ -53,6 +53,7 @@ import {
   useEnvironmentModelPreferences,
   useBalanceNewThreads,
   useModelPickerMergeAccounts,
+  useUpdateEnvironmentSettings,
   useToggleEnvironmentModelFavorite,
 } from "~/hooks/useSettings";
 import { announce } from "~/lib/announce";
@@ -506,6 +507,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const toggleFavorite = useToggleEnvironmentModelFavorite(props.environmentId);
   const mergeAccounts = useModelPickerMergeAccounts(props.environmentId);
   const balanceNewThreads = useBalanceNewThreads(props.environmentId);
+  const updateEnvironmentSettings = useUpdateEnvironmentSettings(props.environmentId);
   const multiSelectMode = onToggleModel !== undefined && props.multiSelectMode === true;
   const activeGroupKey = activeEntry?.continuationGroupKey;
   const groupAccounts =
@@ -596,15 +598,17 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     return resolvedModel;
   };
 
-  const applyAccountPick = (pick: ProviderInstanceId | "auto") => {
-    if (props.multiSelectMode === true) return;
+  const applyAccountPick = (pick: ProviderInstanceId | "auto"): boolean => {
+    if (props.multiSelectMode === true) return true;
     const instanceId = pick === "auto" ? props.activeInstanceId : pick;
     const entry = instanceEntries.find((candidate) => candidate.instanceId === instanceId);
     const options = modelOptionsByInstance.get(instanceId);
     const model =
       entry && options ? resolveSelectableModel(entry.driverKind, props.model, options) : null;
-    if (!model) return;
+    if (!entry || !model) return false;
+    updateEnvironmentSettings({ defaultAccountByDriver: { [entry.driverKind]: pick } });
     props.onAccountChoiceChange?.(instanceId, model, pick === "auto" ? "auto" : "pinned");
+    return true;
   };
 
   const modelJumpShortcutContext = {
@@ -1195,8 +1199,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                           (entry) => entry.instanceId === value && isSignedOut(entry),
                         );
                         if (signedOut === undefined) {
-                          setAccountPick(value);
-                          applyAccountPick(value);
+                          if (applyAccountPick(value)) setAccountPick(value);
                           return;
                         }
                         onRequestClose?.();
@@ -1206,7 +1209,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                       <Tooltip>
                         <TooltipTrigger render={<Toggle value="auto">Auto</Toggle>} />
                         <TooltipPopup side="top">
-                          Each new thread starts on the signed-in account with the most quota left.
+                          {balanceNewThreads
+                            ? "Each new thread starts on the signed-in account with the most quota left."
+                            : "New threads stay on the account they already use."}
                         </TooltipPopup>
                       </Tooltip>
                       {groupAccounts.map((entry, index) => {

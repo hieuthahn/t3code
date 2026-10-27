@@ -500,3 +500,18 @@ describe("balanceNewThreads", () => {
     expect(decodeServerSettingsPatch({}).balanceNewThreads).toBeUndefined();
   });
 });
+
+describe("defaultAccountByDriver", () => {
+  it("decodes a missing key to an empty record so old settings files still load", () => {
+    expect(decodeServerSettings({}).defaultAccountByDriver).toEqual({});
+    expect(DEFAULT_SERVER_SETTINGS.defaultAccountByDriver).toEqual({});
+    expect(decodeServerSettingsPatch({}).defaultAccountByDriver).toBeUndefined();
+  });
+
+  it("keeps one choice per driver", () => {
+    const decoded = decodeServerSettings({
+      defaultAccountByDriver: { claudeAgent: "claude_ai", codex: "auto" },
+    });
+    expect(decoded.defaultAccountByDriver).toEqual({ claudeAgent: "claude_ai", codex: "auto" });
+  });
+});

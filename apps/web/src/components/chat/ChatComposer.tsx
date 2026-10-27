@@ -951,10 +951,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerModelOptions,
     selectedModel,
     composerProviderState,
+    defaultAccountPinned,
   } = useComposerProviderModel({
     providerStatuses,
     settings,
     activeProjectId,
+    environmentId,
+    threadStarted: threadShellHasStarted(props.activeThreadShell),
     threadRef: composerDraftTarget,
     threadModelSelection: activeThreadModelSelection,
     projectModelSelection: activeProjectDefaultModelSelection,
@@ -1027,6 +1030,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     interactionMode: requestedInteractionMode,
   });
   const selectedAccountPinned =
+    defaultAccountPinned ||
     (
       composerDraft.modelSelectionByProvider[selectedInstanceId] ??
       (activeThreadModelSelection?.instanceId === selectedInstanceId

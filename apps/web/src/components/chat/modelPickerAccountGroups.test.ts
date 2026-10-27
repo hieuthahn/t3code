@@ -8,6 +8,7 @@ import {
   mergeModelPickerAccountModels,
   mergeModelPickerAccountTabs,
   resolveModelPickerAccountAction,
+  resolveDefaultAccountInstance,
   resolveThreadAutoAccount,
   sameAccountGroup,
   shortAccountLabels,
@@ -354,5 +355,111 @@ describe("resolveThreadAutoAccount", () => {
         selectedInstanceId: id("a"),
       })?.label,
     ).toBe("dung");
+  });
+});
+
+describe("resolveDefaultAccountInstance", () => {
+  const CODEX_GROUP = "codex:home:/shared";
+  const account = (
+    instanceId: string,
+    overrides: {
+      driverKind?: string;
+      group?: string | undefined;
+      enabled?: boolean;
+      isAvailable?: boolean;
+      signedOut?: boolean;
+    } = {},
+  ) => ({
+    instanceId: id(instanceId),
+    driverKind: ProviderDriverKind.make(overrides.driverKind ?? "claudeAgent"),
+    continuationGroupKey: "group" in overrides ? overrides.group : GROUP,
+    displayName: instanceId,
+    enabled: overrides.enabled ?? true,
+    isAvailable: overrides.isAvailable ?? true,
+    snapshot: {
+      auth: { status: overrides.signedOut ? "unauthenticated" : "authenticated" },
+    } as ServerProvider,
+  });
+  const claude = [account("hieu"), account("ai"), account("dung")];
+  const resolve = (
+    defaults: Record<string, string>,
+    overrides: Partial<Parameters<typeof resolveDefaultAccountInstance>[0]> = {},
+  ) =>
+    resolveDefaultAccountInstance({
+      entries: claude,
+      selected: claude[0],
+      defaults: defaults as never,
+      mergeAccounts: true,
+      keepOwnAccount: false,
+      ...overrides,
+    })?.instanceId ?? null;
+
+  it("starts on the thread's own account when no default is saved", () => {
+    expect(resolve({})).toBeNull();
+  });
+
+  it("keeps the saved default after a trait edit but yields to another picked account", () => {
+    expect(resolve({ claudeAgent: "dung" }, { explicitDraftInstanceId: id("dung") })).toBe(
+      id("dung"),
+    );
+    expect(resolve({ claudeAgent: "dung" }, { explicitDraftInstanceId: id("ai") })).toBeNull();
+  });
+
+  it("starts on Auto when the saved default is auto", () => {
+    expect(resolve({ claudeAgent: "auto" })).toBeNull();
+  });
+
+  it("starts on the saved account of the thread's own provider", () => {
+    expect(resolve({ claudeAgent: "dung" })).toBe(id("dung"));
+  });
+
+  it("leaves one provider untouched by another provider's default", () => {
+    const codex = [account("codex-a", { driverKind: "codex", group: CODEX_GROUP })];
+    const entries = [...claude, ...codex];
+    expect(
+      resolveDefaultAccountInstance({
+        entries,
+        selected: codex[0],
+        defaults: { claudeAgent: id("dung") } as never,
+        mergeAccounts: true,
+        keepOwnAccount: false,
+      }),
+    ).toBeNull();
+    expect(
+      resolveDefaultAccountInstance({
+        entries,
+        selected: claude[0],
+        defaults: { codex: id("codex-a") } as never,
+        mergeAccounts: true,
+        keepOwnAccount: false,
+      }),
+    ).toBeNull();
+  });
+
+  it("falls back to Auto when the saved account was removed, disabled or signed out", () => {
+    expect(resolve({ claudeAgent: "gone" })).toBeNull();
+    const disabled = [account("hieu"), account("ai", { enabled: false })];
+    expect(resolve({ claudeAgent: "ai" }, { entries: disabled, selected: disabled[0] })).toBeNull();
+    const unavailable = [account("hieu"), account("ai", { isAvailable: false })];
+    expect(
+      resolve({ claudeAgent: "ai" }, { entries: unavailable, selected: unavailable[0] }),
+    ).toBeNull();
+    const signedOut = [account("hieu"), account("ai", { signedOut: true })];
+    expect(
+      resolve({ claudeAgent: "ai" }, { entries: signedOut, selected: signedOut[0] }),
+    ).toBeNull();
+  });
+
+  it("ignores a saved account outside the thread's account group", () => {
+    const split = [account("hieu"), account("other", { group: "claude:home:/elsewhere" })];
+    expect(resolve({ claudeAgent: "other" }, { entries: split, selected: split[0] })).toBeNull();
+  });
+
+  it("keeps the account of a started thread or of a draft the user picked by hand", () => {
+    expect(resolve({ claudeAgent: "dung" }, { keepOwnAccount: true })).toBeNull();
+  });
+
+  it("does nothing with merge accounts off", () => {
+    expect(resolve({ claudeAgent: "dung" }, { mergeAccounts: false })).toBeNull();
   });
 });

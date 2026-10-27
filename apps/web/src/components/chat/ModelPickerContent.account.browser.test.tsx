@@ -11,8 +11,11 @@ import { render } from "../../../test/render";
 import type { ProviderInstanceEntry } from "../../providerInstances";
 import { ModelPickerContent } from "./ModelPickerContent";
 
+const updateEnvironmentSettings = vi.hoisted(() => vi.fn());
+
 vi.mock(import("~/hooks/useSettings"), async (original) => ({
   ...(await original()),
+  useUpdateEnvironmentSettings: (() => updateEnvironmentSettings) as never,
   useModelPickerMergeAccounts: (() => true) as never,
   useToggleEnvironmentModelFavorite: (() => vi.fn()) as never,
 }));
@@ -58,6 +61,7 @@ function picker(
     accountChoice: "auto" | "pinned",
   ) => void,
   pinned = false,
+  modelOnlyOn?: string,
 ) {
   return (
     <ModelPickerContent
@@ -67,7 +71,14 @@ function picker(
       lockedProvider={null}
       instanceEntries={entries}
       modelOptionsByInstance={
-        new Map(entries.map((item) => [item.instanceId, [{ slug: MODEL, name: "Opus" }]]))
+        new Map(
+          entries.map((item) => [
+            item.instanceId,
+            modelOnlyOn === undefined || item.instanceId === modelOnlyOn
+              ? [{ slug: MODEL, name: "Opus" }]
+              : [],
+          ]),
+        )
       }
       terminalOpen={false}
       onInstanceModelChange={vi.fn()}
@@ -106,5 +117,30 @@ describe("ModelPickerContent account footer", () => {
     await using _screen = await render(picker(vi.fn(), true));
     expect(accountButton("viet").getAttribute("aria-pressed")).toBe("true");
     expect(accountButton("Auto").getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("saves each pick as the default account of the active provider only", async () => {
+    updateEnvironmentSettings.mockClear();
+    await using _screen = await render(picker(vi.fn()));
+    await userEvent.click(accountButton("hieu"));
+    expect(updateEnvironmentSettings).toHaveBeenLastCalledWith({
+      defaultAccountByDriver: { claudeAgent: ProviderInstanceId.make("claudeAgent") },
+    });
+    await userEvent.click(accountButton("Auto"));
+    expect(updateEnvironmentSettings).toHaveBeenLastCalledWith({
+      defaultAccountByDriver: { claudeAgent: "auto" },
+    });
+    expect(updateEnvironmentSettings).toHaveBeenCalledTimes(2);
+  });
+
+  it("changes nothing when the active model is unavailable on the picked account", async () => {
+    updateEnvironmentSettings.mockClear();
+    const onAccountChoiceChange = vi.fn();
+    await using _screen = await render(picker(onAccountChoiceChange, false, "claudeAgent_viet"));
+    await userEvent.click(accountButton("hieu"));
+    expect(updateEnvironmentSettings).not.toHaveBeenCalled();
+    expect(onAccountChoiceChange).not.toHaveBeenCalled();
+    expect(accountButton("hieu").getAttribute("aria-pressed")).toBe("false");
+    expect(accountButton("Auto").getAttribute("aria-pressed")).toBe("true");
   });
 });

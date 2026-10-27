@@ -16,6 +16,7 @@ type NameEdit = { readonly kind: "save-as" } | { readonly kind: "rename"; readon
 export function TeamProfileBar(props: {
   readonly profiles: ReadonlyArray<TeamProfile>;
   readonly selectedId: string | null;
+  readonly unmatchedName: string;
   readonly canWrite: boolean;
   readonly onSelect: (profile: TeamProfile) => void;
   readonly onSaveAs: (name: string) => void;
@@ -76,7 +77,7 @@ export function TeamProfileBar(props: {
         }}
       >
         <SelectTrigger size="sm" className="min-w-0 flex-1" aria-label="Team profile">
-          <SelectValue>{selected?.name ?? "Unsaved setup"}</SelectValue>
+          <SelectValue>{selected?.name ?? props.unmatchedName}</SelectValue>
         </SelectTrigger>
         <SelectPopup>
           {props.profiles.length === 0 ? (

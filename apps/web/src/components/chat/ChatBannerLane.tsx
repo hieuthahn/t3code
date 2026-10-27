@@ -24,7 +24,9 @@ export function ChatBannerLane(props: {
   threadErrorBannerKey: string | null;
   setThreadError: (threadId: ThreadId | null, error: string | null) => void;
   setThreadErrorBannerDismissTick: Dispatch<SetStateAction<number>>;
-  switchAction?: { label: string; disabled: boolean; onSwitch: () => void } | undefined;
+  switchAction?:
+    | { label: string; note?: string | null; disabled: boolean; onSwitch: () => void }
+    | undefined;
 }) {
   const {
     providerStatus,

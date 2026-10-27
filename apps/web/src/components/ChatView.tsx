@@ -195,6 +195,7 @@ import {
   resolveAccountSwitchThresholds,
 } from "@t3tools/shared/usageLimitSwitchCandidates";
 import { limitSwitchActionLabel } from "./chat/limitSwitchActionLabel";
+import { limitSwitchCacheWarning } from "./chat/limitSwitchCacheWarning";
 import { pinnedAccountBannerItem } from "./chat/PinnedAccountBanner";
 import {
   useClientSettings,
@@ -3382,6 +3383,7 @@ export default function ChatView(props: ChatViewProps) {
                   ? undefined
                   : {
                       label: limitSwitchTarget.actionLabel,
+                      note: limitSwitchCacheWarning(activeContextWindow?.usedTokens),
                       disabled: isResuming || isSendBusy,
                       onSwitch: () => void resumeThread(limitSwitchTarget.instanceId),
                     }

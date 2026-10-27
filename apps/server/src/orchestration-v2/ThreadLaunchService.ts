@@ -46,6 +46,7 @@ import * as ProjectService from "../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as AutoEffort from "../autoEffort/AutoEffortService.ts";
+import { autoTeamSetup } from "../team/autoTeam.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
@@ -261,26 +262,16 @@ const make = Effect.gen(function* () {
       Effect.map((settings) => settings.team),
       Effect.orElseSucceed(() => undefined),
     );
-    const defaultSetup = teamSettings?.defaultSetup ?? null;
-    if (defaultSetup === null) return null;
-    const savedAs = teamSettings?.profiles.find(
-      (profile) => JSON.stringify(profile.setup) === JSON.stringify(defaultSetup),
-    );
+    const auto = autoTeamSetup(teamSettings, input.modelSelection);
+    if (auto === undefined) return null;
     const team = yield* autoEffort.value.judgeTeam({
       threadId,
       modelSelection: input.modelSelection,
       text: message.text,
       attachmentCount: message.attachments.length,
-      teamName: savedAs?.name,
+      teamName: auto.name,
     });
-    if (!team) return null;
-    const { instanceId, model, options } = input.modelSelection;
-    const architect = {
-      instanceId,
-      model,
-      ...(options === undefined || options.length === 0 ? {} : { options: [...options] }),
-    };
-    return { ...defaultSetup, architect } satisfies TeamSetup;
+    return team ? auto.setup : null;
   });
 
   const readReceipt = (input: ThreadLaunchInput, commandId: CommandId) =>

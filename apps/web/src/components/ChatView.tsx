@@ -191,9 +191,11 @@ import {
 } from "../providerInstances";
 import {
   pinnedAccountWarning,
-  rankUsageLimitSwitchCandidates,
+  rankAskSwitchCandidates,
   resolveAccountSwitchThresholds,
 } from "@t3tools/shared/usageLimitSwitchCandidates";
+import { limitSwitchActionLabel } from "./chat/limitSwitchActionLabel";
+import { limitSwitchCacheWarning } from "./chat/limitSwitchCacheWarning";
 import { pinnedAccountBannerItem } from "./chat/PinnedAccountBanner";
 import {
   useClientSettings,
@@ -1206,7 +1208,7 @@ export default function ChatView(props: ChatViewProps) {
       return null;
     }
     const nowMs = Date.parse(`${limitSwitchNowMinute}:00.000Z`);
-    const target = rankUsageLimitSwitchCandidates({
+    const target = rankAskSwitchCandidates({
       providers: providerStatuses,
       currentInstanceId: activeThread.modelSelection.instanceId,
       nowMs,
@@ -1214,7 +1216,15 @@ export default function ChatView(props: ChatViewProps) {
     }).find((candidate) => candidate.usedPercent !== undefined);
     if (target === undefined) return null;
     const provider = providerStatuses.find((entry) => entry.instanceId === target.instanceId);
-    return { instanceId: target.instanceId, label: provider?.displayName ?? target.instanceId };
+    return {
+      instanceId: target.instanceId,
+      actionLabel: limitSwitchActionLabel({
+        accountLabel: provider?.displayName ?? target.instanceId,
+        lostPercent: target.lostPercent,
+        resetsAtMs: target.resetsAtMs,
+        nowMs,
+      }),
+    };
   })();
   const [dismissedPinnedWarning, setDismissedPinnedWarning] = useState<string | null>(null);
   const pinnedWarning = (() => {
@@ -3372,7 +3382,8 @@ export default function ChatView(props: ChatViewProps) {
                 limitSwitchTarget === null
                   ? undefined
                   : {
-                      label: `Switch to ${limitSwitchTarget.label} and continue`,
+                      label: limitSwitchTarget.actionLabel,
+                      note: limitSwitchCacheWarning(activeContextWindow?.usedTokens),
                       disabled: isResuming || isSendBusy,
                       onSwitch: () => void resumeThread(limitSwitchTarget.instanceId),
                     }

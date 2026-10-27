@@ -1,6 +1,7 @@
 import { shouldPreserveAssistantLineBreaks } from "@t3tools/shared/markdownPipeline";
 import { type RunId } from "@t3tools/contracts";
 import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";
+import { useAtomValue } from "@effect/atom-react";
 import { memo, use, useState } from "react";
 import { type ChatMessage, type TurnDiffSummary } from "../../types";
 import ChatMarkdown from "../ChatMarkdown";
@@ -13,6 +14,8 @@ import { ChangedFilesCard } from "./ChangedFilesTree";
 import { useFileContextMenuHandler } from "../../fileContextMenu";
 import { useProject, useThreadShell } from "../../state/entities";
 import { MessageCopyButton } from "./MessageCopyButton";
+import { resolveRunAccountLabel } from "./accountSwitchMarker";
+import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
 import { AssistantCitationSource } from "./AssistantCitationSource";
 import { resolveAssistantMessageCopyState } from "./MessagesTimeline.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -178,6 +181,7 @@ function AssistantMessageMeta({
       {projectedItem?.item.type === "assistant_message" ? (
         <AssistantForkButton projectedItem={projectedItem} />
       ) : null}
+      <AssistantRunAccount runId={projectedItem?.item.runId ?? null} />
       {!message.streaming && (
         <Tooltip>
           <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
@@ -189,6 +193,32 @@ function AssistantMessageMeta({
         </Tooltip>
       )}
     </div>
+  );
+}
+
+function AssistantRunAccount({ runId }: { runId: RunId | null }) {
+  const ctx = use(TimelineRowCtx);
+  // Providers are replaced on every usage probe, so select plain strings to skip re-renders.
+  const account = useAtomValue(
+    serverEnvironment.providersValueAtom(ctx.activeThreadEnvironmentId),
+    (providers) => {
+      const resolved = resolveRunAccountLabel({
+        runId,
+        runs: ctx.runs,
+        providers: providers ?? EMPTY_SERVER_PROVIDERS,
+      });
+      return resolved === null ? null : `${resolved.label}\0${resolved.name}`;
+    },
+  );
+  if (account === null) return null;
+  const [label, name] = account.split("\0");
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<p className="text-muted-foreground text-xs" />}>
+        {label}
+      </TooltipTrigger>
+      <TooltipPopup>Answered from {name}</TooltipPopup>
+    </Tooltip>
   );
 }
 

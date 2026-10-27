@@ -23,7 +23,7 @@ import { ThreadFind, ThreadFindCanvas } from "./chat/ThreadFindProvider";
 import { closeThreadFind, openThreadFind, useThreadFindOpen } from "./chat/threadFindStore";
 import { THREAD_FIND_BAR_RESERVED_HEIGHT } from "./chat/ThreadFindBar";
 import { usageLimitRecoveryBannerItem } from "./chat/UsageLimitRecoveryBanner";
-import { resolveDraftHeroState } from "./ChatView.logic";
+import { resolveDraftHeroState, turnRecapForDisplay } from "./ChatView.logic";
 import { useQueuedRunEdit } from "./chat/useQueuedRunEdit";
 import {
   isPaintOnlyThreadTimeline,
@@ -1925,7 +1925,14 @@ export default function ChatView(props: ChatViewProps) {
   const turnRecap = useThreadTurnRecap(isServerThread ? activeThreadRef : null);
   const turnRecapCard =
     turnRecap === null || !settings.turnRecaps || isWorking ? null : (
-      <TurnRecapCard key={turnRecap.summary} recap={turnRecap} onReply={sendAppMessageStable} />
+      <TurnRecapCard
+        key={turnRecap.summary}
+        recap={turnRecapForDisplay(
+          turnRecap,
+          pendingUserInputs.length > 0 || pendingApprovals.length > 0,
+        )}
+        onReply={sendAppMessageStable}
+      />
     );
   const queuedRunsControlRef = useRef<QueuedRunsControlHandle>(null);
 

@@ -196,7 +196,7 @@ const make = Effect.gen(function* () {
     const home = yield* HostProcess.HomeDirectory;
     const file = yield* fileSystem.readFileString(`${home}/.config/jev/.env`);
     return Option.fromNullishOr(parseJevKey(file));
-  }).pipe(Effect.catch(() => Effect.succeed(Option.none<string>())));
+  }).pipe(Effect.orElseSucceed(() => Option.none<string>()));
 
   const askJev = Effect.fn("AutoEffortService.askJev")(function* (key: string, input: JudgeInput) {
     const startedAt = yield* Clock.currentTimeMillis;

@@ -18,7 +18,6 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 
@@ -156,7 +155,7 @@ it.effect("task_cancel ends a delegated child's background native subagent", () 
             layerAdapters,
             Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
             Layer.mock(ProjectService.ProjectService)({
-              getById: () => Effect.succeed(Option.none()),
+              getById: () => Effect.succeedNone,
             }),
             Layer.mock(SecretRequests.SecretRequests)({}),
             Layer.mock(RemoteDelegation.RemoteDelegation)({}),

@@ -117,7 +117,7 @@ const make = Effect.gen(function* () {
     },
     Effect.timeoutOption(RECAP_DEADLINE_MS),
     Effect.asVoid,
-    Effect.catchCause(() => Effect.void),
+    Effect.ignoreCause(),
   );
 
   const subscribe: TurnRecapHubShape["subscribe"] = (threadId) =>

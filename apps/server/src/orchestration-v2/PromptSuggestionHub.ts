@@ -130,7 +130,7 @@ export const make = Effect.gen(function* () {
     },
     Effect.timeoutOption(SUGGEST_DEADLINE_MS),
     Effect.asVoid,
-    Effect.catchCause(() => Effect.void),
+    Effect.ignoreCause(),
   );
 
   const subscribe: PromptSuggestionHubShape["subscribe"] = (threadId) =>

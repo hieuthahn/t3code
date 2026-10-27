@@ -12,7 +12,6 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 
 import * as ProviderAdapterRegistry from "../orchestration-v2/ProviderAdapterRegistry.ts";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
@@ -121,7 +120,7 @@ const makeLayer = (layerInput: {
         }),
     }),
     Layer.mock(ProjectService.ProjectService)({
-      getById: () => Effect.succeed(Option.some({ workspaceRoot: "/repo" } as never)),
+      getById: () => Effect.succeedSome({ workspaceRoot: "/repo" } as never),
     }),
     Layer.mock(GitVcsDriver.GitVcsDriver)({
       execute: (git) =>

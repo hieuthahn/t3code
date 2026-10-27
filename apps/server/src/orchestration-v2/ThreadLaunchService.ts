@@ -243,7 +243,7 @@ const make = Effect.gen(function* () {
     input.reuseExistingThread === true ||
     input.linkOrigin !== undefined ||
     input.importedNativeThread !== undefined
-      ? Effect.succeed(undefined)
+      ? Effect.void
       : serverSettings.getSettings.pipe(
           Effect.map((settings) => (settings.team.autoNewThreads ? ("auto" as const) : undefined)),
           Effect.orElseSucceed(() => undefined),

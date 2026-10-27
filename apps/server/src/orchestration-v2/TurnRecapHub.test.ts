@@ -122,9 +122,7 @@ describe("TurnRecapHub", () => {
             : { summary: "Parser fixed. Tests not run.", replies: [] },
         ),
       );
-    }).pipe(
-      Effect.provide(hubWith(workRun, () => Effect.succeed(Option.some(RECAP_REPLY)), cards)),
-    ),
+    }).pipe(Effect.provide(hubWith(workRun, () => Effect.succeedSome(RECAP_REPLY), cards))),
   );
 
   it.effect("drops a recap that arrives after the next run started", () =>

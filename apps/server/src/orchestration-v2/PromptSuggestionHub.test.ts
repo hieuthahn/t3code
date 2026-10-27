@@ -57,7 +57,7 @@ describe("PromptSuggestionHub", () => {
       yield* Effect.yieldNow;
       yield* hub.clear(THREAD);
       expect(yield* Fiber.join(fiber)).toEqual(["run the tests", null]);
-    }).pipe(Effect.scoped, Effect.provide(hubWith(() => Effect.succeed(Option.none())))),
+    }).pipe(Effect.scoped, Effect.provide(hubWith(() => Effect.succeedNone))),
   );
 
   it.effect("asks Haiku after a Codex run with the run's last exchange", () =>

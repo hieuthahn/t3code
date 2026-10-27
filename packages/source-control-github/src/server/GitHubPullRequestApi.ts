@@ -2266,7 +2266,7 @@ export const make = Effect.gen(function* () {
             })
             .pipe(
               Effect.map((response) => withOrganizationTeams(list, owner, response.body)),
-              Effect.catch(() => Effect.succeed(list)),
+              Effect.orElseSucceed(() => list),
             ),
         ),
       );

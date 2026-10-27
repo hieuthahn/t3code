@@ -1465,7 +1465,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
           }),
         );
       }
-      if (failures[0] !== undefined) return yield* Effect.fail(failures[0]);
+      if (failures[0] !== undefined) return yield* failures[0];
       return true;
     }),
     deleteCheckpointRefs: Effect.fn("GitVcsDriver.checkpoints.deleteWithInner")(function* (input) {

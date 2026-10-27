@@ -245,7 +245,7 @@ describe("orchestrator MCP toolkit", () => {
           Layer.provide(Layer.mock(PeerLinks.PeerLinks)({})),
           Layer.provide(
             Layer.mock(ProjectService.ProjectService)({
-              getById: () => Effect.succeed(Option.none()),
+              getById: () => Effect.succeedNone,
             }),
           ),
           Layer.provideMerge(

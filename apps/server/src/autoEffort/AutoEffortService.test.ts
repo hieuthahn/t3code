@@ -141,7 +141,7 @@ const run = <A>(
                   Ref.update(haikuQuestions, (list) => [...list, { instanceId, question }]).pipe(
                     Effect.andThen(
                       harness.haikuReply ??
-                        Effect.succeed(Option.some('{"effort":"high","sure":0.9,"why":"big job"}')),
+                        Effect.succeedSome('{"effort":"high","sure":0.9,"why":"big job"}'),
                     ),
                   ),
               } as never),
@@ -291,7 +291,7 @@ describe("AutoEffortService", () => {
       {
         judge: "haiku",
         levels: ["low", "medium"],
-        haikuReply: Effect.succeed(Option.some('{"effort":"max"}')),
+        haikuReply: Effect.succeedSome('{"effort":"max"}'),
       },
       ({ service }) =>
         Effect.gen(function* () {
@@ -375,7 +375,7 @@ describe("AutoEffortService", () => {
       {
         jevKeyFile: "TYPESAFE_API_KEY=ts_test\n",
         jevBody: { answers: { effort: { choice: "low", confidence: 0.3 } } },
-        haikuReply: Effect.succeed(Option.none()),
+        haikuReply: Effect.succeedNone,
       },
       ({ service }) =>
         Effect.gen(function* () {
@@ -441,7 +441,7 @@ describe("AutoEffortService team verdict", () => {
   });
   const haikuSays = (json: string) => ({
     judge: "haiku" as const,
-    haikuReply: Effect.succeed(Option.some(json)),
+    haikuReply: Effect.succeedSome(json),
   });
 
   it.effect("starts a team when the judge says team, in one judge call", () =>
@@ -489,7 +489,7 @@ describe("AutoEffortService team verdict", () => {
   );
 
   it.effect("keeps a single agent when the judge is unavailable", () =>
-    run({ judge: "haiku", haikuReply: Effect.succeed(Option.none()) }, ({ service }) =>
+    run({ judge: "haiku", haikuReply: Effect.succeedNone }, ({ service }) =>
       Effect.gen(function* () {
         expect(yield* service.judgeTeam(teamRequest())).toBe(false);
         const resolution = yield* service.resolve(request({ firstTurn: true }));
@@ -577,7 +577,7 @@ describe("AutoEffortService team verdict", () => {
   );
 
   it.effect("records a single agent verdict when the judge is unavailable", () =>
-    run({ judge: "haiku", haikuReply: Effect.succeed(Option.none()) }, ({ service, sql }) =>
+    run({ judge: "haiku", haikuReply: Effect.succeedNone }, ({ service, sql }) =>
       Effect.gen(function* () {
         yield* service.judgeTeam(teamRequest({ teamName: undefined }));
         expect(yield* recorded(sql)).toEqual([
@@ -694,17 +694,15 @@ describe("AutoEffortService team verdict", () => {
             expect(resolution.notice).not.toContain("team");
           }),
       );
-      yield* run(
-        { judge: "haiku", haikuReply: Effect.succeed(Option.none()) },
-        ({ service, sql }) =>
-          Effect.gen(function* () {
-            const resolution = yield* service.resolve(request({ team: teamTurn(true) }));
-            expect(resolution.teamAction).toBeUndefined();
-            yield* recordAfter(service, resolution, true);
-            expect(yield* laterTurns(sql)).toEqual([
-              expect.objectContaining({ team_before: 1, team_after: 1, judged_by: "fallback" }),
-            ]);
-          }),
+      yield* run({ judge: "haiku", haikuReply: Effect.succeedNone }, ({ service, sql }) =>
+        Effect.gen(function* () {
+          const resolution = yield* service.resolve(request({ team: teamTurn(true) }));
+          expect(resolution.teamAction).toBeUndefined();
+          yield* recordAfter(service, resolution, true);
+          expect(yield* laterTurns(sql)).toEqual([
+            expect.objectContaining({ team_before: 1, team_after: 1, judged_by: "fallback" }),
+          ]);
+        }),
       );
     }),
   );

@@ -117,13 +117,13 @@ export const layer = Layer.effect(
           entryId: input.entryId,
           text,
         });
-        return entry ?? (yield* Effect.fail(notFound));
+        return entry ?? (yield* notFound);
       },
     );
 
     const remove: ProjectMemoryService["Service"]["delete"] = Effect.fn("ProjectMemory.delete")(
       function* (input) {
-        if (!(yield* store.remove(input))) return yield* Effect.fail(notFound);
+        if (!(yield* store.remove(input))) return yield* notFound;
       },
     );
 

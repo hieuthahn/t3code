@@ -16,7 +16,6 @@ import {
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { McpSchema, McpServer, Tool, Toolkit } from "effect/ai";
@@ -75,7 +74,7 @@ const layerPullRequestsTest = McpHttpServer.layerPullRequestsToolkit.pipe(
   Layer.provideMerge(McpToolAccessTestkit.liveThreadsLayer),
   Layer.provide(
     Layer.mergeAll(
-      Layer.mock(ProjectService.ProjectService)({ getById: () => Effect.succeed(Option.none()) }),
+      Layer.mock(ProjectService.ProjectService)({ getById: () => Effect.succeedNone }),
       Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({}),
       Layer.mock(Orchestrator.OrchestratorV2)({}),
       Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
@@ -164,7 +163,7 @@ const layerRecordingTools = (calls: Array<unknown>) => {
       Layer.mergeAll(
         McpToolAccessTestkit.liveThreadsLayer,
         Layer.mock(OrchestratorMcpService.OrchestratorMcpService)({}),
-        Layer.mock(ProjectService.ProjectService)({ getById: () => Effect.succeed(Option.none()) }),
+        Layer.mock(ProjectService.ProjectService)({ getById: () => Effect.succeedNone }),
         NodeServices.layer,
       ),
     ),

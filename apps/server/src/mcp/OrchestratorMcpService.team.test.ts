@@ -18,7 +18,6 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 
 import * as ProviderAdapterRegistry from "../orchestration-v2/ProviderAdapterRegistry.ts";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
@@ -221,7 +220,7 @@ function makeLayer(input: {
           Effect.succeed({ instanceId } as unknown as ProviderAdapter.ProviderAdapterV2["Service"]),
       }),
     ),
-    Layer.mock(ProjectService.ProjectService)({ getById: () => Effect.succeed(Option.none()) }),
+    Layer.mock(ProjectService.ProjectService)({ getById: () => Effect.succeedNone }),
     Layer.mock(SecretRequests.SecretRequests)({}),
     Layer.mock(RemoteDelegation.RemoteDelegation)({}),
     Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),

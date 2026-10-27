@@ -208,7 +208,7 @@ export const makeClaudeEffortJudge = Effect.fn("makeClaudeEffortJudge")(function
         Queue.offer(
           warm.input,
           `${encodeJson({ type: "user", message: { role: "user", content: question } })}\n`,
-        ).pipe(Effect.andThen(Deferred.await(warm.answer)), Effect.map(Option.some)),
+        ).pipe(Effect.andThen(Deferred.await(warm.answer)), Effect.asSome),
       () => closeInBackground(warm),
     );
 
@@ -225,9 +225,9 @@ export const makeClaudeEffortJudge = Effect.fn("makeClaudeEffortJudge")(function
             ? answer(current.value, question)
             : options?.waitWhenCold === true
               ? spawnWarm.pipe(Effect.flatMap((cold) => answer(cold, question)))
-              : Effect.succeed(Option.none<string>()),
+              : Effect.succeedNone,
         ),
-        Effect.catch(() => Effect.succeed(Option.none<string>())),
+        Effect.orElseSucceed(() => Option.none<string>()),
       ),
   } satisfies ClaudeEffortJudge;
 });

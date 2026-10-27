@@ -182,7 +182,7 @@ const liveWindows = (provider: ServerProvider, nowMs: number) => {
 export const chooseAccountForTurn = (input: {
   readonly providers: ReadonlyArray<ServerProvider>;
   readonly currentInstanceId: ProviderInstanceId;
-  readonly model: string;
+  readonly model: string | undefined;
   readonly nowMs: number;
   readonly thresholdsFor: (instanceId: ProviderInstanceId) => AccountSwitchThresholds;
   readonly recentAssignments?: ReadonlyMap<ProviderInstanceId, number>;

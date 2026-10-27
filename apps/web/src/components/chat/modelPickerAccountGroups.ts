@@ -1,3 +1,4 @@
+import type { DefaultAccountChoice } from "@t3tools/contracts/settings";
 import type { ProviderDriverKind, ProviderInstanceId, ServerProvider } from "@t3tools/contracts";
 import { pickRepresentativeAccount } from "@t3tools/shared/usageLimitSwitchCandidates";
 
@@ -105,6 +106,39 @@ export function sameAccountGroup(
   right: Pick<GroupableEntry, "instanceId" | "driverKind" | "continuationGroupKey">,
 ): boolean {
   return accountGroupId(left) === accountGroupId(right);
+}
+
+interface DefaultAccountEntry extends GroupableEntry {
+  readonly enabled: boolean;
+  readonly isAvailable: boolean;
+  readonly snapshot?: Pick<ServerProvider, "auth"> | undefined;
+}
+
+/**
+ * Find the account a new thread starts on: the saved default of the selected account's provider
+ * when it is a usable sibling in the same history group, otherwise null (Auto, as before).
+ */
+export function resolveDefaultAccountInstance<T extends DefaultAccountEntry>(input: {
+  readonly entries: ReadonlyArray<T>;
+  readonly selected: T | undefined;
+  readonly defaults: Readonly<Partial<Record<ProviderDriverKind, DefaultAccountChoice>>>;
+  readonly mergeAccounts: boolean;
+}): T | null {
+  const { selected } = input;
+  if (!input.mergeAccounts || selected === undefined) return null;
+  const choice = input.defaults[selected.driverKind];
+  if (choice === undefined || choice === "auto") return null;
+  const target = input.entries.find((entry) => entry.instanceId === choice);
+  if (
+    target === undefined ||
+    !target.enabled ||
+    !target.isAvailable ||
+    target.snapshot?.auth.status === "unauthenticated" ||
+    !sameAccountGroup(target, selected)
+  ) {
+    return null;
+  }
+  return target;
 }
 
 export type ModelPickerAccountAction =

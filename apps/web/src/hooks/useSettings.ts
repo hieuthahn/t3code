@@ -516,6 +516,15 @@ export function useModelPickerMergeAccounts(environmentId: EnvironmentId | null)
   return (settings ?? DEFAULT_SERVER_SETTINGS).modelPickerMergeAccounts;
 }
 
+export function useDefaultAccountByDriver(
+  environmentId: EnvironmentId | null,
+): ServerSettings["defaultAccountByDriver"] {
+  const settings = useAtomValue(
+    environmentId ? serverEnvironment.settingsValueAtom(environmentId) : noEnvironmentSettingsAtom,
+  );
+  return (settings ?? DEFAULT_SERVER_SETTINGS).defaultAccountByDriver;
+}
+
 export function useBalanceNewThreads(environmentId: EnvironmentId | null): boolean {
   const settings = useAtomValue(
     environmentId ? serverEnvironment.settingsValueAtom(environmentId) : noEnvironmentSettingsAtom,

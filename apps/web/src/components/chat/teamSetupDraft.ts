@@ -90,3 +90,38 @@ export function upsertTeamProfile(
     ? [...profiles, profile]
     : profiles.map((candidate, at) => (at === index ? profile : candidate));
 }
+
+const canonicalJson = (value: unknown): string =>
+  JSON.stringify(value, (_key, entry: unknown) =>
+    entry !== null && typeof entry === "object" && !Array.isArray(entry)
+      ? Object.fromEntries(
+          Object.entries(entry).sort(([left], [right]) => left.localeCompare(right)),
+        )
+      : entry,
+  );
+
+/** Tell whether two setups are the same team, whatever order their keys were written in. */
+export function sameTeamSetup(left: TeamSetup, right: TeamSetup): boolean {
+  return canonicalJson(left) === canonicalJson(right);
+}
+
+/**
+ * Name the setup the popover shows: the picked profile while it still matches, else the first
+ * matching profile, else "Default" for the saved default, else "Unsaved setup".
+ */
+export function teamSetupLabel(input: {
+  readonly setup: TeamSetup;
+  readonly profiles: ReadonlyArray<TeamProfile>;
+  readonly pickedId: string | null;
+  readonly defaultSetup: TeamSetup | null;
+}): { readonly profileId: string | null; readonly name: string } {
+  const matches = (profile: TeamProfile) => sameTeamSetup(profile.setup, input.setup);
+  const profile =
+    input.profiles.find((candidate) => candidate.id === input.pickedId && matches(candidate)) ??
+    input.profiles.find(matches);
+  if (profile !== undefined) return { profileId: profile.id, name: profile.name };
+  if (input.defaultSetup !== null && sameTeamSetup(input.defaultSetup, input.setup)) {
+    return { profileId: null, name: "Default" };
+  }
+  return { profileId: null, name: "Unsaved setup" };
+}

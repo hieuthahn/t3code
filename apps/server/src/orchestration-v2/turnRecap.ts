@@ -14,7 +14,7 @@ Read the user's request, what the agent did, and the end of its reply. Answer wi
 {"summary": "...", "question": "...", "replies": ["...", "..."]}
 
 - summary: 2 or 3 short sentences, at most 300 characters. First what is now true or changed, then what is not done or not verified. Concrete, no praise, in the user's language.
-- question: only when the next move is the user's call (a choice, an approval, a go-ahead), one short question of at most 100 characters. Leave it out otherwise.
+- question: only when the next move is the user's call (a choice, an approval, a go-ahead), one short question of at most 100 characters. Leave it out otherwise, and leave it out when the agent already asked the user on a card.
 - replies: with a question, 1 or 2 replies of at most 4 words each, written as the user's own answer, the agent's recommendation first. Without a question, an empty array.`;
 
 const RECAP_WORK_TYPES = new Set<OrchestrationV2TurnItem["type"]>([
@@ -22,6 +22,14 @@ const RECAP_WORK_TYPES = new Set<OrchestrationV2TurnItem["type"]>([
   "command_execution",
   "proposed_plan",
 ]);
+
+/** Item types whose card already asks the user, so the recap must not ask again. */
+export const CARD_REQUEST_TYPES: ReadonlyArray<OrchestrationV2TurnItem["type"]> = [
+  "proposed_plan",
+  "child_plan_request",
+  "secret_request",
+  "link_request",
+];
 
 /** A run earns a recap once it edited files, ran commands or proposed a plan. */
 export function isMultiStepRun(history: ReadonlyArray<OrchestrationV2TurnItem>): boolean {
@@ -38,7 +46,7 @@ function actionLine(item: OrchestrationV2TurnItem): string | undefined {
     case "file_change":
       return `- edited ${item.fileName}`;
     case "proposed_plan":
-      return "- proposed a plan";
+      return "- proposed a plan on a card the user decides";
     default:
       return undefined;
   }

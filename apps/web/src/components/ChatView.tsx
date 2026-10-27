@@ -1213,6 +1213,13 @@ export default function ChatView(props: ChatViewProps) {
       currentInstanceId: activeThread.modelSelection.instanceId,
       nowMs,
       model: activeThread.modelSelection.model,
+      thresholdsFor: resolveAccountSwitchThresholds({
+        defaults: {
+          sessionPercent: settings.earlySwitchSessionThreshold,
+          weeklyPercent: settings.earlySwitchWeeklyThreshold,
+        },
+        instances: settings.providerInstances,
+      }),
     }).find((candidate) => candidate.usedPercent !== undefined);
     if (target === undefined) return null;
     const provider = providerStatuses.find((entry) => entry.instanceId === target.instanceId);

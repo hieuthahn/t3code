@@ -267,6 +267,38 @@ describe("rankAskSwitchCandidates", () => {
     assert.deepEqual(askRank(providers), [id("dated"), id("undated")]);
   });
 
+  describe("with weekly thresholds", () => {
+    const thresholds = resolveAccountSwitchThresholds({
+      defaults: { sessionPercent: 90, weeklyPercent: 90 },
+      instances: {},
+    });
+    const askRankWithThresholds = (providers: ReadonlyArray<ServerProvider>) =>
+      rankAskSwitchCandidates({
+        providers,
+        currentInstanceId: id("a"),
+        nowMs: NOW,
+        thresholdsFor: thresholds,
+      }).map((candidate) => candidate.instanceId);
+    const withWeekly = (instanceId: string, weekly: number, sessionResetsIn: number) =>
+      makeProvider({
+        instanceId,
+        usage: [
+          { id: "five_hour", usedPercent: 10, resetsInMinutes: sessionResetsIn },
+          { id: "weekly", kind: "weekly", usedPercent: weekly, resetsInMinutes: 3000 },
+        ],
+      });
+
+    it("ranks a peer at 99% weekly after a 20% peer, though its session resets sooner", () => {
+      const providers = [current, withWeekly("hot", 99, 5), withWeekly("calm", 20, 30)];
+      assert.deepEqual(askRankWithThresholds(providers), [id("calm"), id("hot")]);
+    });
+
+    it("keeps soonest-reset-first when every peer is under its weekly threshold", () => {
+      const providers = [current, withWeekly("later", 20, 30), withWeekly("sooner", 60, 5)];
+      assert.deepEqual(askRankWithThresholds(providers), [id("sooner"), id("later")]);
+    });
+  });
+
   it("falls back to the most room left when reset times are equal", () => {
     const providers = [
       current,

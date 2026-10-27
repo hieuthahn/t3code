@@ -598,18 +598,17 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     return resolvedModel;
   };
 
-  const applyAccountPick = (pick: ProviderInstanceId | "auto") => {
-    if (props.multiSelectMode === true) return;
+  const applyAccountPick = (pick: ProviderInstanceId | "auto"): boolean => {
+    if (props.multiSelectMode === true) return true;
     const instanceId = pick === "auto" ? props.activeInstanceId : pick;
     const entry = instanceEntries.find((candidate) => candidate.instanceId === instanceId);
-    if (entry) {
-      updateEnvironmentSettings({ defaultAccountByDriver: { [entry.driverKind]: pick } });
-    }
     const options = modelOptionsByInstance.get(instanceId);
     const model =
       entry && options ? resolveSelectableModel(entry.driverKind, props.model, options) : null;
-    if (!model) return;
+    if (!entry || !model) return false;
+    updateEnvironmentSettings({ defaultAccountByDriver: { [entry.driverKind]: pick } });
     props.onAccountChoiceChange?.(instanceId, model, pick === "auto" ? "auto" : "pinned");
+    return true;
   };
 
   const modelJumpShortcutContext = {
@@ -1200,8 +1199,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                           (entry) => entry.instanceId === value && isSignedOut(entry),
                         );
                         if (signedOut === undefined) {
-                          setAccountPick(value);
-                          applyAccountPick(value);
+                          if (applyAccountPick(value)) setAccountPick(value);
                           return;
                         }
                         onRequestClose?.();

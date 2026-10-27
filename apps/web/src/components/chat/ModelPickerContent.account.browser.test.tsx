@@ -61,6 +61,7 @@ function picker(
     accountChoice: "auto" | "pinned",
   ) => void,
   pinned = false,
+  modelOnlyOn?: string,
 ) {
   return (
     <ModelPickerContent
@@ -70,7 +71,14 @@ function picker(
       lockedProvider={null}
       instanceEntries={entries}
       modelOptionsByInstance={
-        new Map(entries.map((item) => [item.instanceId, [{ slug: MODEL, name: "Opus" }]]))
+        new Map(
+          entries.map((item) => [
+            item.instanceId,
+            modelOnlyOn === undefined || item.instanceId === modelOnlyOn
+              ? [{ slug: MODEL, name: "Opus" }]
+              : [],
+          ]),
+        )
       }
       terminalOpen={false}
       onInstanceModelChange={vi.fn()}
@@ -123,5 +131,16 @@ describe("ModelPickerContent account footer", () => {
       defaultAccountByDriver: { claudeAgent: "auto" },
     });
     expect(updateEnvironmentSettings).toHaveBeenCalledTimes(2);
+  });
+
+  it("changes nothing when the active model is unavailable on the picked account", async () => {
+    updateEnvironmentSettings.mockClear();
+    const onAccountChoiceChange = vi.fn();
+    await using _screen = await render(picker(onAccountChoiceChange, false, "claudeAgent_viet"));
+    await userEvent.click(accountButton("hieu"));
+    expect(updateEnvironmentSettings).not.toHaveBeenCalled();
+    expect(onAccountChoiceChange).not.toHaveBeenCalled();
+    expect(accountButton("hieu").getAttribute("aria-pressed")).toBe("false");
+    expect(accountButton("Auto").getAttribute("aria-pressed")).toBe("true");
   });
 });

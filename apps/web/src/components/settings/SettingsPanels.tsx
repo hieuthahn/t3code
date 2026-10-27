@@ -507,6 +507,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     settings.earlySwitchWeeklyThreshold !== DEFAULT_UNIFIED_SETTINGS.earlySwitchWeeklyThreshold
       ? ["Switch accounts before the limit"]
       : []),
+    ...(settings.balanceNewThreads !== DEFAULT_UNIFIED_SETTINGS.balanceNewThreads
+      ? ["Spread new threads across accounts"]
+      : []),
     ...(settings.midTurnAccountSwitch !== DEFAULT_UNIFIED_SETTINGS.midTurnAccountSwitch
       ? ["Switch accounts during a turn"]
       : []),
@@ -690,6 +693,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       modelPickerMergeAccounts: DEFAULT_UNIFIED_SETTINGS.modelPickerMergeAccounts,
       earlyAccountSwitch: DEFAULT_UNIFIED_SETTINGS.earlyAccountSwitch,
       midTurnAccountSwitch: DEFAULT_UNIFIED_SETTINGS.midTurnAccountSwitch,
+      balanceNewThreads: DEFAULT_UNIFIED_SETTINGS.balanceNewThreads,
       earlySwitchSessionThreshold: DEFAULT_UNIFIED_SETTINGS.earlySwitchSessionThreshold,
       earlySwitchWeeklyThreshold: DEFAULT_UNIFIED_SETTINGS.earlySwitchWeeklyThreshold,
       switchPinnedAccounts: DEFAULT_UNIFIED_SETTINGS.switchPinnedAccounts,
@@ -1081,6 +1085,21 @@ export function GeneralSettingsPanel() {
                 updateSettings({ modelPickerMergeAccounts: Boolean(checked) })
               }
               aria-label="Merge accounts in the model picker"
+            />
+          }
+        />
+        <SettingsRow
+          serverScoped
+          {...searchableSetting("balance-new-threads")}
+          description="Start a new thread on the signed-in account with the most room left instead of the account you picked. Needs the merged model picker."
+          settingKeys={["balanceNewThreads"]}
+          control={
+            <ScopedSwitch
+              settingKeys={["balanceNewThreads"]}
+              checked={settings.balanceNewThreads}
+              disabled={!settings.modelPickerMergeAccounts}
+              onCheckedChange={(checked) => updateSettings({ balanceNewThreads: Boolean(checked) })}
+              aria-label="Spread new threads across accounts"
             />
           }
         />

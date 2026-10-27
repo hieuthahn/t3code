@@ -373,6 +373,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "balance-new-threads",
+    title: "Spread new threads across accounts",
+    to: "/settings/general",
+    searchTerms: ["balance new thread roomiest account spread distribute merge"],
+  },
+  {
     id: "early-account-switch",
     title: "Switch accounts before the limit",
     to: "/settings/general",

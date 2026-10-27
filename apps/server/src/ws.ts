@@ -1267,11 +1267,13 @@ type WsRpcServices =
   | DatabaseStorage.DatabaseStorage
   | DeviceService.DeviceService
   | DirectEndpoints.DirectEndpoints
+  | DocumentText.DocumentText
   | EnvironmentAuth.EnvironmentAuth
   | EnvironmentTheme.EnvironmentThemeService
   | ExternalLauncher.ExternalLauncher
   | FileSystem.FileSystem
   | GitWorkflowService.GitWorkflowService
+  | GuestShareService.GuestShareService
   | HostResources.HostResources
   | Keybindings.Keybindings
   | ManagedProjectFolders.ManagedProjectFolders
@@ -1292,7 +1294,6 @@ type WsRpcServices =
   | ProjectEnrichmentService.ProjectEnrichmentService
   | ProjectFaviconResolver.ProjectFaviconResolver
   | ProjectService.ProjectService
-  | ProjectSetupScriptRunner.ProjectSetupScriptRunner
   | ProjectStore.ProjectStoreV2
   | PromptSuggestionHub.PromptSuggestionHub
   | ProviderAuthService.ProviderAuthService
@@ -3210,15 +3211,13 @@ const makeWsRpcLayer = (
             .cancel(input.threadId)
             .pipe(Effect.map((cancelled) => ({ cancelled }))),
         [WS_METHODS.vcsRefreshStatus]: (input) =>
-          gitCwdGuard
-            .asGitManagerError("ws.vcsRefreshStatus", input.cwd)
-            .pipe(
-              Effect.andThen(
-                vcsStatusBroadcaster.refreshStatus(input.cwd, {
-                  localOnly: input.localOnly ?? false,
-                }),
-              ),
+          gitCwdGuard.asGitManagerError("ws.vcsRefreshStatus", input.cwd).pipe(
+            Effect.andThen(
+              vcsStatusBroadcaster.refreshStatus(input.cwd, {
+                localOnly: input.localOnly ?? false,
+              }),
             ),
+          ),
         [WS_METHODS.vcsPull]: (input) =>
           gitCwdGuard.asGitCommandWrite("ws.vcsPull", input.cwd).pipe(
             Effect.andThen(gitWorkflow.pullCurrentBranch(input.cwd)),

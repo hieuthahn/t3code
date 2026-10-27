@@ -516,6 +516,13 @@ export function useModelPickerMergeAccounts(environmentId: EnvironmentId | null)
   return (settings ?? DEFAULT_SERVER_SETTINGS).modelPickerMergeAccounts;
 }
 
+export function useBalanceNewThreads(environmentId: EnvironmentId | null): boolean {
+  const settings = useAtomValue(
+    environmentId ? serverEnvironment.settingsValueAtom(environmentId) : noEnvironmentSettingsAtom,
+  );
+  return (settings ?? DEFAULT_SERVER_SETTINGS).balanceNewThreads;
+}
+
 export function useEnvironmentSettings<T = UnifiedSettings>(
   environmentId: EnvironmentId,
   selector?: (settings: UnifiedSettings) => T,

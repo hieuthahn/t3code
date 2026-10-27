@@ -109,6 +109,34 @@ describe("mergeModelPickerAccountModels", () => {
     expect(merged.map((row) => row.instanceId)).toEqual([id("dung")]);
   });
 
+  it("keeps the first account instead of the roomiest when balance is off", () => {
+    const input = {
+      models: [model("hieu", "opus"), model("dung", "opus")],
+      providersByInstanceId,
+      activeInstanceId: id("codex"),
+      nowMs: NOW,
+    };
+    expect(
+      mergeModelPickerAccountModels({ ...input, balance: false }).map((row) => row.instanceId),
+    ).toEqual([id("hieu")]);
+    expect(
+      mergeModelPickerAccountModels({ ...input, balance: true }).map((row) => row.instanceId),
+    ).toEqual([id("dung")]);
+  });
+
+  it("keeps the active account whatever balance says", () => {
+    for (const balance of [false, true]) {
+      const merged = mergeModelPickerAccountModels({
+        models: [model("hieu", "opus"), model("dung", "opus")],
+        providersByInstanceId,
+        activeInstanceId: id("hieu"),
+        nowMs: NOW,
+        balance,
+      });
+      expect(merged.map((row) => row.instanceId)).toEqual([id("hieu")]);
+    }
+  });
+
   it("keeps models of other groups apart", () => {
     const merged = mergeModelPickerAccountModels({
       models: [model("hieu", "opus"), model("work", "opus", "claude:home:/work")],

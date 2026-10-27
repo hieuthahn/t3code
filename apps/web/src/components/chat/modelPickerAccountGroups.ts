@@ -63,13 +63,15 @@ export function mergeModelPickerAccountTabs<T extends GroupableEntry>(input: {
 
 /**
  * Collapse a model offered by several accounts of one group into a single row whose account
- * is the thread's own when it offers the model, else the roomiest ready one.
+ * is the thread's own when it offers the model, else the roomiest ready one, or the first
+ * one when `balance` is off.
  */
 export function mergeModelPickerAccountModels<T extends GroupableModel>(input: {
   readonly models: ReadonlyArray<T>;
   readonly providersByInstanceId: ReadonlyMap<ProviderInstanceId, ServerProvider>;
   readonly activeInstanceId: ProviderInstanceId;
   readonly nowMs: number;
+  readonly balance?: boolean;
 }): ReadonlyArray<MergedModel<T>> {
   const groups = new Map<string, T[]>();
   for (const model of input.models) {
@@ -83,9 +85,10 @@ export function mergeModelPickerAccountModels<T extends GroupableModel>(input: {
       const provider = input.providersByInstanceId.get(instanceId);
       return provider === undefined ? [] : [provider];
     });
+    const isActive = (provider: ServerProvider) => provider.instanceId === input.activeInstanceId;
     const chosen =
       pickRepresentativeAccount({
-        members: providers,
+        members: input.balance === false ? providers.filter(isActive).slice(0, 1) : providers,
         preferredInstanceId: input.activeInstanceId,
         model: group[0]!.slug,
         nowMs: input.nowMs,

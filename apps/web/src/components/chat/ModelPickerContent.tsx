@@ -51,6 +51,7 @@ import {
 } from "../../keybindings";
 import {
   useEnvironmentModelPreferences,
+  useBalanceNewThreads,
   useModelPickerMergeAccounts,
   useToggleEnvironmentModelFavorite,
 } from "~/hooks/useSettings";
@@ -504,6 +505,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const [searchHeight, setSearchHeight] = useState(0);
   const toggleFavorite = useToggleEnvironmentModelFavorite(props.environmentId);
   const mergeAccounts = useModelPickerMergeAccounts(props.environmentId);
+  const balanceNewThreads = useBalanceNewThreads(props.environmentId);
   const multiSelectMode = onToggleModel !== undefined && props.multiSelectMode === true;
   const activeGroupKey = activeEntry?.continuationGroupKey;
   const groupAccounts =
@@ -689,6 +691,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         ),
         activeInstanceId: props.activeInstanceId,
         nowMs: Date.parse(`${nowMinute}:00.000Z`),
+        balance: balanceNewThreads,
       })
     : instanceModels.map((model) => ({ ...model, memberInstanceIds: [model.instanceId] }));
   const pickerFavoritesSet = new Set(favoritesSet);

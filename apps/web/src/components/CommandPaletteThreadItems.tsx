@@ -154,8 +154,7 @@ export function useCommandPaletteThreadItems(input: {
             branch={thread.branch}
             worktreePath={thread.worktreePath}
             isCurrent={
-              thread.id === activeThread?.id &&
-              thread.environmentId === activeThread.environmentId
+              thread.id === activeThread?.id && thread.environmentId === activeThread.environmentId
             }
             driverKind={providerEntry?.driverKind ?? null}
             providerDisplayName={

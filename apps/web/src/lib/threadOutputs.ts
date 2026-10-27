@@ -1,4 +1,4 @@
-import type { OrchestrationV2TurnItem } from "@t3tools/contracts";
+import type { ThreadStructureTurnItem } from "@t3tools/client-runtime/state/shell";
 import {
   applyFileChanges,
   fileChangeEntries,
@@ -15,7 +15,7 @@ export interface ThreadOutput {
 
 /** Files the thread changed, newest first, one row per path. */
 export function deriveThreadOutputs(
-  items: ReadonlyArray<OrchestrationV2TurnItem>,
+  items: ReadonlyArray<ThreadStructureTurnItem>,
 ): ReadonlyArray<ThreadOutput> {
   const byPath = new Map<string, FileChangeOutput<number>>();
   const ordered = items

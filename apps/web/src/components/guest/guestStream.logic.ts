@@ -113,7 +113,8 @@ export function applyGuestStreamEvent(
           ),
         };
       }
-      if (item.kind === "synchronized" || item.sequence <= state.sequence) return state;
+      if (item.kind === "synchronized" || item.kind === "prompt-suggestion") return state;
+      if (item.sequence <= state.sequence) return state;
       if (item.kind === "unknown-event") return { ...state, sequence: item.sequence };
       const projection =
         applyOrchestrationV2ProjectionEvent(

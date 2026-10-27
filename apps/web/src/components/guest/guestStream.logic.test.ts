@@ -112,6 +112,15 @@ describe("applyGuestStreamEvent", () => {
     expect(apply([itemEvent(2, reply("a1", "Changed"))], once)).toBe(once);
   });
 
+  it("ignores prompt suggestions, which carry no sequence", () => {
+    const once = apply([snapshot(1), itemEvent(2, reply("a1", "Hi"))]);
+    const suggestion: GuestStreamEvent = {
+      type: "thread",
+      item: { kind: "prompt-suggestion", suggestion: "Next?" },
+    };
+    expect(apply([suggestion], once)).toBe(once);
+  });
+
   it("replaces the thread on a new snapshot, as after a reconnect", () => {
     const before = apply([snapshot(1), itemEvent(2, reply("a1", "Hi")), { type: "ended" }]);
     const after = apply([snapshot(1)], { ...before, ended: false });

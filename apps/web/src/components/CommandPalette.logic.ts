@@ -369,6 +369,7 @@ export type BuildThreadActionItemsThread = Pick<
   | "modelSelection"
   | "projectId"
   | "runtime"
+  | "source"
   | "title"
   | "worktreePath"
 > &

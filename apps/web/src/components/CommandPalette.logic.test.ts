@@ -616,19 +616,26 @@ describe("buildThreadActionItems", () => {
     ]);
   });
 
-  it("hides subagent threads but keeps forks", () => {
+  it("hides provider subagent threads but keeps delegated children and forks", () => {
     const parentId = ThreadId.make("parent");
+    const subagentLineage = {
+      rootThreadId: parentId,
+      parentThreadId: parentId,
+      relationshipToParent: "subagent",
+    } as const;
+    const providerSubagent = makeThread({
+      id: ThreadId.make("subagent"),
+      title: "Subagent",
+      lineage: subagentLineage,
+    });
     const items = buildThreadActionItems({
       threads: [
         makeThread({ id: parentId, title: "Parent" }),
+        { ...providerSubagent, source: { ...providerSubagent.source, creationSource: "provider" } },
         makeThread({
-          id: ThreadId.make("subagent"),
-          title: "Subagent",
-          lineage: {
-            rootThreadId: parentId,
-            parentThreadId: parentId,
-            relationshipToParent: "subagent",
-          },
+          id: ThreadId.make("delegated"),
+          title: "Delegated",
+          lineage: subagentLineage,
         }),
         makeThread({
           id: ThreadId.make("fork"),
@@ -646,6 +653,7 @@ describe("buildThreadActionItems", () => {
     });
 
     expect(items.map((item) => item.value).toSorted()).toEqual([
+      "thread:environment-local:delegated",
       "thread:environment-local:fork",
       "thread:environment-local:parent",
     ]);

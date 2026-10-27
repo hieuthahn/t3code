@@ -9,6 +9,7 @@ import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { isSpentAccount } from "@t3tools/shared/usageLimitSwitchCandidates";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -17,6 +18,7 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 
@@ -117,6 +119,8 @@ interface LaunchJudgment {
   readonly teamName: string | undefined;
 }
 
+const LAUNCH_RUN_ORDINAL = 1;
+
 const percent = (value: number) => `${Math.round(value * 100)}% sure`;
 
 const isSure = (verdict: EffortVerdict) =>
@@ -145,6 +149,7 @@ function teamNoticeText(launch: LaunchJudgment): string {
 }
 
 const make = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
   const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
   const instanceRegistry = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
@@ -314,16 +319,33 @@ const make = Effect.gen(function* () {
       },
       providers,
     );
-    const team = wantsTeam(Option.getOrUndefined(judged)?.verdict);
+    const verdict = Option.getOrUndefined(judged)?.verdict;
+    const team = wantsTeam(verdict);
+    const by = Option.getOrUndefined(judged)?.by ?? "fallback";
     yield* Ref.update(launchJudged, (map) =>
       new Map(map).set(request.threadId, { judged, team, teamName: request.teamName }),
     );
     yield* Effect.logInfo("auto-team", {
       threadId: request.threadId,
       team,
-      by: Option.getOrUndefined(judged)?.by ?? "fallback",
-      teamSure: Option.getOrUndefined(judged)?.verdict.teamSure,
+      by,
+      teamSure: verdict?.teamSure,
     });
+    const recordedAt = DateTime.formatIso(yield* DateTime.now);
+    const judgeTeam = verdict?.team === undefined ? null : verdict.team ? 1 : 0;
+    yield* sql`
+      INSERT INTO auto_team_verdicts (
+        thread_id, run_ordinal, team_before, team_after, judge_team, team_sure, judged_by,
+        team_name, recorded_at
+      )
+      VALUES (${request.threadId}, ${LAUNCH_RUN_ORDINAL}, 0, ${team ? 1 : 0}, ${judgeTeam},
+        ${verdict?.teamSure ?? null}, ${by}, ${request.teamName ?? null}, ${recordedAt})
+      ON CONFLICT (thread_id, run_ordinal) DO NOTHING
+    `.pipe(
+      Effect.catch((cause) =>
+        Effect.logWarning("Auto team could not record a verdict.", { cause }),
+      ),
+    );
     return team;
   });
 

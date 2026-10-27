@@ -8,10 +8,12 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as AccountSwitchJournal from "./AccountSwitchJournal.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
 import { rankUsageLimitSwitchCandidates } from "@t3tools/shared/usageLimitSwitchCandidates";
@@ -141,6 +143,7 @@ export const makeSweep = Effect.gen(function* () {
   const threads = yield* ThreadManagement.ThreadManagementService;
   const settings = yield* ServerSettings.ServerSettingsService;
   const registry = yield* ProviderRegistry.ProviderRegistry;
+  const journal = yield* Effect.serviceOption(AccountSwitchJournal.AccountSwitchJournal);
   const ledgerRef = yield* Ref.make(emptyLimitSwitchLedger);
   return Effect.fn("UsageLimitSwitchWorker.sweep")(function* () {
     const preferences = yield* settings.getSettings;
@@ -202,6 +205,13 @@ export const makeSweep = Effect.gen(function* () {
           switchPinned: preferences.switchPinnedAccounts,
         });
         if (command === null) return;
+        if (Option.isSome(journal)) {
+          yield* journal.value.record(thread.id, {
+            from: thread.providerInstanceId,
+            to: target.instanceId,
+            reason: "usage-limit",
+          });
+        }
         yield* threads.dispatch(command);
         yield* Ref.update(ledgerRef, (current) =>
           recordLimitSwitch(current, { instanceId: target.instanceId, threadId: thread.id }, nowMs),

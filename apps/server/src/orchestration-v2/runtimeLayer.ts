@@ -1,5 +1,6 @@
 import * as UsageLimitRecoveryWorker from "./UsageLimitRecoveryWorker.ts";
 import * as UsageLimitSwitchWorker from "./UsageLimitSwitchWorker.ts";
+import * as AccountSwitchJournal from "./AccountSwitchJournal.ts";
 import * as EarlyAccountSwitch from "./EarlyAccountSwitch.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as Layer from "effect/Layer";
@@ -375,7 +376,7 @@ export const layer = Layer.mergeAll(
   layerProviderRuntimeRecoveryProvided,
   layerProjectionMaintenanceProvided,
   layerLegacyV1ThreadImporterProvided,
-);
+).pipe(Layer.provide(AccountSwitchJournal.layer));
 
 export const layerProduction = Layer.mergeAll(
   layer.pipe(Layer.provide(layerProjectService)),
@@ -403,5 +404,6 @@ export const layerProduction = Layer.mergeAll(
 ).pipe(
   Layer.provide(ResourceCleanupService.layer.pipe(Layer.provide(layerScheduledTaskProvided))),
   Layer.provide(Scheduler.layer),
+  Layer.provide(AccountSwitchJournal.layer),
   Layer.provideMerge(layerEventInfrastructure),
 );

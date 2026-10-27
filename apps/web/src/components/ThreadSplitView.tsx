@@ -37,6 +37,7 @@ const SPLIT_TRAILING_PANE_CLASS =
 
 function useElementWidth(ref: React.RefObject<HTMLElement | null>) {
   const [width, setWidth] = useState(0);
+  // oxlint-disable-next-line t3code/react-effect-budget -- measures the pane container through a ResizeObserver
   useLayoutEffect(() => {
     const element = ref.current;
     if (!element) return;
@@ -143,9 +144,11 @@ function ServerThreadSplitView({
   const containerRef = useRef<HTMLDivElement>(null);
   const width = useElementWidth(containerRef);
 
+  // oxlint-disable-next-line t3code/react-effect-budget -- the split store follows the router's current route
   useLayoutEffect(() => {
     useSplitViewStore.getState().followRoute(routeKey);
   }, [routeKey]);
+  // oxlint-disable-next-line t3code/react-effect-budget -- unmount clears the split store's followed route
   useLayoutEffect(() => () => useSplitViewStore.getState().followRoute(null), []);
 
   useThreadContextDrop(

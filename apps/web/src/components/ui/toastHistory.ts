@@ -88,5 +88,6 @@ export function useRecordToasts(toasts: readonly RecordableToast[]) {
     // Base UI lists the newest toast first; record oldest first so the newest ends on top.
     setHistory((history) => changed.toReversed().reduce(recordNotification, history));
   });
+  // oxlint-disable-next-line t3code/react-effect-budget -- mirrors Base UI's toast list into history
   useEffect(() => record(toasts), [record, toasts]);
 }

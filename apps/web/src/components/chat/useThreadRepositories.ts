@@ -91,6 +91,7 @@ export function useThreadRepositories(
   const environmentIdForCleanup = target?.environmentId;
   const isStale =
     repositoriesData !== undefined && isStaleRepositorySelection({ repositories, stored });
+  // oxlint-disable-next-line t3code/react-effect-budget -- drops a stored repository selection the server no longer lists
   useEffect(() => {
     if (!isStale || threadIdForCleanup === undefined || environmentIdForCleanup === undefined) {
       return;

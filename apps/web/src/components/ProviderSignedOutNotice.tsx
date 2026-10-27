@@ -29,6 +29,7 @@ export function ProviderSignedOutNotice() {
   const providersByEnvironment = useEnvironmentProviders();
   const providers = environmentId ? (providersByEnvironment.get(environmentId) ?? []) : [];
 
+  // oxlint-disable-next-line t3code/react-effect-budget -- toasts once per sign-out and records it in localStorage
   useEffect(() => {
     if (!environmentId) return;
     const announced = readAnnounced();

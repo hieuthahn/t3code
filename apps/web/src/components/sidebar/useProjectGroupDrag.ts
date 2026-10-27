@@ -40,6 +40,7 @@ export function useProjectGroupDrag(onDrop: (id: string, toIndex: number) => voi
   const [drag, setDrag] = useState<ProjectGroupDrag | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
   const handleDrop = useStableCallback(onDrop);
+  // oxlint-disable-next-line t3code/react-effect-budget -- unmount stops an in-flight pointer drag
   useEffect(() => () => stopRef.current?.(), []);
 
   const start = (id: string, event: ReactPointerEvent<HTMLElement>) => {

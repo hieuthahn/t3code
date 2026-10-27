@@ -270,6 +270,7 @@ export function ClaudeDesktopSyncDialog({ session }: { readonly session: SyncSes
   ).length;
   const busy = pending !== null;
 
+  // oxlint-disable-next-line t3code/react-effect-budget -- scrolls the status region into view after a sync outcome
   useEffect(() => {
     if (outcome !== null) statusRegion.current?.scrollIntoView({ block: "nearest" });
   }, [outcome]);

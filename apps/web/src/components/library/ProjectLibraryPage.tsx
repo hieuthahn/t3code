@@ -117,6 +117,7 @@ function LibraryPageLoader(props: {
 }) {
   const { index, onPage } = props;
   const query = useProjectLibraryPage(props);
+  // oxlint-disable-next-line t3code/react-effect-budget -- hands a loaded page to the parent's page cache
   useEffect(() => {
     if (query.data !== null) onPage(index, query.data);
   }, [index, onPage, query.data]);

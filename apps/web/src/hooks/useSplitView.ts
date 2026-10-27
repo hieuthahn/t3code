@@ -55,6 +55,7 @@ export function useSplitViewActions() {
 export function usePruneUnavailableSplitPanes() {
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const shells = useQuietThreadShells();
+  // oxlint-disable-next-line t3code/react-effect-budget -- prunes split panes after thread shells change
   useEffect(() => {
     if (!bootstrapped) return;
     const available = new Set(

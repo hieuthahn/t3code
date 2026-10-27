@@ -113,6 +113,7 @@ function useForkUpdates(bridge: DesktopForkUpdatesBridge | undefined) {
   const [state, setState] = useState<DesktopForkUpdateState | null>(null);
   const [pending, setPending] = useState<"check" | "apply" | "track" | null>(null);
 
+  // oxlint-disable-next-line t3code/react-effect-budget -- subscribes to the desktop bridge's update state
   useEffect(() => {
     if (!bridge) return;
     let cancelled = false;

@@ -228,9 +228,9 @@ const serveBox = (seen: Ref.Ref<Seen>, linkSession: Ref.Ref<string>) =>
       Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
       Layer.provide(Layer.mock(RemoteDelegation.RemoteDelegation)({})),
       Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
-      Layer.provide(Layer.mock(MergeQueueService.MergeQueueService)({})),
       Layer.provide(
         Layer.mergeAll(
+          Layer.mock(MergeQueueService.MergeQueueService)({}),
           Layer.mock(TeamService.TeamService)({}),
           Layer.mock(ProjectMemoryService.ProjectMemoryService)({}),
         ),
@@ -267,9 +267,9 @@ const makeLaptop = Effect.gen(function* () {
     Layer.provideMerge(McpServer.McpServer.layer),
     Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
     Layer.provide(Layer.mock(ThreadLaunch.ThreadLaunchService)({})),
-    Layer.provide(Layer.mock(MergeQueueService.MergeQueueService)({})),
     Layer.provide(
       Layer.mergeAll(
+        Layer.mock(MergeQueueService.MergeQueueService)({}),
         Layer.mock(TeamService.TeamService)({}),
         Layer.mock(ProjectMemoryService.ProjectMemoryService)({}),
       ),

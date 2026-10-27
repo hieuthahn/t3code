@@ -469,9 +469,9 @@ const boxToolkitLayer = (thread: BoxThread) => {
     Layer.provide(Layer.mock(RemoteDelegation.RemoteDelegation)({})),
     Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
     Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
-    Layer.provide(Layer.mock(MergeQueueService.MergeQueueService)({})),
     Layer.provide(
       Layer.mergeAll(
+        Layer.mock(MergeQueueService.MergeQueueService)({}),
         Layer.mock(TeamService.TeamService)({}),
         Layer.mock(ProjectMemoryService.ProjectMemoryService)({}),
       ),
@@ -594,9 +594,9 @@ const makeLaptop = (
       ),
       Layer.provide(Layer.succeedContext(linking)),
       Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
-      Layer.provide(Layer.mock(MergeQueueService.MergeQueueService)({})),
       Layer.provide(
         Layer.mergeAll(
+          Layer.mock(MergeQueueService.MergeQueueService)({}),
           Layer.mock(TeamService.TeamService)({}),
           Layer.mock(ProjectMemoryService.ProjectMemoryService)({}),
         ),

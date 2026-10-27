@@ -163,9 +163,9 @@ const layerTools = Layer.mergeAll(
   Layer.provide(Layer.mock(SecretRequests.SecretRequests)({})),
   Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
   Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
-  Layer.provide(Layer.mock(MergeQueueService.MergeQueueService)({})),
   Layer.provide(
     Layer.mergeAll(
+      Layer.mock(MergeQueueService.MergeQueueService)({}),
       Layer.mock(TeamService.TeamService)({}),
       Layer.mock(ProjectMemoryService.ProjectMemoryService)({}),
     ),

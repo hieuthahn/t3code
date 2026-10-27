@@ -3,6 +3,7 @@ import { projectComposerContextForProvider } from "@t3tools/shared/composerConte
 import {
   CommandId,
   latestProviderTurnForAttempt,
+  type OrchestrationV2AppThread,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ExecutionNode,
   type OrchestrationV2ProviderThread,
@@ -11,6 +12,7 @@ import {
   type OrchestrationV2TurnItem,
   type ProviderInstanceId,
   RunId,
+  type TeamSetup,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -25,6 +27,7 @@ import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
 import * as AutoEffort from "../autoEffort/AutoEffortService.ts";
+import { autoTeamSetup, withAnswerAloneHint } from "../team/autoTeam.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as AccountSwitchJournal from "./AccountSwitchJournal.ts";
 import * as ServerConfig from "../config.ts";
@@ -56,6 +59,7 @@ import {
 } from "@t3tools/provider-core/server/failure";
 import * as RunExecutionService from "./RunExecutionService.ts";
 import * as RuntimePolicy from "./RuntimePolicy.ts";
+import * as ThreadManagement from "./ThreadManagementService.ts";
 import {
   isRestartNoteContinuation,
   pendingRestartCancelledBackgroundWork,
@@ -124,6 +128,7 @@ export const layer: Layer.Layer<
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
+    const serverSettings = yield* ServerSettings.ServerSettingsService;
     const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
     const projects = yield* ProjectService.ProjectService;
     const providerAuth = yield* ProviderAuthService.ProviderAuthService;
@@ -133,6 +138,7 @@ export const layer: Layer.Layer<
     const runtimePolicy = yield* RuntimePolicy.RuntimePolicyV2;
     const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
     const autoEffortService = yield* Effect.serviceOption(AutoEffort.AutoEffortService);
+    const threadManagement = yield* Effect.serviceOption(ThreadManagement.ThreadManagementService);
 
     const accountSwitchJournal = yield* Effect.serviceOption(
       AccountSwitchJournal.AccountSwitchJournal,
@@ -182,8 +188,12 @@ export const layer: Layer.Layer<
         readonly driver: ProviderAdapter.ProviderAdapterV2SessionRuntime["driver"];
         readonly text: string | undefined;
         readonly attachmentCount: number;
+        readonly team: AutoEffort.TeamTurnRequest | undefined;
       }) {
-        const unchanged = { modelSelection: input.run.modelSelection, notice: undefined };
+        const unchanged: AutoEffort.AutoEffortResolution = {
+          modelSelection: input.run.modelSelection,
+          notice: undefined,
+        };
         if (Option.isNone(autoEffortService) || input.text === undefined) return unchanged;
         const previousRun = input.runs
           .filter((candidate) => candidate.ordinal < input.run.ordinal)
@@ -208,9 +218,63 @@ export const layer: Layer.Layer<
           previousUserText: lastText("user_message"),
           previousAssistantText: lastText("assistant_message"),
           firstTurn: previousRun === undefined,
+          team: input.team,
         });
       },
     );
+
+    /** The default team and this turn's team question, while Team Auto still owns the thread. */
+    const resolveTeamAuto = Effect.fn("ProviderTurnStartService.resolveTeamAuto")(function* (
+      thread: OrchestrationV2AppThread,
+      run: OrchestrationV2Run,
+    ) {
+      if (
+        Option.isNone(autoEffortService) ||
+        run.ordinal <= 1 ||
+        thread.lineage.relationshipToParent === "subagent"
+      ) {
+        return undefined;
+      }
+      const teamOn = thread.team !== undefined;
+      if (!(yield* autoEffortService.value.isTeamAuto(thread.id, teamOn))) return undefined;
+      const teamSettings = yield* serverSettings.getSettings.pipe(
+        Effect.map((settings) => settings.team),
+        Effect.orElseSucceed(() => undefined),
+      );
+      const auto = autoTeamSetup(teamSettings, run.modelSelection);
+      // A running team still takes the answer-alone hint after its default setup is gone.
+      if (auto === undefined && !teamOn) return undefined;
+      const request: AutoEffort.TeamTurnRequest = {
+        on: teamOn,
+        runOrdinal: run.ordinal,
+        teamName: auto?.name,
+      };
+      return { auto, request };
+    });
+
+    /** Turns the default team on for this run, and keeps it on the thread for the turns after. */
+    const startAutoTeam = Effect.fn("ProviderTurnStartService.startAutoTeam")(function* (
+      thread: OrchestrationV2AppThread,
+      run: OrchestrationV2Run,
+      setup: TeamSetup,
+    ) {
+      if (Option.isNone(threadManagement)) return thread;
+      return yield* threadManagement.value
+        .dispatch({
+          type: "thread.metadata.update",
+          commandId: CommandId.make(`command:effect:team-auto:${run.id}`),
+          threadId: thread.id,
+          team: setup,
+        })
+        .pipe(
+          Effect.as<OrchestrationV2AppThread>({ ...thread, team: setup }),
+          Effect.catch((cause) =>
+            Effect.logWarning("Team Auto could not turn the team on.", { cause }).pipe(
+              Effect.as(thread),
+            ),
+          ),
+        );
+    });
 
     // Build draining callbacks outside startup scope so they cannot retain full thread history.
     const makeRunControls = (input: {
@@ -1402,6 +1466,11 @@ export const layer: Layer.Layer<
         !noteContinuation
           ? session
           : makeDeliverySession(session, startWithHandoffs);
+      const fromUser =
+        message.createdBy === "user" &&
+        message.senderThreadId === undefined &&
+        message.scheduledTaskId === undefined;
+      const teamAuto = fromUser ? yield* resolveTeamAuto(projection.thread, run) : undefined;
       const autoEffort = yield* resolveAutoEffort({
         threadId: projection.thread.id,
         run,
@@ -1409,7 +1478,22 @@ export const layer: Layer.Layer<
         driver: session.driver,
         text: noteContinuation || userText.trimStart().startsWith("/") ? undefined : userText,
         attachmentCount: message.attachments.length,
+        team: teamAuto?.request,
       });
+      const appThread =
+        autoEffort.teamAction === "start-team" && teamAuto?.auto !== undefined
+          ? yield* startAutoTeam(projection.thread, run, teamAuto.auto.setup)
+          : projection.thread;
+      if (autoEffort.teamRecord !== undefined && Option.isSome(autoEffortService)) {
+        yield* autoEffortService.value.recordTeamTurn(
+          autoEffort.teamRecord,
+          appThread.team !== undefined,
+        );
+      }
+      const providerText =
+        teamAuto !== undefined && autoEffort.teamAction === "answer-alone"
+          ? withAnswerAloneHint(userText)
+          : userText;
       const firstNoticeOrdinal =
         Math.max(
           0,
@@ -1472,7 +1556,7 @@ export const layer: Layer.Layer<
       }
       return runExecution.startRootRun({
         commandId: CommandId.make(`command:effect:provider-turn.start:${run.id}`),
-        appThread: projection.thread,
+        appThread,
         providerSessionId,
         session: deliverySession,
         run: runningRun,
@@ -1507,7 +1591,7 @@ export const layer: Layer.Layer<
         loadRunInterruptReason: runControls.loadRunInterruptReason,
         message: {
           messageId: message.id,
-          text: userText,
+          text: providerText,
           attachments: message.attachments,
           createdBy: message.createdBy,
           creationSource: message.creationSource,

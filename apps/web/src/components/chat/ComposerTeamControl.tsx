@@ -49,6 +49,7 @@ import {
   draftTeam,
   initialTeamSetup,
   leadGuidanceBytesLeft,
+  sameTeamSetup,
   teamControlName,
   upsertTeamProfile,
 } from "./teamSetupDraft";
@@ -149,12 +150,11 @@ export function ComposerTeamControl(props: {
     updateDraftComposerSettings(threadKey, { team: on ? "auto" : undefined });
     if (canWriteSettings) updateSettings({ team: { autoNewThreads: on } });
   };
+  const defaultSetup = settings.defaultSetup;
   const autoTeamName =
-    settings.defaultSetup === null
+    defaultSetup === null
       ? undefined
-      : settings.profiles.find(
-          (profile) => JSON.stringify(profile.setup) === JSON.stringify(settings.defaultSetup),
-        )?.name;
+      : settings.profiles.find((profile) => sameTeamSetup(profile.setup, defaultSetup))?.name;
   const saveProfiles = (profiles: ReadonlyArray<TeamProfile>) =>
     updateSettings({ team: { profiles: [...profiles] } });
 

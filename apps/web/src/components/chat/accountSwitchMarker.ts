@@ -77,3 +77,30 @@ export function resolveRunAccountLabel(input: {
   );
   return { label: labels[members.indexOf(account)] ?? name, name };
 }
+
+const ACCOUNT_SWITCH_NOTICE_SUFFIX = ":signal:account-switch";
+
+/**
+ * Take the server's account switch notices out of the timeline, keyed by run, so their reason
+ * reads in the switch divider instead of as a second row.
+ */
+export function splitAccountSwitchNotices<
+  Entry extends {
+    readonly id: string;
+    readonly kind: string;
+    readonly entry?: { readonly runId?: RunId | null; readonly label?: string };
+  },
+>(
+  entries: ReadonlyArray<Entry>,
+): { readonly entries: ReadonlyArray<Entry>; readonly reasons: ReadonlyMap<RunId, string> } {
+  const reasons = new Map<RunId, string>();
+  const kept = entries.filter((entry) => {
+    const runId = entry.entry?.runId;
+    if (entry.kind !== "work" || !entry.id.endsWith(ACCOUNT_SWITCH_NOTICE_SUFFIX) || !runId) {
+      return true;
+    }
+    if (entry.entry?.label) reasons.set(runId, entry.entry.label);
+    return false;
+  });
+  return reasons.size === 0 ? { entries, reasons } : { entries: kept, reasons };
+}

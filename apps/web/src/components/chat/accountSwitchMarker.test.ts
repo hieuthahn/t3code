@@ -1,7 +1,11 @@
 import { ProviderInstanceId, RunId, type ServerProvider } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { resolveAccountSwitchMarker, resolveRunAccountLabel } from "./accountSwitchMarker";
+import {
+  resolveAccountSwitchMarker,
+  resolveRunAccountLabel,
+  splitAccountSwitchNotices,
+} from "./accountSwitchMarker";
 import type { HandoffTimelineRun } from "./V2LifecycleRow";
 
 const provider = (instanceId: string, displayName: string, groupKey = "claude:home:/shared") =>
@@ -85,5 +89,34 @@ describe("resolveRunAccountLabel", () => {
     expect(
       resolveRunAccountLabel({ runId: RunId.make("missing"), runs, providers: shared }),
     ).toBeNull();
+  });
+});
+
+describe("splitAccountSwitchNotices", () => {
+  const notice = {
+    id: "turn-item:run:run-2:signal:account-switch",
+    kind: "work",
+    entry: {
+      runId: RunId.make("run-2"),
+      label: "Switched to dung because hieu hit its usage limit",
+    },
+  };
+  const other = {
+    id: "turn-item:run:run-2:signal:auto-effort",
+    kind: "work",
+    entry: { runId: RunId.make("run-2"), label: "Auto effort" },
+  };
+
+  it("moves the notice text to its run and keeps every other entry", () => {
+    const result = splitAccountSwitchNotices([notice, other]);
+    expect(result.entries).toEqual([other]);
+    expect(result.reasons.get(RunId.make("run-2"))).toBe(
+      "Switched to dung because hieu hit its usage limit",
+    );
+  });
+
+  it("returns the same list when no run switched accounts", () => {
+    const entries = [other];
+    expect(splitAccountSwitchNotices(entries).entries).toBe(entries);
   });
 });

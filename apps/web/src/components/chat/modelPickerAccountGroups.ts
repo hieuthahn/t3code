@@ -163,6 +163,46 @@ export function shortAccountLabels(displayNames: ReadonlyArray<string>): Readonl
   return displayNames;
 }
 
+/**
+ * Name the account an unpinned thread runs on, as the server last placed it, when several
+ * accounts share its history. Null when nothing needs saying: pinned, not started, merge off.
+ */
+export function resolveThreadAutoAccount(input: {
+  readonly mergeAccounts: boolean;
+  readonly accountPinned: boolean;
+  readonly threadStarted: boolean;
+  readonly threadInstanceId: ProviderInstanceId | null | undefined;
+  readonly selectedInstanceId: ProviderInstanceId;
+  readonly entries: ReadonlyArray<GroupableEntry>;
+}): { readonly label: string; readonly name: string } | null {
+  if (
+    !input.mergeAccounts ||
+    input.accountPinned ||
+    !input.threadStarted ||
+    input.threadInstanceId == null
+  ) {
+    return null;
+  }
+  const threadEntry = input.entries.find((entry) => entry.instanceId === input.threadInstanceId);
+  const selectedEntry = input.entries.find(
+    (entry) => entry.instanceId === input.selectedInstanceId,
+  );
+  if (
+    threadEntry?.continuationGroupKey === undefined ||
+    selectedEntry === undefined ||
+    !sameAccountGroup(threadEntry, selectedEntry)
+  ) {
+    return null;
+  }
+  const members = input.entries.filter((entry) => sameAccountGroup(entry, threadEntry));
+  if (members.length < 2) return null;
+  const labels = shortAccountLabels(members.map((entry) => entry.displayName));
+  return {
+    label: labels[members.indexOf(threadEntry)] ?? threadEntry.displayName,
+    name: threadEntry.displayName,
+  };
+}
+
 /** Name an account by its signed-in email, else the email in its name, else the name itself. */
 export function accountEmailLabel(input: {
   readonly displayName: string;

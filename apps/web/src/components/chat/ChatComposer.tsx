@@ -2679,6 +2679,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       selectedModelSelection={selectedModelSelection}
       onProviderModelSelect={onProviderModelSelect}
       activeThreadModelSelection={activeThreadModelSelection}
+      threadStarted={threadShellHasStarted(props.activeThreadShell)}
       selectedModelForPickerWithCustomFallback={selectedModelForPickerWithCustomFallback}
       lockedProvider={lockedProvider}
       lockedContinuationGroupKey={lockedContinuationGroupKey}

@@ -160,7 +160,7 @@ If the person asks for deep thought ("think hard", "ultrathink", "be thorough"),
 
 Reply with JSON only: {"effort":"low|medium|high|xhigh|max","sure":0.0-1.0 how sure you are,"why":"at most 6 words, in the user's language"}
 
-Only when the question ends by asking about a team, also decide whether the work should run as a team: an architect that plans and reviews while worker agents carry out parts in parallel. A team pays off for a large job that splits into independent parts (a feature across several modules, a broad review, a migration). A question, a small fix, a single-file change or a conversation runs as a single agent. Then add "team":true|false and "teamSure":0.0-1.0 to the JSON.`;
+Only when the question ends by asking about a team, also decide whether the work should run as a team: an architect that plans and reviews while worker agents carry out parts in parallel. A team pays off for a large job that splits into independent parts (a feature across several modules, a broad review, a migration). A question, a small fix, a single-file change or a conversation runs as a single agent. When the question says how the thread runs now, judge only the next message: a large new job wants a team mid-thread too, and a question or small follow-up runs as a single agent even on a team thread. Then add "team":true|false and "teamSure":0.0-1.0 to the JSON.`;
 
 export interface JudgeInput {
   readonly model: string;
@@ -171,9 +171,16 @@ export interface JudgeInput {
   readonly previousAssistantText: string | undefined;
   /** Also ask whether the thread should run as a team. */
   readonly askTeam?: boolean | undefined;
+  /** Whether a team already runs the thread, when the question comes mid-thread. */
+  readonly teamNow?: boolean | undefined;
 }
 
 const TEAM_QUESTION = "Team: should this thread run as a team or as a single agent?";
+
+const teamQuestion = (teamNow: boolean | undefined) =>
+  teamNow === undefined
+    ? TEAM_QUESTION
+    : `Team: the thread runs as ${teamNow ? "a team" : "a single agent"} now. Should the next message run as a team or as a single agent?`;
 
 function recentConversation(input: JudgeInput): string {
   return [
@@ -202,7 +209,7 @@ export function judgeQuestion(input: JudgeInput): string {
     `Current: ${input.model} / ${input.currentEffort ?? "default"}`,
     context === "" ? undefined : `Recent conversation:\n${context}`,
     `Next message:\n${nextMessage(input, 2000)}`,
-    input.askTeam === true ? TEAM_QUESTION : undefined,
+    input.askTeam === true ? teamQuestion(input.teamNow) : undefined,
   ]
     .filter((part) => part !== undefined)
     .join("\n\n");
@@ -258,6 +265,9 @@ export function jevRequestBody(input: JudgeInput): string {
       task: JEV_TASK,
       current_model: input.model,
       current_effort: input.currentEffort ?? "default",
+      ...(input.askTeam === true && input.teamNow !== undefined
+        ? { current_mode: input.teamNow ? "team" : "single agent" }
+        : {}),
       recent_conversation: recentConversation(input),
       next_message: nextMessage(input, 4000),
     },

@@ -176,21 +176,6 @@ const layerRunExecutionServiceProvided = RunExecutionService.layer.pipe(
   ),
 );
 
-const layerProviderTurnStartServiceProvided = ProviderTurnStartService.layer.pipe(
-  Layer.provide(
-    Layer.mergeAll(
-      layerContextHandoffServiceProvided,
-      layerEventSinkProvided,
-      IdAllocator.layer,
-      ProjectionStore.layer,
-      layerProviderSessionManagerProvided,
-      layerProviderAuthServiceProvided,
-      layerRunExecutionServiceProvided,
-      layerRuntimePolicyProvided,
-    ),
-  ),
-);
-
 const layerProviderTurnControlServiceProvided = ProviderTurnControlService.layer.pipe(
   Layer.provide(Layer.merge(ProjectionStore.layer, layerProviderSessionManagerProvided)),
 );
@@ -274,6 +259,22 @@ const layerThreadManagementProvided = ThreadManagementService.layerWithLegacyImp
     ),
   ),
 );
+const layerProviderTurnStartServiceProvided = ProviderTurnStartService.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerContextHandoffServiceProvided,
+      layerEventSinkProvided,
+      IdAllocator.layer,
+      ProjectionStore.layer,
+      layerProviderSessionManagerProvided,
+      layerProviderAuthServiceProvided,
+      layerRunExecutionServiceProvided,
+      layerRuntimePolicyProvided,
+      layerThreadManagementProvided,
+    ),
+  ),
+);
+
 export const layerProjectSetupScriptRunner = ProjectSetupScriptRunner.layer.pipe(
   Layer.provide(layerProjectService),
   // Whether a thread came from a linked environment, which skips setup.

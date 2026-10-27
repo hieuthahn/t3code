@@ -14,7 +14,7 @@ export function TeamAutoSettingRow() {
       {...searchableSetting("team-auto-new-threads")}
       description={
         hasDefaultTeam
-          ? "New threads start on Auto: the effort judge reads the first message and runs the default team or a single agent. Pick Team on or off in the composer to decide yourself."
+          ? "New threads start on Auto. The effort judge reads each message, starts the default team when a large job arrives, and keeps small requests to one agent. Pick Team on or off in the composer to decide yourself."
           : "Start a team once from the composer's Team control to give Auto a default team."
       }
       settingKeys={["team"]}

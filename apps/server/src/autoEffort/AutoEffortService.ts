@@ -72,6 +72,28 @@ export interface AutoEffortRequest {
   readonly previousAssistantText: string | undefined;
   /** True on the thread's first turn, the only one that shows the launch's team verdict. */
   readonly firstTurn?: boolean | undefined;
+  /** Set on a later turn of a Team Auto thread, so the judge also decides team or single. */
+  readonly team?: TeamTurnRequest | undefined;
+}
+
+export interface TeamTurnRequest {
+  /** Whether a team runs the thread before this turn. */
+  readonly on: boolean;
+  readonly runOrdinal: number;
+  readonly teamName: string | undefined;
+}
+
+/** "start-team" turns the default team on; "answer-alone" keeps it but asks for no workers. */
+export type TeamTurnAction = "start-team" | "answer-alone";
+
+/** This turn's verdict, recorded once the caller knows whether the team really changed. */
+export interface TeamTurnRecord {
+  readonly threadId: ThreadId;
+  readonly runOrdinal: number;
+  readonly before: boolean;
+  readonly verdict: EffortVerdict | undefined;
+  readonly by: string;
+  readonly teamName: string | undefined;
 }
 
 export interface AutoTeamRequest {
@@ -87,12 +109,18 @@ export interface AutoEffortResolution {
   readonly modelSelection: ModelSelection;
   /** What the turn shows about the choice; undefined when Auto effort is off. */
   readonly notice: string | undefined;
+  readonly teamAction?: TeamTurnAction | undefined;
+  /** Undefined on a retried run, whose verdict is already recorded. */
+  readonly teamRecord?: TeamTurnRecord | undefined;
 }
 
 export interface AutoEffortServiceShape {
   readonly resolve: (request: AutoEffortRequest) => Effect.Effect<AutoEffortResolution>;
   /** Judges team or single agent from a thread's first message; false when unsure or unavailable. */
   readonly judgeTeam: (request: AutoTeamRequest) => Effect.Effect<boolean>;
+  /** True while Team Auto still owns the thread: judged at launch, and no manual change since. */
+  readonly isTeamAuto: (threadId: ThreadId, teamOn: boolean) => Effect.Effect<boolean>;
+  readonly recordTeamTurn: (record: TeamTurnRecord, after: boolean) => Effect.Effect<void>;
 }
 
 export class AutoEffortService extends Context.Service<AutoEffortService, AutoEffortServiceShape>()(
@@ -120,6 +148,9 @@ interface LaunchJudgment {
 }
 
 const LAUNCH_RUN_ORDINAL = 1;
+
+const capitalized = (text: string | undefined) =>
+  text === undefined ? undefined : `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
 
 const percent = (value: number) => `${Math.round(value * 100)}% sure`;
 
@@ -286,6 +317,121 @@ const make = Effect.gen(function* () {
     return Option.map(jev, (verdict): Judged => ({ verdict: markedLow(verdict), by: "jev" }));
   });
 
+  const recordVerdict = Effect.fn("AutoEffortService.recordVerdict")(function* (input: {
+    readonly threadId: ThreadId;
+    readonly runOrdinal: number;
+    readonly before: boolean;
+    readonly after: boolean;
+    readonly verdict: EffortVerdict | undefined;
+    readonly by: string;
+    readonly teamName: string | undefined;
+  }) {
+    const recordedAt = DateTime.formatIso(yield* DateTime.now);
+    const { verdict } = input;
+    const judgeTeam = verdict?.team === undefined ? null : verdict.team ? 1 : 0;
+    yield* sql`
+      INSERT INTO auto_team_verdicts (
+        thread_id, run_ordinal, team_before, team_after, judge_team, team_sure, judged_by,
+        team_name, recorded_at
+      )
+      VALUES (${input.threadId}, ${input.runOrdinal}, ${input.before ? 1 : 0},
+        ${input.after ? 1 : 0}, ${judgeTeam}, ${verdict?.teamSure ?? null}, ${input.by},
+        ${input.teamName ?? null}, ${recordedAt})
+      ON CONFLICT (thread_id, run_ordinal) DO NOTHING
+    `.pipe(
+      Effect.catch((cause) =>
+        Effect.logWarning("Auto team could not record a verdict.", { cause }),
+      ),
+    );
+  });
+
+  const isTeamAuto = Effect.fn("AutoEffortService.isTeamAuto")(function* (
+    threadId: ThreadId,
+    teamOn: boolean,
+  ) {
+    const rows = yield* sql<{ readonly teamAfter: number }>`
+      SELECT team_after AS "teamAfter" FROM auto_team_verdicts
+      WHERE thread_id = ${threadId}
+      ORDER BY run_ordinal DESC
+      LIMIT 1
+    `.pipe(
+      Effect.catch((cause) =>
+        Effect.logWarning("Auto team could not read its verdicts.", { cause }).pipe(Effect.as([])),
+      ),
+    );
+    const last = rows[0];
+    return last !== undefined && (last.teamAfter === 1) === teamOn;
+  });
+
+  const storedTurn = (threadId: ThreadId, runOrdinal: number) =>
+    sql<{
+      readonly teamBefore: number;
+      readonly teamAfter: number;
+      readonly judgeTeam: number | null;
+      readonly teamSure: number | null;
+    }>`
+      SELECT team_before AS "teamBefore", team_after AS "teamAfter", judge_team AS "judgeTeam",
+        team_sure AS "teamSure"
+      FROM auto_team_verdicts
+      WHERE thread_id = ${threadId} AND run_ordinal = ${runOrdinal}
+    `.pipe(
+      Effect.map((rows) => rows[0]),
+      Effect.catch((cause) =>
+        Effect.logWarning("Auto team could not read its verdicts.", { cause }).pipe(
+          Effect.as(undefined),
+        ),
+      ),
+    );
+
+  /** Picks this turn's team action, or replays the one a retried run already recorded. */
+  const settleTeamTurn = Effect.fn("AutoEffortService.settleTeamTurn")(function* (
+    threadId: ThreadId,
+    turn: TeamTurnRequest,
+    judged: Option.Option<Judged>,
+  ) {
+    const stored = yield* storedTurn(threadId, turn.runOrdinal);
+    const fresh = Option.getOrUndefined(judged)?.verdict;
+    const choice =
+      stored === undefined
+        ? { on: turn.on, team: fresh?.team, teamSure: fresh?.teamSure }
+        : {
+            on: stored.teamBefore === 1,
+            team: stored.judgeTeam === null ? undefined : stored.judgeTeam === 1,
+            teamSure: stored.teamSure ?? undefined,
+          };
+    const sureEnough = (choice.teamSure ?? 0) >= TEAM_SURE_THRESHOLD;
+    const started =
+      stored === undefined ? choice.team === true && sureEnough : stored.teamAfter === 1;
+    const action: TeamTurnAction | undefined =
+      !choice.on && started
+        ? "start-team"
+        : choice.on && choice.team === false && sureEnough
+          ? "answer-alone"
+          : undefined;
+    const sure = choice.teamSure === undefined ? "" : `, ${percent(choice.teamSure)}`;
+    const notice =
+      action === "start-team"
+        ? `team: ${turn.teamName ?? "default team"} from this message${sure}`
+        : action === "answer-alone"
+          ? `team kept, this message runs without workers${sure}`
+          : undefined;
+    const record: TeamTurnRecord | undefined =
+      stored === undefined
+        ? {
+            threadId,
+            runOrdinal: turn.runOrdinal,
+            before: turn.on,
+            verdict: fresh,
+            by: Option.getOrUndefined(judged)?.by ?? "fallback",
+            teamName: turn.teamName,
+          }
+        : undefined;
+    return { action, notice, record };
+  });
+
+  const recordTeamTurn = (record: TeamTurnRecord, after: boolean) =>
+    recordVerdict({ ...record, after });
+
   const judgeTeam = Effect.fn("AutoEffortService.judgeTeam")(function* (request: AutoTeamRequest) {
     const stored = (yield* Ref.get(launchJudged)).get(request.threadId);
     if (stored !== undefined) return stored.team;
@@ -331,21 +477,15 @@ const make = Effect.gen(function* () {
       by,
       teamSure: verdict?.teamSure,
     });
-    const recordedAt = DateTime.formatIso(yield* DateTime.now);
-    const judgeTeam = verdict?.team === undefined ? null : verdict.team ? 1 : 0;
-    yield* sql`
-      INSERT INTO auto_team_verdicts (
-        thread_id, run_ordinal, team_before, team_after, judge_team, team_sure, judged_by,
-        team_name, recorded_at
-      )
-      VALUES (${request.threadId}, ${LAUNCH_RUN_ORDINAL}, 0, ${team ? 1 : 0}, ${judgeTeam},
-        ${verdict?.teamSure ?? null}, ${by}, ${request.teamName ?? null}, ${recordedAt})
-      ON CONFLICT (thread_id, run_ordinal) DO NOTHING
-    `.pipe(
-      Effect.catch((cause) =>
-        Effect.logWarning("Auto team could not record a verdict.", { cause }),
-      ),
-    );
+    yield* recordVerdict({
+      threadId: request.threadId,
+      runOrdinal: LAUNCH_RUN_ORDINAL,
+      before: false,
+      after: team,
+      verdict,
+      by,
+      teamName: request.teamName,
+    });
     return team;
   });
 
@@ -361,21 +501,16 @@ const make = Effect.gen(function* () {
   const resolve = Effect.fn("AutoEffortService.resolve")(function* (request: AutoEffortRequest) {
     const taken = yield* takeLaunchJudgment(request.threadId);
     const launch = request.firstTurn === true ? taken : undefined;
-    const teamNotice = launch === undefined ? undefined : teamNoticeText(launch);
-    const unchanged = {
-      modelSelection: request.modelSelection,
-      notice:
-        teamNotice === undefined
-          ? undefined
-          : `${teamNotice.charAt(0).toUpperCase()}${teamNotice.slice(1)}`,
-    };
+    const teamTurn = launch === undefined ? request.team : undefined;
     const optionId = effortOptionId(request.driver);
     const defaultOn = yield* serverSettings.getSettings.pipe(
       Effect.map((settings) => settings.autoEffortDefault),
       Effect.orElseSucceed(() => true),
     );
-    if (optionId === undefined || !isAutoEffortOn(request.modelSelection, defaultOn)) {
-      return unchanged;
+    const effortOn = optionId !== undefined && isAutoEffortOn(request.modelSelection, defaultOn);
+    const launchNotice = launch === undefined ? undefined : teamNoticeText(launch);
+    if (!effortOn && teamTurn === undefined) {
+      return { modelSelection: request.modelSelection, notice: capitalized(launchNotice) };
     }
     const startedAt = yield* Clock.currentTimeMillis;
     const providers = yield* providerRegistry.getProviders;
@@ -383,7 +518,10 @@ const make = Effect.gen(function* () {
       (candidate) => candidate.instanceId === request.modelSelection.instanceId,
     );
     const supported = supportedEffortLevels(provider, request.modelSelection.model);
-    const manual = getModelSelectionStringOptionValue(request.modelSelection, optionId);
+    const manual =
+      optionId === undefined
+        ? undefined
+        : getModelSelectionStringOptionValue(request.modelSelection, optionId);
     const previous = (yield* Ref.get(lastJudged)).get(request.threadId);
     const input: JudgeInput = {
       model: request.modelSelection.model,
@@ -392,10 +530,11 @@ const make = Effect.gen(function* () {
       attachmentCount: request.attachmentCount,
       previousUserText: request.previousUserText,
       previousAssistantText: request.previousAssistantText,
+      ...(teamTurn === undefined ? {} : { askTeam: true, teamNow: teamTurn.on }),
     };
 
     const asked = namedEffort(request.text);
-    const judged: Option.Option<Judged> =
+    const shortcut: Option.Option<Judged> | undefined =
       asked !== undefined
         ? Option.some<Judged>({ verdict: { effort: asked }, by: "asked" })
         : launch !== undefined && Option.isSome(launch.judged)
@@ -404,7 +543,29 @@ const make = Effect.gen(function* () {
               request.attachmentCount === 0 &&
               isFollowUp(request.text, request.previousAssistantText)
             ? Option.some<Judged>({ verdict: { effort: previous }, by: "follow-up" })
-            : yield* judge(request, input, providers);
+            : undefined;
+    // A follow-up such as "go ahead" can start the big job, so the team question still asks.
+    const judgedNow =
+      shortcut === undefined || teamTurn !== undefined
+        ? yield* judge(request, input, providers)
+        : Option.none<Judged>();
+    const judged = shortcut ?? judgedNow;
+    const team =
+      teamTurn === undefined
+        ? undefined
+        : yield* settleTeamTurn(request.threadId, teamTurn, judgedNow);
+    const teamNotice = launchNotice ?? team?.notice;
+    const teamAction = {
+      ...(team?.action === undefined ? {} : { teamAction: team.action }),
+      ...(team?.record === undefined ? {} : { teamRecord: team.record }),
+    };
+    if (!effortOn || optionId === undefined) {
+      return {
+        modelSelection: request.modelSelection,
+        notice: capitalized(teamNotice),
+        ...teamAction,
+      };
+    }
 
     const effort = Option.flatMap(judged, ({ verdict }) =>
       Option.fromNullishOr(clampToSupported(verdict.effort, supported)),
@@ -426,6 +587,7 @@ const make = Effect.gen(function* () {
         notice: [`Auto effort: ${manual ?? "default"} (judge unavailable)`, teamNotice]
           .filter(Boolean)
           .join(" · "),
+        ...teamAction,
       };
     }
     yield* Ref.update(lastJudged, (map) => new Map(map).set(request.threadId, effort.value));
@@ -434,10 +596,11 @@ const make = Effect.gen(function* () {
     return {
       modelSelection: withEffort(request.modelSelection, optionId, effort.value),
       notice: [`Auto effort: ${effort.value}`, source, why, teamNotice].filter(Boolean).join(" · "),
+      ...teamAction,
     };
   });
 
-  return AutoEffortService.of({ resolve, judgeTeam });
+  return AutoEffortService.of({ resolve, judgeTeam, isTeamAuto, recordTeamTurn });
 });
 
 export const layer = Layer.effect(AutoEffortService, make);

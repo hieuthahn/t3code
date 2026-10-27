@@ -220,7 +220,7 @@ export function ComposerTeamControl(props: {
                 <span className="text-xs text-muted-foreground">
                   {settings.defaultSetup === null
                     ? "Start a team once to give Auto a default team."
-                    : `The first message decides: ${autoTeamName ?? "the default team"} or a single agent.`}
+                    : `Each message decides between ${autoTeamName ?? "the default team"} and a single agent.`}
                 </span>
               </span>
               <Switch

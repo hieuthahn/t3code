@@ -596,6 +596,166 @@ describe("AutoEffortService team verdict", () => {
     ),
   );
 
+  const teamTurn = (on: boolean): AutoEffort.TeamTurnRequest => ({
+    on,
+    runOrdinal: 3,
+    teamName: "Strong team",
+  });
+  const laterTurns = (sql: SqlClient.SqlClient) =>
+    recorded(sql).pipe(Effect.map((rows) => rows.filter((row) => row.run_ordinal === 3)));
+  const recordAfter = (
+    service: AutoEffort.AutoEffortServiceShape,
+    resolution: AutoEffort.AutoEffortResolution,
+    after: boolean,
+  ) =>
+    resolution.teamRecord === undefined
+      ? Effect.die("expected a team record")
+      : service.recordTeamTurn(resolution.teamRecord, after);
+
+  it.effect("replays a retried run's recorded team action instead of judging it anew", () =>
+    run(
+      haikuSays('{"effort":"high","sure":0.9,"why":"big job","team":true,"teamSure":0.8}'),
+      ({ service, sql }) =>
+        Effect.gen(function* () {
+          const first = yield* service.resolve(request({ team: teamTurn(false) }));
+          yield* recordAfter(service, first, true);
+          const retried = yield* service.resolve(request({ team: teamTurn(true) }));
+          expect(retried.teamAction).toBe("start-team");
+          expect(retried.teamRecord).toBeUndefined();
+          expect(yield* laterTurns(sql)).toHaveLength(1);
+        }),
+    ),
+  );
+
+  it.effect("records the team as it really ended when turning it on failed", () =>
+    run(
+      haikuSays('{"effort":"high","sure":0.9,"why":"big job","team":true,"teamSure":0.8}'),
+      ({ service, sql }) =>
+        Effect.gen(function* () {
+          const resolution = yield* service.resolve(request({ team: teamTurn(false) }));
+          yield* recordAfter(service, resolution, false);
+          expect(yield* laterTurns(sql)).toEqual([
+            expect.objectContaining({ team_before: 0, team_after: 0, judge_team: 1 }),
+          ]);
+          expect(yield* service.isTeamAuto(ThreadId.make("thread-1"), false)).toBe(true);
+          const retried = yield* service.resolve(request({ team: teamTurn(false) }));
+          expect(retried.teamAction).toBeUndefined();
+        }),
+    ),
+  );
+
+  it.effect("turns a team on for a later message the judge sees as a big job", () =>
+    run(
+      haikuSays('{"effort":"high","sure":0.9,"why":"big job","team":true,"teamSure":0.8}'),
+      ({ service, sql, haikuQuestions }) =>
+        Effect.gen(function* () {
+          const resolution = yield* service.resolve(request({ team: teamTurn(false) }));
+          expect(resolution.teamAction).toBe("start-team");
+          expect(resolution.notice).toBe(
+            "Auto effort: high · by Haiku · big job · team: Strong team from this message, 80% sure",
+          );
+          const questions = yield* Ref.get(haikuQuestions);
+          expect(questions[0]?.question).toContain("the thread runs as a single agent now");
+          expect(yield* laterTurns(sql)).toEqual([]);
+          yield* recordAfter(service, resolution, true);
+          expect(yield* laterTurns(sql)).toEqual([
+            expect.objectContaining({ team_before: 0, team_after: 1, judge_team: 1 }),
+          ]);
+        }),
+    ),
+  );
+
+  it.effect("keeps a team but asks for no workers when a later message is small", () =>
+    run(
+      haikuSays('{"effort":"low","sure":0.9,"why":"quick answer","team":false,"teamSure":0.85}'),
+      ({ service, sql }) =>
+        Effect.gen(function* () {
+          const resolution = yield* service.resolve(
+            request({ text: "what does retry default to?", team: teamTurn(true) }),
+          );
+          expect(resolution.teamAction).toBe("answer-alone");
+          expect(resolution.notice).toContain("team kept, this message runs without workers, 85%");
+          yield* recordAfter(service, resolution, true);
+          expect(yield* laterTurns(sql)).toEqual([
+            expect.objectContaining({ team_before: 1, team_after: 1, judge_team: 0 }),
+          ]);
+        }),
+    ),
+  );
+
+  it.effect("changes nothing when the later verdict is unsure or the judge is unavailable", () =>
+    Effect.gen(function* () {
+      yield* run(
+        haikuSays('{"effort":"high","sure":0.9,"why":"big job","team":true,"teamSure":0.5}'),
+        ({ service }) =>
+          Effect.gen(function* () {
+            const resolution = yield* service.resolve(request({ team: teamTurn(false) }));
+            expect(resolution.teamAction).toBeUndefined();
+            expect(resolution.notice).not.toContain("team");
+          }),
+      );
+      yield* run(
+        { judge: "haiku", haikuReply: Effect.succeed(Option.none()) },
+        ({ service, sql }) =>
+          Effect.gen(function* () {
+            const resolution = yield* service.resolve(request({ team: teamTurn(true) }));
+            expect(resolution.teamAction).toBeUndefined();
+            yield* recordAfter(service, resolution, true);
+            expect(yield* laterTurns(sql)).toEqual([
+              expect.objectContaining({ team_before: 1, team_after: 1, judged_by: "fallback" }),
+            ]);
+          }),
+      );
+    }),
+  );
+
+  it.effect("still asks the team question on a short follow-up", () =>
+    run(
+      haikuSays('{"effort":"high","sure":0.9,"why":"build it","team":true,"teamSure":0.9}'),
+      ({ service, haikuQuestions }) =>
+        Effect.gen(function* () {
+          yield* service.resolve(request({ text: "review the whole repo" }));
+          const resolution = yield* service.resolve(
+            request({
+              text: "ok",
+              previousAssistantText: "Done, here is the plan.",
+              team: teamTurn(false),
+            }),
+          );
+          expect(resolution.teamAction).toBe("start-team");
+          expect(yield* Ref.get(haikuQuestions)).toHaveLength(2);
+        }),
+    ),
+  );
+
+  it.effect("judges the team while Auto effort is off, leaving the effort alone", () =>
+    run(
+      haikuSays('{"effort":"high","sure":0.9,"why":"big job","team":true,"teamSure":0.8}'),
+      ({ service }) =>
+        Effect.gen(function* () {
+          const resolution = yield* service.resolve(
+            request({ modelSelection: selection(CLAUDE, "effort", false), team: teamTurn(false) }),
+          );
+          expect(resolution.teamAction).toBe("start-team");
+          expect(resolution.notice).toBe("Team: Strong team from this message, 80% sure");
+          expect(effortOf(resolution)).toBe("medium");
+        }),
+    ),
+  );
+
+  it.effect("owns a thread only while its team matches the last verdict", () =>
+    run(
+      haikuSays('{"effort":"high","sure":0.9,"why":"big job","team":false,"teamSure":0.9}'),
+      ({ service }) =>
+        Effect.gen(function* () {
+          expect(yield* service.isTeamAuto(ThreadId.make("thread-1"), false)).toBe(false);
+          yield* service.judgeTeam(teamRequest());
+          expect(yield* service.isTeamAuto(ThreadId.make("thread-1"), false)).toBe(true);
+          expect(yield* service.isTeamAuto(ThreadId.make("thread-1"), true)).toBe(false);
+        }),
+    ),
+  );
+
   it.effect("shows the team verdict alone while Auto effort is off", () =>
     run(
       haikuSays('{"effort":"high","sure":0.9,"why":"big job","team":true,"teamSure":0.8}'),

@@ -3,6 +3,7 @@ import { expect, it, vi } from "vite-plus/test";
 import { it as effectIt } from "@effect/vitest";
 import {
   CheckpointScopeId,
+  DEFAULT_TEAM_LIMITS,
   MessageId,
   NodeId,
   ProviderSessionId,
@@ -16,6 +17,7 @@ import {
   ThreadId,
   ProjectId,
   type OrchestrationV2ThreadProjection,
+  type TeamSetup,
   OrchestrationV2DomainEvent,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -35,9 +37,11 @@ import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
+import * as AutoEffort from "../autoEffort/AutoEffortService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ContextHandoffService from "./ContextHandoffService.ts";
 import * as EventSink from "./EventSink.ts";
+import * as ThreadManagement from "./ThreadManagementService.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
@@ -59,12 +63,21 @@ const normalize = (target: string) => {
   }
   return `/${parts.join("/")}`;
 };
-const layerWorktreeLocation = (worktreesDir = managedWorktreesDir) =>
+const layerWorktreeLocation = (
+  worktreesDir = managedWorktreesDir,
+  settings: Parameters<typeof ServerSettings.layerTest>[0] = {},
+) =>
   Layer.mergeAll(
     Path.layer,
     Layer.mock(ServerConfig.ServerConfig)({ worktreesDir } as ServerConfig.ServerConfig["Service"]),
-    ServerSettings.layerTest(),
+    ServerSettings.layerTest(settings),
   );
+
+const autoTeamSetup: TeamSetup = {
+  architect: { instanceId: ProviderInstanceId.make("claudeAgent"), model: "opus" },
+  workers: [{ instanceId: ProviderInstanceId.make("claudeAgent_dung"), model: "sonnet" }],
+  limits: DEFAULT_TEAM_LIMITS,
+};
 
 /** Starts a run on a thread whose worktree folder is missing, with routing reads failing after. */
 function startWithMissingWorktree(
@@ -280,6 +293,14 @@ function makeLocalCommandHarness(input: {
     readonly interruptFailure?: boolean;
     readonly interruptCurrentRun?: boolean;
   };
+  readonly teamAuto?: {
+    readonly teamOn: boolean;
+    readonly owned: boolean;
+    readonly action?: AutoEffort.TeamTurnAction;
+    readonly noDefaultTeam?: boolean;
+    readonly dispatchFails?: boolean;
+    readonly fromSystem?: boolean;
+  };
 }) {
   const now = DateTime.makeUnsafe("2026-09-04T12:00:00Z");
   const threadId = ThreadId.make("thread-native-account-command");
@@ -336,7 +357,7 @@ function makeLocalCommandHarness(input: {
     text: input.text,
     attachments: [],
     streaming: false,
-    createdBy: "user",
+    createdBy: input.teamAuto?.fromSystem === true ? "system" : "user",
     creationSource: "web",
     createdAt: now,
     updatedAt: now,
@@ -348,6 +369,12 @@ function makeLocalCommandHarness(input: {
       projectId: ProjectId.make("project-native-account-command"),
       branch: input.worktreePath === undefined ? null : "feature/restore",
       worktreePath: input.worktreePath ?? null,
+      lineage: {
+        parentThreadId: null,
+        relationshipToParent: null,
+        rootThreadId: threadId,
+      } as OrchestrationV2ThreadProjection["thread"]["lineage"],
+      ...(input.teamAuto?.teamOn === true ? { team: autoTeamSetup } : {}),
     } as OrchestrationV2ThreadProjection["thread"],
     runs: [
       ...(input.previousNativeSession
@@ -669,6 +696,13 @@ function makeLocalCommandHarness(input: {
       Effect.succeed({ cwd: thread.worktreePath ?? "/tmp/native-account-command" } as never),
   );
   const createWorktree = vi.fn(() => Effect.succeed({} as never));
+  const resolveRequests: Array<AutoEffort.AutoEffortRequest> = [];
+  const recordedAfter: Array<boolean> = [];
+  const dispatch = vi.fn((_command: unknown) =>
+    input.teamAuto?.dispatchFails === true
+      ? Effect.fail(new Error("dispatch failed") as never)
+      : Effect.succeed({} as never),
+  );
   const getThreadRecords = vi.fn<ProjectionStore.ProjectionStoreV2Shape["getThreadRecords"]>(() =>
     Effect.succeed(projection),
   );
@@ -690,7 +724,19 @@ function makeLocalCommandHarness(input: {
         }),
         Layer.mock(EventSink.EventSinkV2)({ writeIfRunCurrent }),
         IdAllocator.layer,
-        layerWorktreeLocation(input.worktreesDir),
+        layerWorktreeLocation(
+          input.worktreesDir,
+          input.teamAuto === undefined || input.teamAuto.noDefaultTeam === true
+            ? {}
+            : {
+                team: {
+                  profiles: [{ id: "strong", name: "Strong team", setup: autoTeamSetup }],
+                  defaultSetup: autoTeamSetup,
+                  newThreads: false,
+                  autoNewThreads: true,
+                },
+              },
+        ),
         input.fileSystem === undefined
           ? FileSystem.layerNoop({ exists: () => Effect.succeed(true) })
           : Layer.succeed(FileSystem.FileSystem, input.fileSystem),
@@ -740,10 +786,48 @@ function makeLocalCommandHarness(input: {
         Layer.mock(RuntimePolicy.RuntimePolicyV2)({
           resolve: resolveRuntimePolicy,
         }),
+        input.teamAuto === undefined
+          ? Layer.empty
+          : Layer.mergeAll(
+              Layer.mock(AutoEffort.AutoEffortService)({
+                isTeamAuto: () => Effect.succeed(input.teamAuto?.owned === true),
+                resolve: (request) =>
+                  Effect.sync(() => {
+                    resolveRequests.push(request);
+                    return {
+                      modelSelection: request.modelSelection,
+                      notice: undefined,
+                      ...(input.teamAuto?.action === undefined
+                        ? {}
+                        : { teamAction: input.teamAuto.action }),
+                      ...(request.team === undefined
+                        ? {}
+                        : {
+                            teamRecord: {
+                              threadId: request.threadId,
+                              runOrdinal: request.team.runOrdinal,
+                              before: request.team.on,
+                              verdict: undefined,
+                              by: "haiku",
+                              teamName: request.team.teamName,
+                            },
+                          }),
+                    };
+                  }),
+                recordTeamTurn: (_record, after) =>
+                  Effect.sync(() => {
+                    recordedAfter.push(after);
+                  }),
+              }),
+              Layer.mock(ThreadManagement.ThreadManagementService)({ dispatch: dispatch as never }),
+            ),
       ),
     ),
   );
   return {
+    resolveRequests,
+    recordedAfter,
+    dispatch,
     getThreadRecords,
     getTurnStartContext,
     setProjection: (next: OrchestrationV2ThreadProjection) => {
@@ -810,6 +894,123 @@ effectIt.effect.each([
 
     expect(harness.interruptTurn).not.toHaveBeenCalled();
     expect(harness.projection().runs.at(-1)?.status).toBe("running");
+  }),
+);
+
+effectIt.effect("turns the default team on mid-thread when the judge says team", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "Build the billing module across server, web and the database",
+      previousTurn: { runStatus: "completed", turnStatus: "completed" },
+      teamAuto: { teamOn: false, owned: true, action: "start-team" },
+    });
+
+    yield* harness.start;
+
+    expect(harness.resolveRequests[0]?.team).toEqual({
+      on: false,
+      runOrdinal: 2,
+      teamName: "Strong team",
+    });
+    expect(harness.dispatch).toHaveBeenCalledOnce();
+    const command = harness.dispatch.mock.calls[0]?.[0] as {
+      readonly type: string;
+      readonly team: { readonly architect: { readonly model: string } };
+    };
+    expect(command.type).toBe("thread.metadata.update");
+    expect(command.team.architect.model).toBe("gpt-5.4");
+    const started = harness.startRootRun.mock.calls[0]?.[0];
+    expect(started?.appThread.team?.architect.model).toBe("gpt-5.4");
+    expect(started?.message.text).toBe(
+      "Build the billing module across server, web and the database",
+    );
+    expect(harness.recordedAfter).toEqual([true]);
+  }),
+);
+
+effectIt.effect("keeps a single agent and records it when turning the team on fails", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "Build the billing module across server, web and the database",
+      previousTurn: { runStatus: "completed", turnStatus: "completed" },
+      teamAuto: { teamOn: false, owned: true, action: "start-team", dispatchFails: true },
+    });
+
+    yield* harness.start;
+
+    expect(harness.dispatch).toHaveBeenCalledOnce();
+    expect(harness.startRootRun.mock.calls[0]?.[0].appThread.team).toBeUndefined();
+    expect(harness.recordedAfter).toEqual([false]);
+  }),
+);
+
+effectIt.effect("leaves the team question out of a message the user did not send", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "Worker 2 finished the importer.",
+      previousTurn: { runStatus: "completed", turnStatus: "completed" },
+      teamAuto: { teamOn: true, owned: true, action: "answer-alone", fromSystem: true },
+    });
+
+    yield* harness.start;
+
+    expect(harness.resolveRequests[0]?.team).toBeUndefined();
+    expect(harness.startRootRun.mock.calls[0]?.[0].message.text).toBe(
+      "Worker 2 finished the importer.",
+    );
+  }),
+);
+
+effectIt.effect("still judges a running team after its default setup is gone", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "What does the retry option default to?",
+      previousTurn: { runStatus: "completed", turnStatus: "completed" },
+      teamAuto: { teamOn: true, owned: true, action: "answer-alone", noDefaultTeam: true },
+    });
+
+    yield* harness.start;
+
+    expect(harness.resolveRequests[0]?.team).toEqual({
+      on: true,
+      runOrdinal: 2,
+      teamName: undefined,
+    });
+    expect(harness.startRootRun.mock.calls[0]?.[0].message.text).toContain("without team_assign");
+  }),
+);
+
+effectIt.effect("asks a team thread's architect to answer alone when the judge says single", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "What does the retry option default to?",
+      previousTurn: { runStatus: "completed", turnStatus: "completed" },
+      teamAuto: { teamOn: true, owned: true, action: "answer-alone" },
+    });
+
+    yield* harness.start;
+
+    expect(harness.resolveRequests[0]?.team?.on).toBe(true);
+    expect(harness.dispatch).not.toHaveBeenCalled();
+    const started = harness.startRootRun.mock.calls[0]?.[0];
+    expect(started?.appThread.team).toBeDefined();
+    expect(started?.message.text).toContain("What does the retry option default to?");
+    expect(started?.message.text).toContain("without team_assign");
+  }),
+);
+
+effectIt.effect("leaves the team question out of a thread Team Auto no longer owns", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "Build the billing module across server, web and the database",
+      previousTurn: { runStatus: "completed", turnStatus: "completed" },
+      teamAuto: { teamOn: true, owned: false },
+    });
+
+    yield* harness.start;
+
+    expect(harness.resolveRequests[0]?.team).toBeUndefined();
+    expect(harness.dispatch).not.toHaveBeenCalled();
   }),
 );
 

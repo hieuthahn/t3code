@@ -7,6 +7,7 @@ import {
   withMessageContext,
   deriveAvailableRevertTurnCounts,
   deriveWorkspaceMutationId,
+  turnRecapForDisplay,
 } from "./ChatView.logic";
 import { recallCheckoutIsRepo, rememberCheckoutIsRepo } from "./ChatView.logic";
 import { ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
@@ -104,6 +105,18 @@ const readySession = {
   lastError: null,
   updatedAt: "2026-03-29T00:00:10.000Z",
 };
+
+describe("turnRecapForDisplay", () => {
+  const recap = { summary: "Plan ready.", question: "Start phase 3?", replies: ["Start"] };
+
+  it("keeps the question while the composer asks nothing", () => {
+    expect(turnRecapForDisplay(recap, false)).toBe(recap);
+  });
+
+  it("keeps only the summary while the composer asks the user", () => {
+    expect(turnRecapForDisplay(recap, true)).toEqual({ summary: "Plan ready.", replies: [] });
+  });
+});
 
 describe("resolveDraftPromotionNavigationTarget", () => {
   const serverThreadRef = { environmentId, threadId };

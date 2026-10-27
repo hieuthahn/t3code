@@ -31,6 +31,7 @@ import {
   type ModelSelection,
   type OrchestrationMessageContext,
   type OrchestrationV2ProjectedTurnItem,
+  type OrchestrationV2TurnRecap,
   type PreviewAnnotationPayload,
   type ProviderInteractionMode,
   ProviderDriverKind,
@@ -134,6 +135,16 @@ export function agentControlledBrowserCloseConfirmation(
     `Close ${activeBrowserCount} browsers while the agent is using them?`,
     "The agent is actively controlling these browsers. Closing them may interrupt the current browser actions.",
   ].join("\n");
+}
+
+/** Drop the recap question while the composer already asks the user something. */
+export function turnRecapForDisplay(
+  recap: OrchestrationV2TurnRecap,
+  composerAsks: boolean,
+): OrchestrationV2TurnRecap {
+  return composerAsks && recap.question !== undefined
+    ? { summary: recap.summary, replies: [] }
+    : recap;
 }
 
 export function shouldRenderPreviewMiniPlayer(

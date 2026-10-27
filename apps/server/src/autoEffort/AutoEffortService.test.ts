@@ -13,11 +13,13 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as TestClock from "effect/testing/TestClock";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import { describe, expect } from "vite-plus/test";
 
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as AutoEffort from "./AutoEffortService.ts";
@@ -100,6 +102,7 @@ const run = <A>(
     readonly service: AutoEffort.AutoEffortServiceShape;
     readonly haikuQuestions: Ref.Ref<ReadonlyArray<{ instanceId: string; question: string }>>;
     readonly jevAuthorization: Ref.Ref<ReadonlyArray<string>>;
+    readonly sql: SqlClient.SqlClient;
   }) => Effect.Effect<A>,
 ) =>
   Effect.gen(function* () {
@@ -170,8 +173,11 @@ const run = <A>(
         ),
       ),
     );
-    const service = yield* AutoEffort.AutoEffortService.pipe(Effect.provide(layer));
-    return yield* body({ service, haikuQuestions, jevAuthorization });
+    return yield* Effect.gen(function* () {
+      const service = yield* AutoEffort.AutoEffortService;
+      const sql = yield* SqlClient.SqlClient;
+      return yield* body({ service, haikuQuestions, jevAuthorization, sql });
+    }).pipe(Effect.provide(layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemory))));
   });
 
 const request = (
@@ -528,6 +534,65 @@ describe("AutoEffortService team verdict", () => {
           expect(later.notice).not.toContain("team");
           expect(yield* service.judgeTeam(teamRequest())).toBe(true);
         }),
+    ),
+  );
+
+  const recorded = (sql: SqlClient.SqlClient) =>
+    sql<{
+      readonly thread_id: string;
+      readonly run_ordinal: number;
+      readonly team_before: number;
+      readonly team_after: number;
+      readonly judge_team: number | null;
+      readonly team_sure: number | null;
+      readonly judged_by: string;
+      readonly team_name: string | null;
+    }>`
+      SELECT thread_id, run_ordinal, team_before, team_after, judge_team, team_sure, judged_by,
+        team_name
+      FROM auto_team_verdicts
+    `.pipe(Effect.orDie);
+
+  it.effect("records the verdict once per thread, with the judge's own answer", () =>
+    run(
+      haikuSays('{"effort":"high","sure":0.9,"why":"big job","team":true,"teamSure":0.4}'),
+      ({ service, sql }) =>
+        Effect.gen(function* () {
+          yield* service.judgeTeam(teamRequest());
+          yield* service.judgeTeam(teamRequest());
+          expect(yield* recorded(sql)).toEqual([
+            {
+              thread_id: "thread-1",
+              run_ordinal: 1,
+              team_before: 0,
+              team_after: 0,
+              judge_team: 1,
+              team_sure: 0.4,
+              judged_by: "haiku",
+              team_name: "Strong team",
+            },
+          ]);
+        }),
+    ),
+  );
+
+  it.effect("records a single agent verdict when the judge is unavailable", () =>
+    run({ judge: "haiku", haikuReply: Effect.succeed(Option.none()) }, ({ service, sql }) =>
+      Effect.gen(function* () {
+        yield* service.judgeTeam(teamRequest({ teamName: undefined }));
+        expect(yield* recorded(sql)).toEqual([
+          {
+            thread_id: "thread-1",
+            run_ordinal: 1,
+            team_before: 0,
+            team_after: 0,
+            judge_team: null,
+            team_sure: null,
+            judged_by: "fallback",
+            team_name: null,
+          },
+        ]);
+      }),
     ),
   );
 

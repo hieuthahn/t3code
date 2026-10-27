@@ -177,6 +177,24 @@ describe("judge prompts", () => {
     });
     expect(Object.keys(body.questions)).toEqual(["effort"]);
   });
+
+  it("tells both judges how the thread runs now when the team question comes mid-thread", () => {
+    const midThread = { ...input, askTeam: true, teamNow: true };
+    expect(judgeQuestion(midThread)).toContain(
+      "Team: the thread runs as a team now. Should the next message run as a team or as a single agent?",
+    );
+    const body = JSON.parse(jevRequestBody(midThread));
+    expect(body.state.current_mode).toBe("team");
+    expect(Object.keys(body.questions)).toEqual(["effort", "team"]);
+  });
+
+  it("keeps the launch team question free of a current mode", () => {
+    const launch = { ...input, askTeam: true };
+    expect(judgeQuestion(launch)).toContain(
+      "Team: should this thread run as a team or as a single agent?",
+    );
+    expect(JSON.parse(jevRequestBody(launch)).state.current_mode).toBeUndefined();
+  });
 });
 
 describe("parsing", () => {

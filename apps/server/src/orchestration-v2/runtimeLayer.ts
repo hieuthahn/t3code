@@ -2,6 +2,7 @@ import * as GuestShareService from "../guest/GuestShareService.ts";
 import * as UsageLimitRecoveryWorker from "./UsageLimitRecoveryWorker.ts";
 import * as UsageLimitSwitchWorker from "./UsageLimitSwitchWorker.ts";
 import * as AccountSwitchJournal from "./AccountSwitchJournal.ts";
+import * as MidTurnAccountSwitchWorker from "./MidTurnAccountSwitchWorker.ts";
 import * as EarlyAccountSwitch from "./EarlyAccountSwitch.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as Layer from "effect/Layer";
@@ -399,6 +400,9 @@ export const layerProduction = Layer.mergeAll(
     ),
   ),
   UsageLimitSwitchWorker.layer.pipe(
+    Layer.provide(Layer.mergeAll(ProjectionStore.layer, layerThreadManagementProvided)),
+  ),
+  MidTurnAccountSwitchWorker.layer.pipe(
     Layer.provide(Layer.mergeAll(ProjectionStore.layer, layerThreadManagementProvided)),
   ),
   layerProviderContinuationWorkerProvided,

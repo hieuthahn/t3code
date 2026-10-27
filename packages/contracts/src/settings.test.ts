@@ -491,3 +491,12 @@ describe("sidebarCompactGroupBy forward compatibility", () => {
     ).toEqual({ chatWidth: "wide" });
   });
 });
+
+describe("balanceNewThreads", () => {
+  it("decodes a missing key to false and keeps an explicit value", () => {
+    expect(decodeServerSettings({}).balanceNewThreads).toBe(false);
+    expect(decodeServerSettings({ balanceNewThreads: true }).balanceNewThreads).toBe(true);
+    expect(DEFAULT_SERVER_SETTINGS.balanceNewThreads).toBe(false);
+    expect(decodeServerSettingsPatch({}).balanceNewThreads).toBeUndefined();
+  });
+});

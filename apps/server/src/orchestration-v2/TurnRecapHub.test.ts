@@ -25,11 +25,22 @@ const workRun = [
 const hubWith = (
   history: ReadonlyArray<OrchestrationV2TurnItem>,
   recap: (question: string) => Effect.Effect<Option.Option<string>>,
+  cards: ReadonlyArray<{ readonly runId: RunId; readonly type: string }> | "unreadable" = [],
 ) =>
   TurnRecapHub.layer.pipe(
     Layer.provide(
       Layer.mock(ProjectionStore.ProjectionStoreV2)({
         getTurnStartHistory: () => Effect.succeed(history),
+        getThreadRecords: (threadId, _fields, filter) =>
+          cards === "unreadable"
+            ? Effect.fail(new ProjectionStore.ProjectionStoreThreadNotFoundError({ threadId }))
+            : Effect.succeed({
+                turnItems: cards.filter(
+                  (card) =>
+                    card.runId === filter?.turnItemRunId &&
+                    filter.turnItemTypes?.some((type) => type === card.type),
+                ),
+              } as never),
       }),
     ),
     Layer.provide(Layer.succeed(TurnRecapHub.TurnRecapper, { recap })),
@@ -84,6 +95,35 @@ describe("TurnRecapHub", () => {
           Effect.die("a chat-only run must not ask for a recap"),
         ),
       ),
+    ),
+  );
+
+  it.effect.each([
+    { name: "a card in the run", cards: [{ runId: RUN, type: "child_plan_request" }], asks: false },
+    {
+      name: "a card in an earlier run",
+      cards: [{ runId: RunId.make("run-earlier"), type: "child_plan_request" }],
+      asks: true,
+    },
+    { name: "an unreadable run", cards: "unreadable" as const, asks: true },
+  ])("asks only when no card already asks, after $name", ({ cards, asks }) =>
+    Effect.gen(function* () {
+      const hub = yield* TurnRecapHub.TurnRecapHub;
+      yield* hub.recapAfterRun({ threadId: THREAD, runId: RUN });
+      const first = yield* hub.subscribe(THREAD).pipe(Stream.runHead);
+      expect(Option.map(first, (item) => item.recap)).toEqual(
+        Option.some(
+          asks
+            ? {
+                summary: "Parser fixed. Tests not run.",
+                question: "Run the tests?",
+                replies: ["Yes"],
+              }
+            : { summary: "Parser fixed. Tests not run.", replies: [] },
+        ),
+      );
+    }).pipe(
+      Effect.provide(hubWith(workRun, () => Effect.succeed(Option.some(RECAP_REPLY)), cards)),
     ),
   );
 

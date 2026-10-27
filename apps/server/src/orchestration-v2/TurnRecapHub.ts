@@ -15,7 +15,7 @@ import * as Stream from "effect/Stream";
 
 import * as ServerSettings from "../serverSettings.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
-import { isMultiStepRun, parseRecap, recapQuestion } from "./turnRecap.ts";
+import { CARD_REQUEST_TYPES, isMultiStepRun, parseRecap, recapQuestion } from "./turnRecap.ts";
 
 /**
  * The recap of each thread's last multi-step run, written by Haiku on a Claude account for
@@ -93,7 +93,18 @@ const make = Effect.gen(function* () {
       const startedAt = yield* Clock.currentTimeMillis;
       const reply = yield* recapper.value.recap(question);
       const ms = (yield* Clock.currentTimeMillis) - startedAt;
-      const recap = Option.isSome(reply) ? parseRecap(reply.value) : undefined;
+      const parsed = Option.isSome(reply) ? parseRecap(reply.value) : undefined;
+      const askedOnCard = yield* projections
+        .getThreadRecords(threadId, ["turnItems"], {
+          turnItemTypes: CARD_REQUEST_TYPES,
+          turnItemRunId: runId,
+        })
+        .pipe(
+          Effect.map((records) => records.turnItems.length > 0),
+          Effect.orElseSucceed(() => false),
+        );
+      const recap =
+        parsed !== undefined && askedOnCard ? { summary: parsed.summary, replies: [] } : parsed;
       if (recap === undefined || (generations.get(threadId) ?? 0) !== generation) {
         yield* Effect.logInfo("turn-recap", { threadId, chars: 0, ms });
         return;

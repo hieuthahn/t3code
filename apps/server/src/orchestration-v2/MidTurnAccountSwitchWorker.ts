@@ -293,7 +293,7 @@ export const makeSweep = Effect.gen(function* () {
     }
 
     const preferences = yield* settings.getSettings;
-    if (!preferences.earlyAccountSwitch) return;
+    if (!preferences.earlyAccountSwitch || !preferences.midTurnAccountSwitch) return;
     const state = yield* Ref.get(stateRef);
     if (state.lastScanAtMs !== undefined && nowMs - state.lastScanAtMs < SCAN_INTERVAL_MS) return;
     yield* Ref.update(stateRef, (current) => ({ ...current, lastScanAtMs: nowMs }));

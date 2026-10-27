@@ -507,6 +507,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     settings.earlySwitchWeeklyThreshold !== DEFAULT_UNIFIED_SETTINGS.earlySwitchWeeklyThreshold
       ? ["Switch accounts before the limit"]
       : []),
+    ...(settings.midTurnAccountSwitch !== DEFAULT_UNIFIED_SETTINGS.midTurnAccountSwitch
+      ? ["Switch accounts during a turn"]
+      : []),
     ...(settings.switchPinnedAccounts !== DEFAULT_UNIFIED_SETTINGS.switchPinnedAccounts
       ? ["Switch pinned accounts too"]
       : []),
@@ -686,6 +689,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       autoEffortJudge: DEFAULT_UNIFIED_SETTINGS.autoEffortJudge,
       modelPickerMergeAccounts: DEFAULT_UNIFIED_SETTINGS.modelPickerMergeAccounts,
       earlyAccountSwitch: DEFAULT_UNIFIED_SETTINGS.earlyAccountSwitch,
+      midTurnAccountSwitch: DEFAULT_UNIFIED_SETTINGS.midTurnAccountSwitch,
       earlySwitchSessionThreshold: DEFAULT_UNIFIED_SETTINGS.earlySwitchSessionThreshold,
       earlySwitchWeeklyThreshold: DEFAULT_UNIFIED_SETTINGS.earlySwitchWeeklyThreshold,
       switchPinnedAccounts: DEFAULT_UNIFIED_SETTINGS.switchPinnedAccounts,
@@ -1083,7 +1087,7 @@ export function GeneralSettingsPanel() {
         <SettingsRow
           serverScoped
           {...searchableSetting("early-account-switch")}
-          description="Once an account passes a threshold below, move the thread to another account that shares its history, before a new message or between steps of a running turn. The other account must sit 20 points under each threshold."
+          description="Once an account passes a threshold below, move the thread to another account that shares its history before a new message. The other account must sit 20 points under each threshold."
           settingKeys={[
             "earlyAccountSwitch",
             "earlySwitchSessionThreshold",
@@ -1116,6 +1120,23 @@ export function GeneralSettingsPanel() {
             }
           />
         </SettingsRow>
+        <SettingsRow
+          serverScoped
+          {...searchableSetting("mid-turn-account-switch")}
+          description="Also stop a running turn between steps and continue it on the roomier account. Each switch rebuilds the prompt cache on the new account."
+          settingKeys={["midTurnAccountSwitch"]}
+          control={
+            <ScopedSwitch
+              settingKeys={["midTurnAccountSwitch"]}
+              checked={settings.midTurnAccountSwitch}
+              disabled={!settings.earlyAccountSwitch}
+              onCheckedChange={(checked) =>
+                updateSettings({ midTurnAccountSwitch: Boolean(checked) })
+              }
+              aria-label="Switch accounts during a turn"
+            />
+          }
+        />
         <SettingsRow
           serverScoped
           {...searchableSetting("switch-pinned-accounts")}

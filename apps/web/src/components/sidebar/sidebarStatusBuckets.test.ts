@@ -39,6 +39,7 @@ function thread(overrides: Partial<SidebarStatusInput> = {}): SidebarStatusInput
     interactionMode: "default",
     latestRun: latestRun("completed"),
     runtime: runtime("completed"),
+    pendingBackgroundTasks: [],
     ...overrides,
   };
 }
@@ -75,6 +76,25 @@ describe("sidebarStatusBucketOf", () => {
     ["waiting on a checkpoint", "waiting"],
   ] as const)("puts a %s turn in Working", (_name, status) => {
     expect(sidebarStatusBucketOf(thread({ runtime: runtime(status) }))).toBe("working");
+  });
+
+  it("keeps a settled turn that awaits a background child in Working", () => {
+    expect(
+      sidebarStatusBucketOf(
+        thread({
+          runtime: runtime("idle"),
+          pendingBackgroundTasks: [{ taskId: "child-1", kind: "subagent" }],
+        }),
+      ),
+    ).toBe("working");
+  });
+
+  it("leaves a settled turn whose dev server keeps running in Completed", () => {
+    expect(
+      sidebarStatusBucketOf(
+        thread({ pendingBackgroundTasks: [{ taskId: "server-1", kind: "command" }] }),
+      ),
+    ).toBe("completed");
   });
 
   it("keeps a new turn after a failure in Working", () => {

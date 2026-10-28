@@ -1,6 +1,8 @@
-import { resolveThreadWorkingStartedAt } from "@t3tools/client-runtime/state/models";
+import {
+  resolveThreadWorkingStartedAt,
+  threadAwaitsBackgroundWork,
+} from "@t3tools/client-runtime/state/models";
 import { isShownUnderParent } from "@t3tools/client-runtime/state/threads";
-import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";
 import * as React from "react";
 import {
@@ -1005,7 +1007,9 @@ type SidebarThreadStatusInput = Pick<
   | "pendingGuestMessageCount"
   | "runtime"
   | "blockedOnThreadWait"
->;
+> & {
+  pendingBackgroundTasks?: SidebarThreadSummary["pendingBackgroundTasks"] | undefined;
+};
 
 export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): SidebarThreadStatus {
   if (thread.hasPendingApprovals || thread.pendingSubagentRequest === "approval") {
@@ -1027,7 +1031,7 @@ export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): Si
   ) {
     return "working";
   }
-  if (thread.runtime?.status === "idle") {
+  if (threadAwaitsBackgroundWork(thread)) {
     return "waiting";
   }
   if (thread.runtime?.status === "failed") {
@@ -1079,9 +1083,8 @@ export type SidebarV2TopStatusKind =
   | "woke"
   | "working";
 
-/** Decide whether a compact row shows its status; an idle "Waiting" thread shows its time instead. */
 export function compactRowShowsStatus(kind: SidebarV2TopStatusKind | null): boolean {
-  return kind !== null && kind !== "waiting";
+  return kind !== null;
 }
 
 export function resolveSidebarV2TopStatus(input: {
@@ -1281,13 +1284,13 @@ export function resolveThreadStatusPill(input: {
 
   if (
     (thread.runtime?.status === "running" && thread.blockedOnThreadWait === true) ||
-    backgroundWorkHoldsCompletion(thread.pendingBackgroundTasks ?? [])
+    threadAwaitsBackgroundWork(thread)
   ) {
     return {
       label: "Waiting",
-      colorClass: "text-sidebar-muted-foreground",
-      dotClass: "bg-sidebar-muted-foreground",
-      pulse: false,
+      colorClass: "text-sky-600 dark:text-sky-300/80",
+      dotClass: "bg-sky-500 dark:bg-sky-300/80",
+      pulse: true,
     };
   }
 

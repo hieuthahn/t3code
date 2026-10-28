@@ -117,6 +117,17 @@ export function threadRuntimeIsActive(runtime: ThreadStructureRuntime | null | u
   return runtime !== null && runtime !== undefined && threadRunStatusIsActive(runtime.status);
 }
 
+/** Report whether a settled run stays open on background work its agent awaits, such as a child session. */
+export function threadAwaitsBackgroundWork(thread: {
+  readonly runtime: Pick<ThreadRuntimeSummary, "status"> | null;
+  readonly pendingBackgroundTasks?: EnvironmentThreadShell["pendingBackgroundTasks"] | undefined;
+}): boolean {
+  return (
+    thread.runtime?.status === "idle" &&
+    backgroundWorkHoldsCompletion(thread.pendingBackgroundTasks ?? [])
+  );
+}
+
 export function threadRuntimeCanArchive(runtime: ThreadRuntimeSummary | null | undefined): boolean {
   if (runtime?.status === "queued") return runtime.activeRunId === null;
   return (

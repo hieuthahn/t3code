@@ -1,5 +1,6 @@
 import {
   type EnvironmentThreadShell,
+  threadAwaitsBackgroundWork,
   threadRuntimeIsActive,
 } from "@t3tools/client-runtime/state/models";
 
@@ -24,6 +25,7 @@ export type SidebarStatusInput = Pick<
   | "interactionMode"
   | "latestRun"
   | "runtime"
+  | "pendingBackgroundTasks"
 >;
 
 export interface SidebarStatusBucketGroup<T> {
@@ -44,7 +46,7 @@ export function sidebarStatusBucketOf(thread: SidebarStatusInput): SidebarStatus
   ) {
     return "needs-input";
   }
-  if (threadRuntimeIsActive(thread.runtime)) return "working";
+  if (threadRuntimeIsActive(thread.runtime) || threadAwaitsBackgroundWork(thread)) return "working";
   if (thread.interactionMode === "plan" && thread.hasActionableProposedPlan) return "needs-input";
   const runStatus = thread.runtime?.status ?? thread.latestRun?.status;
   return runStatus !== undefined && STOPPED_RUN_STATUSES.has(runStatus)

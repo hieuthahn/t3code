@@ -473,6 +473,16 @@ describe("resolveSidebarThreadStatus", () => {
         ...idle,
         runtime: { ...runtime, status: "idle" as const, lastError: "persisted" },
       }),
+    ).toBe("ready");
+  });
+
+  it("shows Waiting while a settled run holds on a child session it awaits", () => {
+    expect(
+      resolveSidebarThreadStatus({
+        ...idle,
+        runtime: { ...runtime, status: "idle" as const },
+        pendingBackgroundTasks: [{ taskId: "child-1", kind: "subagent" }],
+      }),
     ).toBe("waiting");
   });
 });
@@ -580,12 +590,12 @@ describe("resolveThreadStatusPill", () => {
     },
   };
 
-  it("shows an active thread wait without a pulse and resumes Working when it ends", () => {
+  it("pulses an active thread wait and resumes Working when it ends", () => {
     const blocked = { ...baseThread, blockedOnThreadWait: true };
     expect(resolveSidebarThreadStatus(blocked)).toBe("waiting");
     expect(resolveThreadStatusPill({ thread: blocked })).toMatchObject({
       label: "Waiting",
-      pulse: false,
+      pulse: true,
     });
 
     const resumed = { ...blocked, blockedOnThreadWait: false };
@@ -613,9 +623,9 @@ describe("resolveThreadStatusPill", () => {
       }),
     ).toMatchObject({
       label: "Waiting",
-      colorClass: "text-sidebar-muted-foreground",
-      dotClass: "bg-sidebar-muted-foreground",
-      pulse: false,
+      colorClass: "text-sky-600 dark:text-sky-300/80",
+      dotClass: "bg-sky-500 dark:bg-sky-300/80",
+      pulse: true,
     });
   });
 
@@ -1142,6 +1152,14 @@ describe("unseen completion with background work", () => {
       receded: true,
       pill: "Waiting",
     },
+    {
+      roster: "background subagent",
+      task: { kind: "subagent" },
+      status: "waiting",
+      topStatus: "waiting",
+      receded: true,
+      pill: "Waiting",
+    },
   ] as const)("presents a completed thread with a $roster roster", (expected) => {
     const thread = presentThreadShell(localEnvironmentId, {
       ...makeThreadFixture().source,
@@ -1204,6 +1222,9 @@ describe("Working shelf (beta)", () => {
     expect(isSidebarThreadWorking({ ...idle, runtime })).toBe(true);
     expect(isSidebarThreadWorking(waiting)).toBe(true);
     expect(isSidebarThreadWorking(idle)).toBe(false);
+    expect(
+      isSidebarThreadWorking({ ...idle, runtime: { ...runtime, status: "idle" as const } }),
+    ).toBe(false);
     expect(isSidebarThreadWorking({ ...idle, runtime, hasPendingApprovals: true })).toBe(false);
     expect(isSidebarThreadWorking({ ...idle, runtime, hasPendingUserInput: true })).toBe(false);
     expect(
@@ -1533,7 +1554,7 @@ describe("compactRowShowsStatus", () => {
     ["limited", true],
     ["done", true],
     ["woke", true],
-    ["waiting", false],
+    ["waiting", true],
     [null, false],
   ] as const)("shows %s as status: %s", (kind, shown) => {
     expect(compactRowShowsStatus(kind)).toBe(shown);

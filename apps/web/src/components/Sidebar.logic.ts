@@ -856,6 +856,15 @@ export function shouldClearThreadSelectionOnMouseDown(target: HTMLElement | null
   return !target.closest(THREAD_SELECTION_SAFE_SELECTOR);
 }
 
+export function isThreadSplitClick(modifiers: {
+  readonly altKey: boolean;
+  readonly metaKey: boolean;
+  readonly ctrlKey: boolean;
+  readonly shiftKey: boolean;
+}): boolean {
+  return modifiers.altKey && !modifiers.metaKey && !modifiers.ctrlKey && !modifiers.shiftKey;
+}
+
 // Suppress trailing double-click navigation; keyboard and synthetic clicks use detail 0.
 export function isTrailingDoubleClick(detail: number): boolean {
   return detail > 1;

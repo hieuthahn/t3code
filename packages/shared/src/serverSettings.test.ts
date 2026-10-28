@@ -931,4 +931,3 @@ describe("applyServerSettingsPatch team", () => {
     expect(next.team.newThreads).toBe(true);
   });
 });
-

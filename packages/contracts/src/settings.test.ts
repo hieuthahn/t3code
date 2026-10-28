@@ -563,4 +563,3 @@ describe("removed account switching settings", () => {
     });
   });
 });
-

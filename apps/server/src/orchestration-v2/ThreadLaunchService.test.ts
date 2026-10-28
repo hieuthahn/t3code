@@ -132,6 +132,7 @@ interface HarnessOptions {
   readonly providers?: ReadonlyArray<ServerProvider>;
   readonly git?: Partial<GitWorkflow.GitWorkflowService["Service"]>;
   readonly judgeTeam?: AutoEffort.AutoEffortServiceShape["judgeTeam"];
+  readonly recordTeamChoice?: AutoEffort.AutoEffortServiceShape["recordTeamChoice"];
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -221,7 +222,10 @@ function makeHarness(options: HarnessOptions = {}) {
     ProviderRegistryMock.layer(options.providers),
     options.judgeTeam === undefined
       ? Layer.empty
-      : Layer.mock(AutoEffort.AutoEffortService)({ judgeTeam: options.judgeTeam }),
+      : Layer.mock(AutoEffort.AutoEffortService)({
+          judgeTeam: options.judgeTeam,
+          recordTeamChoice: options.recordTeamChoice ?? (() => Effect.void),
+        }),
     options.managedFolders ??
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
         namedProjectsRoot: "/projects",
@@ -762,7 +766,12 @@ describe("Team Auto", () => {
         asked.push(request);
         return team;
       });
-    return { asked, judgeTeam };
+    const choices: Array<readonly [string, boolean]> = [];
+    const recordTeamChoice = (threadId: string, on: boolean) =>
+      Effect.sync(() => {
+        choices.push([threadId, on]);
+      });
+    return { asked, judgeTeam, choices, recordTeamChoice };
   };
   const launchAuto = (name: string, team?: ThreadLaunch.ThreadLaunchInput["team"]) =>
     Effect.gen(function* () {
@@ -845,11 +854,16 @@ describe("Team Auto", () => {
       assert.isUndefined(yield* launchAuto("explicit-single", null));
       assert.deepStrictEqual(yield* launchAuto("explicit-team", own), own);
       assert.equal(judge.asked.length, 0);
+      assert.deepStrictEqual(
+        judge.choices.map(([, on]) => on),
+        [false, true],
+      );
     }).pipe(
       Effect.provide(
         makeHarness({
           serverSettings: teamSettings({ autoNewThreads: true }),
           judgeTeam: judge.judgeTeam,
+          recordTeamChoice: judge.recordTeamChoice,
         }).layer,
       ),
     );

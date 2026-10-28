@@ -590,12 +590,12 @@ describe("resolveThreadStatusPill", () => {
     },
   };
 
-  it("shows an active thread wait without a pulse and resumes Working when it ends", () => {
+  it("pulses an active thread wait and resumes Working when it ends", () => {
     const blocked = { ...baseThread, blockedOnThreadWait: true };
     expect(resolveSidebarThreadStatus(blocked)).toBe("waiting");
     expect(resolveThreadStatusPill({ thread: blocked })).toMatchObject({
       label: "Waiting",
-      pulse: false,
+      pulse: true,
     });
 
     const resumed = { ...blocked, blockedOnThreadWait: false };
@@ -623,9 +623,9 @@ describe("resolveThreadStatusPill", () => {
       }),
     ).toMatchObject({
       label: "Waiting",
-      colorClass: "text-sidebar-muted-foreground",
-      dotClass: "bg-sidebar-muted-foreground",
-      pulse: false,
+      colorClass: "text-sky-600 dark:text-sky-300/80",
+      dotClass: "bg-sky-500 dark:bg-sky-300/80",
+      pulse: true,
     });
   });
 
@@ -1554,7 +1554,7 @@ describe("compactRowShowsStatus", () => {
     ["limited", true],
     ["done", true],
     ["woke", true],
-    ["waiting", false],
+    ["waiting", true],
     [null, false],
   ] as const)("shows %s as status: %s", (kind, shown) => {
     expect(compactRowShowsStatus(kind)).toBe(shown);

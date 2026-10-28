@@ -219,6 +219,23 @@ describe("planEarlySwitch with switching near the limit off", () => {
     assert.equal(result.command.modelSelection?.instanceId, dung);
     assert.equal(result.choice?.reason, "current-signed-out");
   });
+
+  it("still moves an unpinned turn off a spent account, even right after a switch", () => {
+    const result = plan({
+      currentPercent: 100,
+      switchNearLimit: false,
+      lastSwitchAtMs: NOW - 60_000,
+    });
+    assert.equal(result.command.modelSelection?.instanceId, dung);
+  });
+
+  it("keeps a pinned turn on its spent account", () => {
+    const pinned = command({
+      modelSelection: { instanceId: hieu, model: "claude-opus-5-5", accountChoice: "pinned" },
+    });
+    const result = plan({ command: pinned, currentPercent: 100, switchNearLimit: false });
+    assert.isNull(result.choice);
+  });
 });
 
 describe("planEarlySwitch for a turn that names another unpinned account", () => {
@@ -300,6 +317,7 @@ describe("EarlyAccountSwitch.rewrite", () => {
     readonly providers: ReadonlyArray<ServerProvider>;
     readonly mergeAccounts?: boolean;
     readonly balanceNewThreads?: boolean;
+    readonly earlyAccountSwitch?: boolean;
     readonly refresh?: (
       instanceId: ProviderInstanceId,
       publish: (providers: ReadonlyArray<ServerProvider>) => Effect.Effect<void>,
@@ -333,6 +351,9 @@ describe("EarlyAccountSwitch.rewrite", () => {
             ...(input.balanceNewThreads === undefined
               ? {}
               : { balanceNewThreads: input.balanceNewThreads }),
+            ...(input.earlyAccountSwitch === undefined
+              ? {}
+              : { earlyAccountSwitch: input.earlyAccountSwitch }),
             earlySwitchSessionThreshold: 90,
             earlySwitchWeeklyThreshold: 90,
           }),
@@ -360,6 +381,52 @@ describe("EarlyAccountSwitch.rewrite", () => {
         reason: "near-limit",
         pressure: { windowLabel: "Session", usedPercent: 92 },
       });
+    }),
+  );
+
+  it.effect("moves a thread switched from pinned to auto off its spent account", () =>
+    Effect.gen(function* () {
+      const { service } = yield* harness({
+        providers: pair(provider(hieu, 100), provider(dung, 20)),
+        earlyAccountSwitch: false,
+      });
+      const rewritten = yield* service.rewrite(
+        command({ modelSelection: { instanceId: hieu, model: "claude-opus-5-5" } }),
+        thread,
+      );
+      assert.equal(rewritten.modelSelection?.instanceId, dung);
+    }),
+  );
+
+  it.effect("moves a turn off the account the thread's last run hit a limit on", () =>
+    Effect.gen(function* () {
+      const { service } = yield* harness({
+        providers: pair(provider(hieu, 80), provider(dung, 20)),
+        earlyAccountSwitch: false,
+      });
+      const limited: EarlySwitchThread = {
+        ...thread,
+        usageLimited: { instanceId: hieu, resetsAt: "2026-10-20T14:00:00.000Z" },
+      };
+      assert.equal((yield* service.rewrite(command(), limited)).modelSelection?.instanceId, dung);
+      const expired: EarlySwitchThread = {
+        ...thread,
+        usageLimited: { instanceId: hieu, resetsAt: "2026-10-20T11:00:00.000Z" },
+      };
+      assert.isUndefined((yield* service.rewrite(command(), expired)).modelSelection);
+      const noReset: EarlySwitchThread = { ...thread, usageLimited: { instanceId: hieu } };
+      assert.equal((yield* service.rewrite(command(), noReset)).modelSelection?.instanceId, dung);
+    }),
+  );
+
+  it.effect("keeps a pressured but unspent account when early switching is off", () =>
+    Effect.gen(function* () {
+      const { service } = yield* harness({
+        providers: pair(provider(hieu, 95), provider(dung, 20)),
+        earlyAccountSwitch: false,
+      });
+      const rewritten = yield* service.rewrite(command(), thread);
+      assert.isUndefined(rewritten.modelSelection);
     }),
   );
 

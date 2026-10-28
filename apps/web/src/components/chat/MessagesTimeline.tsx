@@ -658,6 +658,11 @@ const ConversationTimeline = memo(function ConversationTimeline({
     rows,
     citationRequest,
     cancelPositionRestoreRef,
+    earlierHistory: historyControls && {
+      available: historyControls.hasMoreHistory && historyControls.error === null,
+      loading: historyControls.loading,
+      load: historyControls.onLoadEarlier,
+    },
     onManualNavigation,
     onPositioned: setPositionedThreadKey,
   });

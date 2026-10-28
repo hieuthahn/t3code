@@ -3,6 +3,8 @@ import * as Cause from "effect/Cause";
 import { expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
+import "~/index.css";
+
 const state = vi.hoisted(() => ({
   allowed: true,
   loading: false,
@@ -110,15 +112,25 @@ async function setup(
   const container = screen.container;
   const rows = () =>
     Array.from(container.querySelectorAll<HTMLElement>("[data-memory-entry-id]")).map((row) =>
-      (row.querySelector("p")?.textContent ?? "").trim(),
+      (row.querySelector("[data-memory-entry-text]")?.textContent ?? "").trim(),
     );
   const byLabel = (label: string) =>
     container.querySelector<HTMLElement>(`[aria-label="${label}"]`);
+  const dialog = () => document.querySelector<HTMLElement>("[data-thread-project-memory-dialog]");
+  const dialogField = () =>
+    dialog()?.querySelector<HTMLTextAreaElement>('textarea[aria-label="Memory text"]') ?? null;
+  const dialogButton = (name: string) =>
+    Array.from(dialog()?.querySelectorAll<HTMLButtonElement>("button") ?? []).find(
+      (button) => button.textContent === name,
+    ) ?? null;
   const environment = stack.move();
   return {
     container,
     rows,
     byLabel,
+    dialog,
+    dialogField,
+    dialogButton,
     show,
     [Symbol.asyncDispose]: () => environment.disposeAsync(),
   };
@@ -183,15 +195,56 @@ it("deletes the entry whose control was pressed", async () => {
   expect(fixture.rows()).toEqual(["Use pnpm"]);
 });
 
-it("edits an entry in place on Enter and leaves it alone on Escape", async () => {
+const LONG_TEXT = Array.from({ length: 60 }, (_, index) => `word${index}`).join(" ");
+const textOfLength = (length: number) => "x".repeat(length);
+
+async function typeIntoDialog(
+  fixture: { dialogField: () => HTMLTextAreaElement | null },
+  text: string,
+) {
+  const field = fixture.dialogField()!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(field, text);
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+it("clamps a long entry to two lines in the rail", async () => {
+  await using fixture = await setup([entry("memory:1", LONG_TEXT)]);
+  const text = fixture.container.querySelector<HTMLElement>("[data-memory-entry-text]")!;
+  expect(getComputedStyle(text).webkitLineClamp).toBe("2");
+  expect(text.scrollHeight).toBeGreaterThan(text.clientHeight);
+  expect(text.clientHeight).toBeLessThanOrEqual(
+    Number.parseFloat(getComputedStyle(text).lineHeight) * 2 + 1,
+  );
+  expect(fixture.dialog()).toBeNull();
+});
+
+it("opens an entry in a dialog with its full text and a character counter", async () => {
+  await using fixture = await setup([entry("memory:1", LONG_TEXT)]);
+  await act(async () =>
+    fixture.container.querySelector<HTMLElement>("[data-memory-entry-open]")!.click(),
+  );
+  expect(fixture.dialogField()!.value).toBe(LONG_TEXT);
+  expect(fixture.dialog()!.querySelector("[data-memory-counter]")!.textContent).toBe(
+    `${LONG_TEXT.length}/500`,
+  );
+  expect(fixture.dialogButton("Delete")).not.toBeNull();
+  expect(state.calls).toEqual([]);
+});
+
+it("opens the same dialog from the edit control", async () => {
   await using fixture = await setup([entry("memory:1", "Use pnpm")]);
   await act(async () => fixture.byLabel("Edit memory: Use pnpm")!.click());
-  await userEvent.keyboard("{Escape}");
-  expect(fixture.rows()).toEqual(["Use pnpm"]);
-  expect(state.calls).toEqual([]);
+  expect(fixture.dialogField()!.value).toBe("Use pnpm");
+});
 
+it("saves an edited entry from the dialog and closes it", async () => {
+  await using fixture = await setup([entry("memory:1", "Use pnpm")]);
   await act(async () => fixture.byLabel("Edit memory: Use pnpm")!.click());
-  await userEvent.keyboard(" via vp{Enter}");
+  expect(fixture.dialogButton("Save")!.disabled).toBe(true);
+  await typeIntoDialog(fixture, "Use pnpm via vp");
+  await act(async () => fixture.dialogButton("Save")!.click());
   expect(state.calls).toEqual([
     {
       action: "edit",
@@ -199,7 +252,107 @@ it("edits an entry in place on Enter and leaves it alone on Escape", async () =>
     },
   ]);
   expect(fixture.rows()).toEqual(["Use pnpm via vp"]);
-  expect(fixture.byLabel("Edit memory")).toBeNull();
+  await vi.waitFor(() => expect(fixture.dialog()).toBeNull());
+});
+
+it("saves from the keyboard with Cmd+Enter and keeps Enter for a new line", async () => {
+  await using fixture = await setup([entry("memory:1", "Use pnpm")]);
+  await act(async () => fixture.byLabel("Edit memory: Use pnpm")!.click());
+  const field = fixture.dialogField()!;
+  await act(async () => field.setSelectionRange(field.value.length, field.value.length));
+  await userEvent.keyboard("{Enter}more");
+  expect(state.calls).toEqual([]);
+  expect(fixture.dialogField()!.value).toBe("Use pnpm\nmore");
+  await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
+  expect(state.calls).toHaveLength(1);
+});
+
+it("blocks a save over 500 characters and allows exactly 500", async () => {
+  await using fixture = await setup([entry("memory:1", "Use pnpm")]);
+  await act(async () => fixture.byLabel("Edit memory: Use pnpm")!.click());
+  await typeIntoDialog(fixture, textOfLength(501));
+  expect(fixture.dialog()!.querySelector("[data-memory-counter]")!.textContent).toBe("501/500");
+  expect(fixture.dialogButton("Save")!.disabled).toBe(true);
+  await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
+  expect(state.calls).toEqual([]);
+  expect(fixture.rows()).toEqual(["Use pnpm"]);
+
+  await typeIntoDialog(fixture, textOfLength(500));
+  expect(fixture.dialogButton("Save")!.disabled).toBe(false);
+});
+
+it("leaves everything unchanged on Cancel and on Escape", async () => {
+  await using fixture = await setup([entry("memory:1", "Use pnpm")]);
+  await act(async () => fixture.byLabel("Edit memory: Use pnpm")!.click());
+  await typeIntoDialog(fixture, "Something else");
+  await act(async () => fixture.dialogButton("Cancel")!.click());
+  await vi.waitFor(() => expect(fixture.dialog()).toBeNull());
+  expect(fixture.rows()).toEqual(["Use pnpm"]);
+
+  await act(async () => fixture.byLabel("Edit memory: Use pnpm")!.click());
+  expect(fixture.dialogField()!.value).toBe("Use pnpm");
+  await userEvent.keyboard("{Escape}");
+  await vi.waitFor(() => expect(fixture.dialog()).toBeNull());
+  expect(fixture.rows()).toEqual(["Use pnpm"]);
+  expect(state.calls).toEqual([]);
+});
+
+it("keeps the dialog open with the draft and the error when a save fails", async () => {
+  await using fixture = await setup([entry("memory:1", "Use pnpm")], projectId, {
+    failEdit: "Disk full",
+  });
+  await act(async () => fixture.byLabel("Edit memory: Use pnpm")!.click());
+  await typeIntoDialog(fixture, "Use pnpm via vp");
+  await act(async () => fixture.dialogButton("Save")!.click());
+  expect(fixture.dialog()).not.toBeNull();
+  expect(fixture.dialogField()!.value).toBe("Use pnpm via vp");
+  expect(fixture.dialog()!.querySelector('[role="alert"]')!.textContent).toContain("Disk full");
+  expect(fixture.rows()).toEqual(["Use pnpm"]);
+  expect(fixture.dialogButton("Save")!.disabled).toBe(false);
+});
+
+it("deletes an existing entry from the dialog", async () => {
+  await using fixture = await setup([
+    entry("memory:2", "Ship small"),
+    entry("memory:1", "Use pnpm"),
+  ]);
+  await act(async () => fixture.byLabel("Edit memory: Ship small")!.click());
+  await act(async () => fixture.dialogButton("Delete")!.click());
+  expect(state.calls).toEqual([
+    { action: "delete", input: { environmentId, input: { projectId, entryId: "memory:2" } } },
+  ]);
+  expect(fixture.rows()).toEqual(["Use pnpm"]);
+  await vi.waitFor(() => expect(fixture.dialog()).toBeNull());
+});
+
+it("opens the editor from the add row with the draft and appends on save", async () => {
+  await using fixture = await setup([entry("memory:1", "Use pnpm")]);
+  const field = fixture.byLabel("Add to memory") as HTMLInputElement;
+  await userEvent.click(field);
+  await userEvent.keyboard("Draft so far");
+  await act(async () => fixture.byLabel("Write a longer memory")!.click());
+  expect(fixture.dialogField()!.value).toBe("Draft so far");
+  expect(fixture.dialogButton("Delete")).toBeNull();
+
+  await typeIntoDialog(fixture, `${LONG_TEXT}`);
+  await act(async () => fixture.dialogButton("Save")!.click());
+  expect(state.calls).toEqual([
+    { action: "append", input: { environmentId, input: { projectId, text: LONG_TEXT } } },
+  ]);
+  expect(fixture.rows()).toEqual([LONG_TEXT, "Use pnpm"]);
+  expect(field.value).toBe("");
+});
+
+it("keeps the add row draft when the editor is cancelled", async () => {
+  await using fixture = await setup([]);
+  const field = fixture.byLabel("Add to memory") as HTMLInputElement;
+  await userEvent.click(field);
+  await userEvent.keyboard("Draft so far");
+  await act(async () => fixture.byLabel("Write a longer memory")!.click());
+  await act(async () => fixture.dialogButton("Cancel")!.click());
+  await vi.waitFor(() => expect(fixture.dialog()).toBeNull());
+  expect(field.value).toBe("Draft so far");
+  expect(state.calls).toEqual([]);
 });
 
 it("disables every control without the operate grant", async () => {
@@ -233,17 +386,4 @@ it("keeps Enter for the IME while a composition is open", async () => {
       void field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
   );
   expect(state.calls).toHaveLength(1);
-});
-
-it("keeps the draft and shows the error when an edit fails, and survives a blur", async () => {
-  await using fixture = await setup([entry("memory:1", "Use pnpm")], projectId, {
-    failEdit: "Disk full",
-  });
-  await act(async () => fixture.byLabel("Edit memory: Use pnpm")!.click());
-  await userEvent.keyboard(" via vp{Enter}");
-  const field = fixture.byLabel("Edit memory") as HTMLInputElement;
-  expect(field.value).toBe("Use pnpm via vp");
-  expect(fixture.container.textContent).toContain("Disk full");
-  await act(async () => void field.blur());
-  expect(fixture.byLabel("Edit memory")).not.toBeNull();
 });

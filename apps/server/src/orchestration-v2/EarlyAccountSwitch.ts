@@ -57,7 +57,47 @@ export interface EarlySwitchThread {
   readonly modelSelection: ModelSelection;
   /** False only before the thread's first run started; new threads spread across the group. */
   readonly hasStartedRun?: boolean;
+  /** The account the thread's latest run hit a usage limit on, until that limit resets. */
+  readonly usageLimited?: { readonly instanceId: ProviderInstanceId; readonly resetsAt?: string };
 }
+
+/** Count the thread's own usage-limit failure as a full window when usage polling lags. */
+export const withThreadUsageLimit = (
+  providers: ReadonlyArray<ServerProvider>,
+  thread: EarlySwitchThread,
+  nowMs: number,
+): ReadonlyArray<ServerProvider> => {
+  const limited = thread.usageLimited;
+  if (
+    limited === undefined ||
+    (limited.resetsAt !== undefined && !(Date.parse(limited.resetsAt) > nowMs)) ||
+    isSpentAccount(providers, limited.instanceId, nowMs)
+  ) {
+    return providers;
+  }
+  return providers.map((provider) =>
+    provider.instanceId === limited.instanceId
+      ? {
+          ...provider,
+          usageLimits: {
+            checkedAt: DateTime.formatIso(DateTime.makeUnsafe(nowMs)),
+            windows: [
+              ...(provider.usageLimits?.unavailable === undefined
+                ? (provider.usageLimits?.windows ?? [])
+                : []),
+              {
+                id: "thread-usage-limit",
+                kind: "session",
+                label: "Usage limit",
+                usedPercent: 100,
+                ...(limited.resetsAt === undefined ? {} : { resetsAt: limited.resetsAt }),
+              },
+            ],
+          },
+        }
+      : provider,
+  );
+};
 
 /**
  * Tell whether a dispatch is a new user turn. A launched thread's first message defers its
@@ -135,6 +175,7 @@ export const planEarlySwitch = (input: {
   const leavesSpentAccount =
     selection.instanceId !== input.thread.modelSelection.instanceId &&
     isSpentAccount(input.providers, selection.instanceId, input.nowMs);
+  const onSpentAccount = isSpentAccount(input.providers, selection.instanceId, input.nowMs);
   if (
     !isEarlySwitchCandidate(input.command, input.thread) ||
     (!input.switchPinned && selection.accountChoice === "pinned")
@@ -142,7 +183,7 @@ export const planEarlySwitch = (input: {
     return { command: input.command, choice: null };
   }
   if (
-    !leavesSpentAccount &&
+    !onSpentAccount &&
     input.lastSwitchAtMs !== undefined &&
     input.nowMs - input.lastSwitchAtMs < THREAD_COOLDOWN_MS
   ) {
@@ -184,7 +225,7 @@ export const planEarlySwitch = (input: {
   if (
     input.switchNearLimit === false &&
     choice.reason !== "current-signed-out" &&
-    !leavesSpentAccount
+    !onSpentAccount
   ) {
     return { command: input.command, choice: null };
   }
@@ -254,13 +295,22 @@ export const make = Effect.gen(function* () {
     thread: EarlySwitchThread,
   ) {
     const preferences = yield* settings.getSettings;
+    const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
+    const readProviders = registry.getProviders.pipe(
+      Effect.map((providers) => withThreadUsageLimit(providers, thread, nowMs)),
+    );
+    const providersAtStart = yield* readProviders;
     const balanceNewThread =
       preferences.modelPickerMergeAccounts &&
       preferences.balanceNewThreads &&
       thread.hasStartedRun === false;
     const command = preferences.modelPickerMergeAccounts
-      ? followThreadAccount(requested, thread, yield* registry.getProviders)
+      ? followThreadAccount(requested, thread, providersAtStart)
       : requested;
+    const requestedInstanceId =
+      command.modelSelection?.instanceId ?? thread.modelSelection.instanceId;
+    // An unpinned turn must leave a spent account even with near-limit switching off.
+    const onSpentAccount = isSpentAccount(providersAtStart, requestedInstanceId, nowMs);
     if (command !== requested) {
       yield* Effect.logInfo("orchestration-v2.early-switch.followed-thread", {
         threadId: thread.id,
@@ -269,12 +319,11 @@ export const make = Effect.gen(function* () {
       });
     }
     if (
-      !(preferences.earlyAccountSwitch || balanceNewThread) ||
+      !(preferences.earlyAccountSwitch || balanceNewThread || onSpentAccount) ||
       !isEarlySwitchCandidate(command, thread)
     ) {
       return command;
     }
-    const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
     const recentNewThreads = (yield* Ref.get(newThreadAssignmentsRef)).filter(
       (assignment) => nowMs - assignment.atMs < NEW_THREAD_ASSIGNMENT_WINDOW_MS,
     );
@@ -305,12 +354,12 @@ export const make = Effect.gen(function* () {
         lastSwitchAtMs,
         nowMs,
       });
-    let providers = yield* registry.getProviders;
+    let providers = providersAtStart;
     let plan = planWith(providers);
     if (plan.choice !== null && plan.choice.reason !== "new-thread") {
       const selection = command.modelSelection ?? thread.modelSelection;
       const readAgain = Effect.gen(function* () {
-        providers = yield* registry.getProviders;
+        providers = yield* readProviders;
         plan = planWith(providers);
       });
       yield* Effect.gen(function* () {

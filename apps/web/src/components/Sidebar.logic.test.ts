@@ -17,6 +17,7 @@ import {
   hasUnseenCompletion,
   resolveSidebarRowThreadId,
   isSidebarThreadWorking,
+  isThreadSplitClick,
   orderItemsByPreferredIds,
   pinOrderKeyBetween,
   resolveProjectStatusIndicator,
@@ -1558,5 +1559,30 @@ describe("compactRowShowsStatus", () => {
     [null, false],
   ] as const)("shows %s as status: %s", (kind, shown) => {
     expect(compactRowShowsStatus(kind)).toBe(shown);
+  });
+});
+
+describe("isThreadSplitClick", () => {
+  const plain = { altKey: false, metaKey: false, ctrlKey: false, shiftKey: false };
+
+  it("opens split view on Alt+click alone", () => {
+    expect(isThreadSplitClick({ ...plain, altKey: true })).toBe(true);
+  });
+
+  it("leaves a plain click to navigate", () => {
+    expect(isThreadSplitClick(plain)).toBe(false);
+  });
+
+  it.each([
+    ["shift", { shiftKey: true }],
+    ["meta", { metaKey: true }],
+    ["ctrl", { ctrlKey: true }],
+  ])("leaves Alt+%s click to selection", (_label, extra) => {
+    expect(isThreadSplitClick({ ...plain, altKey: true, ...extra })).toBe(false);
+  });
+
+  it("ignores selection clicks without Alt", () => {
+    expect(isThreadSplitClick({ ...plain, metaKey: true })).toBe(false);
+    expect(isThreadSplitClick({ ...plain, shiftKey: true })).toBe(false);
   });
 });

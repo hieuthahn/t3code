@@ -86,3 +86,26 @@ describe("sidebar pointer lifecycle", () => {
     expect(drag.onFinish).toHaveBeenCalledExactlyOnceWith(true);
   });
 });
+
+describe("sidebar pointer activator", () => {
+  const [activator] = SidebarPointerSensor.activators;
+  const arms = (init: Partial<PointerEvent>) =>
+    activator!.handler({
+      nativeEvent: { isPrimary: true, button: 0, altKey: false, ...init },
+    } as never);
+
+  it("arms a drag on a plain primary press", () => {
+    expect(arms({})).toBe(true);
+  });
+
+  it("does not arm a drag on an Alt press, which opens split view instead", () => {
+    expect(arms({ altKey: true })).toBe(false);
+  });
+
+  it.each([
+    ["a secondary pointer", { isPrimary: false }],
+    ["a non-primary button", { button: 2 }],
+  ])("ignores %s", (_label, init) => {
+    expect(arms(init)).toBe(false);
+  });
+});

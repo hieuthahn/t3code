@@ -1,6 +1,7 @@
 import type { KeybindingCommand, ResolvedKeybindingsConfig } from "@t3tools/contracts";
-import { useEffect, useEffectEvent } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
+import { isContextMenuOpen } from "../../contextMenuFallback";
 import { resolveChatShortcutCommand, type ShortcutMatchContext } from "../../keybindings";
 import { isTerminalCloseConfirmPending } from "../../lib/terminalCloseConfirm";
 import {
@@ -8,9 +9,11 @@ import {
   preventTerminalCloseShortcut,
 } from "../../lib/terminalCloseShortcut";
 import { getTerminalFocusOwner, type TerminalFocusOwner } from "../../lib/terminalFocus";
+import { isModelPickerOpen } from "../../modelPickerVisibility";
 import type { ComposerHandleRef } from "../../composerHandleContext";
 import type { BranchToolbarHandle } from "../BranchToolbar";
 import { shouldTypeToFocusComposer } from "./composerFocusRedirect";
+import { createEscapeChordDetector, isEscapeChordBlockedByOverlay } from "./escapeChord.logic";
 import { composerShortcutCommands } from "./composerShortcuts";
 import { useSplitPaneFocused } from "./splitPaneFocusContext";
 
@@ -46,8 +49,19 @@ export interface ChatShortcutsInput {
  */
 export function useChatShortcuts(input: ChatShortcutsInput) {
   const paneFocused = useSplitPaneFocused();
+  const [escapeChordDetector] = useState(createEscapeChordDetector);
   const handleShortcut = useEffectEvent((event: KeyboardEvent) => {
     const { keybindings } = input;
+    const escapeChord = escapeChordDetector.observe(
+      event,
+      input.threadFindActive ||
+        !input.enabled ||
+        !paneFocused ||
+        isCommandPaletteOpen() ||
+        isModelPickerOpen() ||
+        isContextMenuOpen() ||
+        isEscapeChordBlockedByOverlay(document),
+    );
     if (preventRepeatedTerminalCloseShortcut(event, keybindings)) {
       event.stopPropagation();
       return;
@@ -74,7 +88,7 @@ export function useChatShortcuts(input: ChatShortcutsInput) {
     }
 
     const command = resolveChatShortcutCommand(event, keybindings, input.scriptKeybindings, {
-      context: shortcutContext,
+      context: { ...shortcutContext, escapeChord },
     });
     if (!command) return;
     const run =

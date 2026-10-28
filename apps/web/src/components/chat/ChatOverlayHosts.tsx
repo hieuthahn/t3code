@@ -2,6 +2,7 @@ import type {
   DeviceServiceState,
   EnvironmentId,
   MessageId,
+  RunId,
   ScopedThreadRef,
   ThreadId,
 } from "@t3tools/contracts";
@@ -11,6 +12,8 @@ import { useEffect } from "react";
 
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useRightPanelStore } from "~/rightPanelStore";
+import type { TimelineEntry } from "../../session-logic";
+import type { TurnDiffSummary } from "../../types";
 import { DeviceSetup } from "../device/DeviceSetup";
 import { PullRequestThreadDialog } from "../PullRequestThreadDialog";
 import {
@@ -25,6 +28,8 @@ import {
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
 import { WizardPopup } from "../ui/wizard";
+import { RewindDialog } from "./RewindDialog";
+import { buildRewindEntries } from "./rewindDialog.logic";
 
 // Atoms isolate overlay renders. Thread keys prevent overlays following thread switches.
 type ThreadOverlayAtom<T> = Atom.Writable<{ readonly threadKey: string; readonly value: T } | null>;
@@ -220,5 +225,43 @@ export function RevertConfirmHost(props: {
         </AlertDialogFooter>
       </AlertDialogPopup>
     </AlertDialog>
+  );
+}
+
+const rewindDialogAtom = makeThreadOverlayAtom<true>("rewind-dialog");
+
+export function openRewindDialog(threadKey: string): void {
+  appAtomRegistry.set(rewindDialogAtom, { threadKey, value: true });
+}
+
+export function RewindDialogHost(props: {
+  readonly threadKey: string;
+  readonly timelineEntries: ReadonlyArray<TimelineEntry>;
+  readonly turnDiffSummaries: ReadonlyArray<TurnDiffSummary>;
+  readonly threadStartCheckpointReady: boolean;
+  readonly availableRevertTurnCounts: ReadonlySet<number> | undefined;
+  readonly unsettledRunId: RunId | null;
+  readonly unavailableReason: string | null;
+  readonly onSelect: (turnCount: number, messageId: MessageId) => void;
+}) {
+  const open = useThreadOverlay(rewindDialogAtom, props.threadKey) !== null;
+  if (!open) return null;
+  return (
+    <RewindDialog
+      open
+      entries={buildRewindEntries({
+        timelineEntries: props.timelineEntries,
+        checkpoints: props.turnDiffSummaries,
+        threadStartCheckpointReady: props.threadStartCheckpointReady,
+        availableRevertTurnCounts: props.availableRevertTurnCounts,
+        unsettledRunId: props.unsettledRunId,
+      })}
+      unavailableReason={props.unavailableReason}
+      onSelect={(turnCount, messageId) => {
+        closeThreadOverlay(rewindDialogAtom);
+        props.onSelect(turnCount, messageId);
+      }}
+      onClose={() => closeThreadOverlay(rewindDialogAtom)}
+    />
   );
 }

@@ -10,7 +10,6 @@ import {
   type OrchestrationV2Run,
   type OrchestrationV2RunAttempt,
   type OrchestrationV2TurnItem,
-  type ProviderInstanceId,
   RunId,
   type TeamSetup,
   ThreadId,
@@ -28,8 +27,6 @@ import * as Schema from "effect/Schema";
 
 import * as AutoEffort from "../autoEffort/AutoEffortService.ts";
 import { autoTeamSetup, withAnswerAloneHint } from "../team/autoTeam.ts";
-import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
-import * as AccountSwitchJournal from "./AccountSwitchJournal.ts";
 import * as ServerConfig from "../config.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
@@ -139,46 +136,6 @@ export const layer: Layer.Layer<
     const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
     const autoEffortService = yield* Effect.serviceOption(AutoEffort.AutoEffortService);
     const threadManagement = yield* Effect.serviceOption(ThreadManagement.ThreadManagementService);
-
-    const accountSwitchJournal = yield* Effect.serviceOption(
-      AccountSwitchJournal.AccountSwitchJournal,
-    );
-    const providerRegistry = yield* Effect.serviceOption(ProviderRegistry.ProviderRegistry);
-
-    const describeAccountSwitch = Effect.fn("ProviderTurnStartService.describeAccountSwitch")(
-      function* (input: {
-        readonly threadId: ThreadId;
-        readonly run: OrchestrationV2Run;
-        readonly runs: ReadonlyArray<OrchestrationV2Run>;
-      }) {
-        const previous = AccountSwitchJournal.previousStartedRun(input.run, input.runs);
-        const note = Option.isSome(accountSwitchJournal)
-          ? Option.getOrUndefined(
-              yield* accountSwitchJournal.value.take(input.threadId, input.run.providerInstanceId),
-            )
-          : undefined;
-        if (
-          previous === undefined ||
-          previous.providerInstanceId === input.run.providerInstanceId
-        ) {
-          return Option.none();
-        }
-        const providers = Option.isSome(providerRegistry)
-          ? yield* providerRegistry.value.getProviders
-          : [];
-        const nameOf = (instanceId: ProviderInstanceId): string =>
-          providers.find((provider) => provider.instanceId === instanceId)?.displayName ??
-          instanceId;
-        return Option.some({
-          signal: "account-switch",
-          text: AccountSwitchJournal.accountSwitchNoticeText({
-            fromName: nameOf(previous.providerInstanceId),
-            toName: nameOf(input.run.providerInstanceId),
-            note: note?.from === previous.providerInstanceId ? note : undefined,
-          }),
-        });
-      },
-    );
 
     const resolveAutoEffort = Effect.fn("ProviderTurnStartService.resolveAutoEffort")(
       function* (input: {
@@ -1504,22 +1461,8 @@ export const layer: Layer.Layer<
             .filter((item) => item.runId === runId)
             .map((item) => item.ordinal),
         ) + 1;
-      const accountNoticeId = idAllocator.derive.runSignalTurnItem({
-        runId,
-        signal: "account-switch",
-      });
-      const notices = [
-        ...(projection.turnItems.some((item) => item.id === accountNoticeId)
-          ? []
-          : yield* describeAccountSwitch({
-              threadId: projection.thread.id,
-              run,
-              runs: projection.runs,
-            }).pipe(Effect.map(Option.toArray))),
-        ...(autoEffort.notice === undefined
-          ? []
-          : [{ signal: "auto-effort", text: autoEffort.notice }]),
-      ];
+      const notices =
+        autoEffort.notice === undefined ? [] : [{ signal: "auto-effort", text: autoEffort.notice }];
       for (const [index, notice] of notices.entries()) {
         const noticedAt = yield* DateTime.now;
         const noticeItem: OrchestrationV2TurnItem = {

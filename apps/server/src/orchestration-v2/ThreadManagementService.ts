@@ -38,10 +38,6 @@ import {
   type TurnItemId,
 } from "@t3tools/contracts";
 import { delegatedTaskProgress } from "@t3tools/provider-core/server/subagentProjection";
-import {
-  latestExecutedRun,
-  latestRootProviderFailure,
-} from "@t3tools/shared/orchestrationV2ThreadError";
 import { threadTranscriptHeader } from "@t3tools/shared/threadTranscript";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -64,7 +60,6 @@ import { projectTurnItemForDetail } from "./WireProjection.ts";
 import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import * as EarlyAccountSwitch from "./EarlyAccountSwitch.ts";
 
 export type ThreadManagementSendMode = "auto" | "queue" | "steer" | "restart";
 
@@ -585,7 +580,6 @@ const make = Effect.gen(function* () {
   if (Option.isNone(providerRegistry)) {
     yield* Effect.logWarning("orchestration-v2.account-switch.signed-in-check-unavailable");
   }
-  const earlyAccountSwitch = yield* Effect.serviceOption(EarlyAccountSwitch.EarlyAccountSwitch);
 
   const assertProviderInstanceEnabled: ThreadManagementServiceShape["assertProviderInstanceEnabled"] =
     (input) =>
@@ -769,47 +763,10 @@ const make = Effect.gen(function* () {
     }
   };
 
-  const chooseDispatchAccount = (
-    command: OrchestrationV2ServerCommand,
-  ): Effect.Effect<OrchestrationV2ServerCommand> => {
-    if (command.type !== "message.dispatch" || Option.isNone(earlyAccountSwitch)) {
-      return Effect.succeed(command);
-    }
-    return Effect.gen(function* () {
-      const projection = yield* orchestrator.getThreadRecords(command.threadId, ["runs"]);
-      const latest = latestExecutedRun(projection.runs);
-      const failure =
-        latest?.status === "failed"
-          ? latestRootProviderFailure(
-              latest,
-              (yield* orchestrator.getThreadRecords(command.threadId, ["turnItems"], {
-                turnItemTypes: ["error"],
-                turnItemRunIds: [latest.id],
-              })).turnItems,
-            )
-          : null;
-      return yield* earlyAccountSwitch.value.rewrite(command, {
-        id: projection.thread.id,
-        modelSelection: projection.thread.modelSelection,
-        hasStartedRun: projection.runs.some((run) => run.startedAt !== null),
-        ...(latest !== null && failure?.class === "usage_limit"
-          ? {
-              usageLimited: {
-                instanceId: latest.providerInstanceId,
-                ...(failure.resetAt == null ? {} : { resetsAt: failure.resetAt }),
-              },
-            }
-          : {}),
-      });
-    }).pipe(Effect.orElseSucceed(() => command));
-  };
-
   const dispatch: ThreadManagementServiceShape["dispatch"] = (command) =>
     ensureCommandTranscripts(command).pipe(
-      Effect.andThen(chooseDispatchAccount(command)),
-      Effect.flatMap((chosen) =>
-        assertDispatchTargetEnabled(chosen).pipe(Effect.andThen(orchestrator.dispatch(chosen))),
-      ),
+      Effect.andThen(assertDispatchTargetEnabled(command)),
+      Effect.andThen(orchestrator.dispatch(command)),
     );
 
   const getProjectThread: ThreadManagementServiceShape["getProjectThread"] = (input) =>

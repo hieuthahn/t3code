@@ -6,7 +6,6 @@ import {
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
-import { isSpentAccount } from "@t3tools/shared/usageLimitSwitchCandidates";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -60,6 +59,26 @@ const fullestWindowPercent = (provider: ServerProvider): number => {
   return windows === undefined || windows.length === 0
     ? Number.POSITIVE_INFINITY
     : Math.max(...windows.map((window) => window.usedPercent));
+};
+
+const isSpentAccount = (
+  providers: ReadonlyArray<ServerProvider>,
+  instanceId: ModelSelection["instanceId"],
+  nowMs: number,
+): boolean => {
+  const provider = providers.find((entry) => entry.instanceId === instanceId);
+  if (provider === undefined) return false;
+  if (provider.auth.status !== "authenticated") return true;
+  const limits = provider.usageLimits;
+  return (
+    limits !== undefined &&
+    limits.unavailable === undefined &&
+    limits.windows.some(
+      (window) =>
+        window.usedPercent >= 100 &&
+        (window.resetsAt === undefined || Date.parse(window.resetsAt) > nowMs),
+    )
+  );
 };
 
 export interface AutoEffortRequest {

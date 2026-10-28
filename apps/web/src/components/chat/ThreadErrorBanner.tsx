@@ -110,19 +110,20 @@ export const ThreadErrorBanner = memo(function ThreadErrorBanner({
           {switchAction?.note ? (
             <p className="mt-1 text-xs opacity-80">{switchAction.note}</p>
           ) : null}
+          {switchAction ? (
+            <Button
+              className="mt-2 max-w-full"
+              variant="default"
+              size="sm"
+              disabled={switchAction.disabled}
+              onClick={switchAction.onSwitch}
+            >
+              <span className="truncate">{switchAction.label}</span>
+            </Button>
+          ) : null}
         </AlertDescription>
-        {(chatGptLimit || onDismiss || switchAction) && (
+        {(chatGptLimit || onDismiss) && (
           <AlertAction>
-            {switchAction ? (
-              <Button
-                variant="default"
-                size="sm"
-                disabled={switchAction.disabled}
-                onClick={switchAction.onSwitch}
-              >
-                {switchAction.label}
-              </Button>
-            ) : null}
             {workspaceLimit ? (
               <Button variant="default" size="sm" onClick={copyAdminRequest}>
                 Copy request for admin

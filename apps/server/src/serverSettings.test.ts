@@ -226,6 +226,52 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
+  it.effect("loads and saves a settings file that still holds account switching keys", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fs.writeFileString(
+        config.settingsPath,
+        `{
+          "limitedThreadSwitch": "ask",
+          "balanceNewThreads": true,
+          "defaultAccountByDriver": {},
+          "switchPinnedAccounts": true,
+          "earlySwitchSessionThreshold": 85,
+          "autoEffortDefault": false,
+          "providerInstances": {
+            "magpie": {
+              "driver": "claudeAgent",
+              "displayName": "Magpie",
+              "enabled": true,
+              "accountSwitch": { "sessionPercent": 80 }
+            }
+          }
+        }`,
+      );
+
+      const settings = yield* service.getSettings;
+      assert.isFalse(settings.autoEffortDefault);
+      assert.deepEqual(settings.providerInstances[ProviderInstanceId.make("magpie")], {
+        driver: ProviderDriverKind.make("claudeAgent"),
+        displayName: "Magpie",
+        enabled: true,
+      });
+
+      yield* service.updateSettings({ turnRecaps: false });
+      const persisted = yield* decodeServerSettingsJson(
+        yield* fs.readFileString(config.settingsPath),
+      );
+      assert.isFalse(persisted.autoEffortDefault);
+      assert.isFalse(persisted.turnRecaps);
+      assert.equal(
+        persisted.providerInstances[ProviderInstanceId.make("magpie")]?.displayName,
+        "Magpie",
+      );
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect("tells clients it reads idle compaction modes before any settings are saved", () =>
     Effect.gen(function* () {
       const service = yield* ServerSettingsModule.ServerSettingsService;

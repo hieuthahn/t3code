@@ -87,6 +87,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   getClientPlatform: () => clientPlatform,
   setNotificationBadge: (badge) =>
     ipcRenderer.invoke(IpcChannels.SET_NOTIFICATION_BADGE_CHANNEL, badge),
+  setKeepAwakeState: (state) => ipcRenderer.invoke(IpcChannels.SET_KEEP_AWAKE_STATE_CHANNEL, state),
   logRendererEvent: (event) => ipcRenderer.invoke(IpcChannels.LOG_RENDERER_EVENT_CHANNEL, event),
   onNotificationBadgeClear: (listener) => {
     const handler = () => listener();

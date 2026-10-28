@@ -1006,6 +1006,7 @@ export interface DesktopBridge {
   getClientPlatform?: () => string;
   setNotificationBadge?: (badge: { count: number; image: string | null }) => Promise<void>;
   onNotificationBadgeClear?: (listener: () => void) => () => void;
+  setKeepAwakeState?: (state: { enabled: boolean; running: boolean }) => Promise<void>;
   logRendererEvent?: (event: {
     level: "warning" | "error";
     source: string;

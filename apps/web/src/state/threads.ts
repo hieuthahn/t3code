@@ -140,3 +140,24 @@ export const runningThreadKeepAliveAtom = createRunningThreadKeepAliveAtom({
   threadsAtom: environmentThreadShells.environmentThreadsAtom,
   stateAtom: environmentThreads.stateAtom,
 });
+
+/** Whether any enabled environment reports a thread with an active run. */
+export function createAnyThreadRunningAtom(input: {
+  readonly environmentIdsAtom: Atom.Atom<ReadonlyArray<EnvironmentId>>;
+  readonly threadsAtom: (
+    environmentId: EnvironmentId,
+  ) => Atom.Atom<ReadonlyArray<Pick<OrchestrationV2ThreadShell, "status">>>;
+}) {
+  return Atom.make((get) =>
+    get(input.environmentIdsAtom).some((environmentId) =>
+      get(input.threadsAtom(environmentId)).some((thread) => isRunning(thread.status)),
+    ),
+  ).pipe(Atom.withLabel("web-any-thread-running"));
+}
+
+export const anyThreadRunningAtom = createAnyThreadRunningAtom({
+  environmentIdsAtom: Atom.map(environmentCatalog.catalogValueAtom, (catalog) => [
+    ...enabledEnvironmentIds(catalog),
+  ]),
+  threadsAtom: environmentThreadShells.environmentThreadsAtom,
+});

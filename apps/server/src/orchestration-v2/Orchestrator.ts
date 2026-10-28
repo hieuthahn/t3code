@@ -8,6 +8,7 @@ import {
   latestExecutedRun,
   latestRootProviderFailure,
   runRanAfter,
+  threadErrorSummary,
   usageLimitBlockedRun,
 } from "@t3tools/shared/orchestrationV2ThreadError";
 import { canonicalizeGitCafePullRequestUrl } from "@t3tools/source-control-definitions/registry";
@@ -318,6 +319,8 @@ export interface OrchestratorV2DispatchResult {
 
 export interface OrchestratorV2Shape {
   readonly resumeQueuedRuns: Effect.Effect<number, OrchestratorV2Error>;
+  /** Starts a limited thread's waiting queue once the limit's reset has passed. */
+  readonly releaseQueueAfterLimitReset: (threadId: ThreadId) => Effect.Effect<void>;
   readonly recoverDelegatedTasks: Effect.Effect<void>;
   readonly recoverDelegatedTask: (threadId: ThreadId, sourceRunId: RunId) => Effect.Effect<void>;
   readonly delegatedTaskResultPending: (
@@ -768,6 +771,7 @@ function queuedRunModelSelection(
 function usageLimitHoldsQueue(
   projection: Pick<OrchestrationV2ThreadProjection, "runs" | "turnItems" | "providerSessions">,
   providerInstanceId: ModelSelection["instanceId"],
+  now: DateTime.Utc,
 ): boolean {
   let latestSession: OrchestrationV2ThreadProjection["providerSessions"][number] | undefined;
   for (const session of projection.providerSessions) {
@@ -779,9 +783,20 @@ function usageLimitHoldsQueue(
       latestSession = session;
     }
   }
-  return (
-    usageLimitBlockedRun(projection.runs, projection.turnItems, latestSession?.lastError ?? null)
-      ?.providerInstanceId === providerInstanceId
+  const sessionError = latestSession?.lastError ?? null;
+  const blocked = usageLimitBlockedRun(projection.runs, projection.turnItems, sessionError);
+  if (blocked?.providerInstanceId !== providerInstanceId) return false;
+  const resetAt = threadErrorSummary(
+    latestRootProviderFailure(blocked, projection.turnItems),
+    sessionError,
+  ).usageLimitResetAt;
+  const resetMs = resetAt === null ? Number.NaN : Date.parse(resetAt);
+  const failedMs = DateTime.toEpochMillis(blocked.completedAt ?? now);
+  // A reset at or before the failure is an already-expired window, so it keeps the hold.
+  return !(
+    Number.isFinite(resetMs) &&
+    resetMs > failedMs &&
+    resetMs <= DateTime.toEpochMillis(now)
   );
 }
 
@@ -1501,7 +1516,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         providerInstanceId: modelSelection.instanceId,
       };
       // A limited provider would fail and consume every waiting message.
-      if (usageLimitHoldsQueue(projection, queuedRun.providerInstanceId)) {
+      if (usageLimitHoldsQueue(projection, queuedRun.providerInstanceId, yield* DateTime.now)) {
         return;
       }
       // Failed worktree creation would run queued work in the project checkout; wait for the user.
@@ -2181,6 +2196,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         Effect.catch((cause) => failQueuedRunStart(threadId, cause, options?.queuedRunId)),
       ),
   );
+
+  const releaseQueueAfterLimitReset = (threadId: ThreadId) =>
+    threadDispatch.withLock(threadId, startNextQueuedRun(threadId)).pipe(
+      Effect.asVoid,
+      Effect.catch((cause) =>
+        Effect.logWarning("Failed to start a limited thread's queue after its reset", {
+          threadId,
+          cause,
+        }),
+      ),
+    );
 
   const resumeQueuedRuns = Effect.gen(function* () {
     const threadIds = yield* projectionStore.getRecoveryThreadIds("queued-runs");
@@ -12738,6 +12764,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             nextRun === undefined
               ? projection.thread.providerInstanceId
               : queuedRunModelSelection(projection, nextRun).instanceId,
+            yield* DateTime.now,
           )
         ) {
           return yield* new OrchestratorDispatchError({
@@ -13346,6 +13373,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 
   return OrchestratorV2.of({
     resumeQueuedRuns,
+    releaseQueueAfterLimitReset,
     recoverDelegatedTasks,
     recoverDelegatedTask,
     delegatedTaskResultPending,

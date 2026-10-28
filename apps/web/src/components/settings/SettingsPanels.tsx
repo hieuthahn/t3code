@@ -19,7 +19,6 @@ import {
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   type ResponseStreamingMode,
   type QuitConfirmationMode,
-  LimitedThreadSwitchMode,
   AutoEffortJudge,
   SidebarCompactGroupBy,
   SidebarProjectSortOrder,
@@ -82,7 +81,6 @@ import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { ScopedSwitch } from "./ScopedSwitch";
-import { AccountSwitchThresholds } from "./AccountSwitchThresholds";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
@@ -130,13 +128,6 @@ const COMPACT_GROUP_BY_LABELS: Record<SidebarCompactGroupBy, string> = {
   coordinator: "Coordinator",
 };
 const isSidebarCompactGroupBy = Schema.is(SidebarCompactGroupBy);
-
-const LIMITED_THREAD_SWITCH_LABELS: Record<LimitedThreadSwitchMode, string> = {
-  off: "Off",
-  ask: "Ask first",
-  auto: "Switch automatically",
-};
-const isLimitedThreadSwitchMode = Schema.is(LimitedThreadSwitchMode);
 
 const AUTO_EFFORT_JUDGE_LABELS: Record<AutoEffortJudge, string> = {
   auto: "Jev and Haiku",
@@ -496,26 +487,6 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.snoozeLimitedThreads !== DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads
       ? ["Snooze until limits reset"]
       : []),
-    ...(settings.limitedThreadSwitch !== DEFAULT_UNIFIED_SETTINGS.limitedThreadSwitch
-      ? ["Switch limited threads"]
-      : []),
-    ...(settings.modelPickerMergeAccounts !== DEFAULT_UNIFIED_SETTINGS.modelPickerMergeAccounts
-      ? ["Merge accounts in the model picker"]
-      : []),
-    ...(settings.earlyAccountSwitch !== DEFAULT_UNIFIED_SETTINGS.earlyAccountSwitch ||
-    settings.earlySwitchSessionThreshold !== DEFAULT_UNIFIED_SETTINGS.earlySwitchSessionThreshold ||
-    settings.earlySwitchWeeklyThreshold !== DEFAULT_UNIFIED_SETTINGS.earlySwitchWeeklyThreshold
-      ? ["Switch accounts before the limit"]
-      : []),
-    ...(settings.balanceNewThreads !== DEFAULT_UNIFIED_SETTINGS.balanceNewThreads
-      ? ["Spread new threads across accounts"]
-      : []),
-    ...(settings.midTurnAccountSwitch !== DEFAULT_UNIFIED_SETTINGS.midTurnAccountSwitch
-      ? ["Switch accounts during a turn"]
-      : []),
-    ...(settings.switchPinnedAccounts !== DEFAULT_UNIFIED_SETTINGS.switchPinnedAccounts
-      ? ["Switch pinned accounts too"]
-      : []),
     ...(settings.autoEffortDefault !== DEFAULT_UNIFIED_SETTINGS.autoEffortDefault
       ? ["Auto effort by default"]
       : []),
@@ -691,15 +662,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       autoResumeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
-      limitedThreadSwitch: DEFAULT_UNIFIED_SETTINGS.limitedThreadSwitch,
       autoEffortJudge: DEFAULT_UNIFIED_SETTINGS.autoEffortJudge,
-      modelPickerMergeAccounts: DEFAULT_UNIFIED_SETTINGS.modelPickerMergeAccounts,
-      earlyAccountSwitch: DEFAULT_UNIFIED_SETTINGS.earlyAccountSwitch,
-      midTurnAccountSwitch: DEFAULT_UNIFIED_SETTINGS.midTurnAccountSwitch,
-      balanceNewThreads: DEFAULT_UNIFIED_SETTINGS.balanceNewThreads,
-      earlySwitchSessionThreshold: DEFAULT_UNIFIED_SETTINGS.earlySwitchSessionThreshold,
-      earlySwitchWeeklyThreshold: DEFAULT_UNIFIED_SETTINGS.earlySwitchWeeklyThreshold,
-      switchPinnedAccounts: DEFAULT_UNIFIED_SETTINGS.switchPinnedAccounts,
       autoEffortDefault: DEFAULT_UNIFIED_SETTINGS.autoEffortDefault,
       promptSuggestions: DEFAULT_UNIFIED_SETTINGS.promptSuggestions,
       turnRecaps: DEFAULT_UNIFIED_SETTINGS.turnRecaps,
@@ -1040,139 +1003,6 @@ export function GeneralSettingsPanel() {
                 updateSettings({ autoResumeLimitedThreads: Boolean(checked) })
               }
               aria-label="Resume after usage limits"
-            />
-          }
-        />
-        <SettingsRow
-          serverScoped
-          {...searchableSetting("limited-thread-switch")}
-          description="When an account hits its usage limit, move the thread to another instance that shares its history. Ask shows a button, Auto switches and continues."
-          settingKeys={["limitedThreadSwitch"]}
-          control={
-            <Select
-              value={settings.limitedThreadSwitch}
-              onValueChange={(value) => {
-                if (isLimitedThreadSwitchMode(value)) {
-                  updateSettings({ limitedThreadSwitch: value });
-                }
-              }}
-            >
-              <SelectTrigger
-                size="sm"
-                className="w-full sm:w-44"
-                aria-label="Switch limited threads"
-              >
-                <SelectValue>
-                  {LIMITED_THREAD_SWITCH_LABELS[settings.limitedThreadSwitch]}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                {LimitedThreadSwitchMode.literals.map((mode) => (
-                  <SelectItem hideIndicator key={mode} value={mode}>
-                    {LIMITED_THREAD_SWITCH_LABELS[mode]}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          }
-        />
-        <SettingsRow
-          serverScoped
-          {...searchableSetting("model-picker-merge-accounts")}
-          description="Show each model once for accounts that share a history. A new thread starts on the account you picked unless new threads are spread across accounts. Pick an account under the model list to pin a thread to it."
-          settingKeys={["modelPickerMergeAccounts"]}
-          control={
-            <ScopedSwitch
-              settingKeys={["modelPickerMergeAccounts"]}
-              checked={settings.modelPickerMergeAccounts}
-              onCheckedChange={(checked) =>
-                updateSettings({ modelPickerMergeAccounts: Boolean(checked) })
-              }
-              aria-label="Merge accounts in the model picker"
-            />
-          }
-        />
-        <SettingsRow
-          serverScoped
-          {...searchableSetting("balance-new-threads")}
-          description="Start a new thread on the signed-in account with the most room left instead of the account you picked. Needs the merged model picker."
-          settingKeys={["balanceNewThreads"]}
-          control={
-            <ScopedSwitch
-              settingKeys={["balanceNewThreads"]}
-              checked={settings.balanceNewThreads}
-              disabled={!settings.modelPickerMergeAccounts}
-              onCheckedChange={(checked) => updateSettings({ balanceNewThreads: Boolean(checked) })}
-              aria-label="Spread new threads across accounts"
-            />
-          }
-        />
-        <SettingsRow
-          serverScoped
-          {...searchableSetting("early-account-switch")}
-          description="Once an account passes a threshold below, move the thread to another account that shares its history before a new message. The other account must sit 20 points under each threshold."
-          settingKeys={[
-            "earlyAccountSwitch",
-            "earlySwitchSessionThreshold",
-            "earlySwitchWeeklyThreshold",
-          ]}
-          control={
-            <ScopedSwitch
-              settingKeys={["earlyAccountSwitch"]}
-              checked={settings.earlyAccountSwitch}
-              onCheckedChange={(checked) =>
-                updateSettings({ earlyAccountSwitch: Boolean(checked) })
-              }
-              aria-label="Switch accounts before the limit"
-            />
-          }
-        >
-          <AccountSwitchThresholds
-            sessionPercent={settings.earlySwitchSessionThreshold}
-            weeklyPercent={settings.earlySwitchWeeklyThreshold}
-            disabled={!settings.earlyAccountSwitch}
-            onChange={(patch) =>
-              updateSettings({
-                ...(patch.sessionPercent === undefined
-                  ? {}
-                  : { earlySwitchSessionThreshold: patch.sessionPercent }),
-                ...(patch.weeklyPercent === undefined
-                  ? {}
-                  : { earlySwitchWeeklyThreshold: patch.weeklyPercent }),
-              })
-            }
-          />
-        </SettingsRow>
-        <SettingsRow
-          serverScoped
-          {...searchableSetting("mid-turn-account-switch")}
-          description="Also stop a running turn between steps and continue it on the roomier account. Each switch rebuilds the prompt cache on the new account."
-          settingKeys={["midTurnAccountSwitch"]}
-          control={
-            <ScopedSwitch
-              settingKeys={["midTurnAccountSwitch"]}
-              checked={settings.midTurnAccountSwitch}
-              disabled={!settings.earlyAccountSwitch}
-              onCheckedChange={(checked) =>
-                updateSettings({ midTurnAccountSwitch: Boolean(checked) })
-              }
-              aria-label="Switch accounts during a turn"
-            />
-          }
-        />
-        <SettingsRow
-          serverScoped
-          {...searchableSetting("switch-pinned-accounts")}
-          description="A thread pinned to an account in the model picker stays on it by default. Turn this on to let early and limit switching move pinned threads as well."
-          settingKeys={["switchPinnedAccounts"]}
-          control={
-            <ScopedSwitch
-              settingKeys={["switchPinnedAccounts"]}
-              checked={settings.switchPinnedAccounts}
-              onCheckedChange={(checked) =>
-                updateSettings({ switchPinnedAccounts: Boolean(checked) })
-              }
-              aria-label="Switch pinned accounts too"
             />
           }
         />

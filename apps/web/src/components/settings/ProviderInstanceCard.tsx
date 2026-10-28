@@ -60,7 +60,6 @@ import { RedactedSensitiveText } from "./RedactedSensitiveText";
 import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayout";
 import { AcpSessionManagementSection } from "./AcpSessionManagementSection";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
-import { AccountSwitchThresholds } from "./AccountSwitchThresholds";
 import { readCodexSetupMode } from "./CodexSetupSection.logic";
 import {
   getProviderVersionAdvisoryPresentation,
@@ -589,9 +588,6 @@ interface ProviderInstanceCardProps {
   readonly environmentId?: EnvironmentId | undefined;
   /** Another instance signed in with the same account. */
   readonly duplicateAccountOf?: string;
-  readonly accountSwitchDefaults?:
-    | { readonly sessionPercent: number; readonly weeklyPercent: number }
-    | undefined;
   readonly projectOverride?: ProjectOverrideControl | undefined;
   readonly acpProjects?:
     | ReadonlyArray<{
@@ -634,7 +630,6 @@ export function ProviderInstanceCard({
   isUpdating = false,
   onAcceptUrlAuth,
   environmentId,
-  accountSwitchDefaults,
   duplicateAccountOf,
   acpProjects = EMPTY_ACP_PROJECTS,
   projectOverride,
@@ -764,15 +759,6 @@ export function ProviderInstanceCard({
     const { config: _omit, ...rest } = instance;
     onUpdate({ ...rest, config: nextConfig } as ProviderInstanceConfig);
   });
-
-  const updateAccountSwitch = (next: ProviderInstanceConfig["accountSwitch"] | undefined) => {
-    const { accountSwitch: _omit, ...rest } = instance;
-    onUpdate(
-      next !== undefined
-        ? ({ ...rest, accountSwitch: next } as ProviderInstanceConfig)
-        : (rest as ProviderInstanceConfig),
-    );
-  };
 
   const updateEnvironment = (environment: ReadonlyArray<ProviderInstanceEnvironmentVariable>) => {
     const cleaned = environment.filter((variable) => variable.name.trim().length > 0);
@@ -1243,47 +1229,6 @@ export function ProviderInstanceCard({
         <p className="text-xs text-warning">
           {`${duplicateAccountOf} is signed in with the same account. Sign this instance in with a different account, or it shares one usage limit with ${duplicateAccountOf}.`}
         </p>
-      ) : null}
-      {accountSwitchDefaults !== undefined && liveProvider?.continuation !== undefined ? (
-        <SettingsSection
-          title="Account switching"
-          inert={readOnly}
-          aria-disabled={readOnly || undefined}
-          className={readOnly ? "opacity-50 select-none" : undefined}
-        >
-          <SettingsRow
-            title="Own thresholds"
-            description="Switch threads off this account at its own usage levels instead of the defaults in General."
-            control={
-              <Switch
-                checked={instance.accountSwitch !== undefined}
-                disabled={readOnly}
-                onCheckedChange={(checked) =>
-                  updateAccountSwitch(
-                    checked
-                      ? {
-                          sessionPercent: accountSwitchDefaults.sessionPercent,
-                          weeklyPercent: accountSwitchDefaults.weeklyPercent,
-                        }
-                      : undefined,
-                  )
-                }
-                aria-label={`Use own switch thresholds for ${displayName}`}
-              />
-            }
-          >
-            <AccountSwitchThresholds
-              sessionPercent={
-                instance.accountSwitch?.sessionPercent ?? accountSwitchDefaults.sessionPercent
-              }
-              weeklyPercent={
-                instance.accountSwitch?.weeklyPercent ?? accountSwitchDefaults.weeklyPercent
-              }
-              disabled={readOnly || instance.accountSwitch === undefined}
-              onChange={(patch) => updateAccountSwitch({ ...instance.accountSwitch, ...patch })}
-            />
-          </SettingsRow>
-        </SettingsSection>
       ) : null}
       {environmentId !== undefined && liveProvider?.driver === "acpRegistry" ? (
         <AcpSessionManagementSection

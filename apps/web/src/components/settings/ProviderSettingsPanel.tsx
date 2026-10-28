@@ -1311,22 +1311,10 @@ function ProviderInstanceRow({
           candidate.auth.email?.trim().toLowerCase() === signedInEmail,
       )
     : undefined;
-  const defaultSessionPercent = useEnvironmentSettings(
-    environmentId,
-    (current) => current.earlySwitchSessionThreshold,
-  );
-  const defaultWeeklyPercent = useEnvironmentSettings(
-    environmentId,
-    (current) => current.earlySwitchWeeklyThreshold,
-  );
 
   return (
     <ProviderInstanceCard
       environmentId={environmentId}
-      accountSwitchDefaults={{
-        sessionPercent: defaultSessionPercent,
-        weeklyPercent: defaultWeeklyPercent,
-      }}
       acpProjects={acpProjects}
       {...(duplicateAccountOf
         ? { duplicateAccountOf: duplicateAccountOf.displayName ?? duplicateAccountOf.instanceId }

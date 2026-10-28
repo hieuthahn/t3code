@@ -359,44 +359,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["usage quota rate limit reset recover continue"],
   },
   {
-    id: "limited-thread-switch",
-    title: "Switch limited threads to another account",
-    to: "/settings/general",
-    searchTerms: ["usage quota rate limit account instance switch rotate claude ask auto"],
-  },
-  {
-    id: "model-picker-merge-accounts",
-    title: "Merge accounts in the model picker",
-    to: "/settings/general",
-    searchTerms: [
-      "model picker account merge combine duplicate opus sonnet shared one row claude codex",
-    ],
-  },
-  {
-    id: "balance-new-threads",
-    title: "Spread new threads across accounts",
-    to: "/settings/general",
-    searchTerms: ["balance new thread roomiest account spread distribute merge"],
-  },
-  {
-    id: "early-account-switch",
-    title: "Switch accounts before the limit",
-    to: "/settings/general",
-    searchTerms: ["usage limit threshold percent 5 hour weekly early switch account rotate slider"],
-  },
-  {
-    id: "mid-turn-account-switch",
-    title: "Switch accounts during a turn",
-    to: "/settings/general",
-    searchTerms: ["mid turn running interrupt account switch prompt cache rotate"],
-  },
-  {
-    id: "switch-pinned-accounts",
-    title: "Switch pinned accounts too",
-    to: "/settings/general",
-    searchTerms: ["pinned account manual choice keep switch limit threshold"],
-  },
-  {
     id: "auto-effort-default",
     title: "Auto effort by default",
     to: "/settings/general",

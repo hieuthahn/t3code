@@ -8,7 +8,6 @@ import {
   deriveAvailableRevertTurnCounts,
   deriveWorkspaceMutationId,
   turnRecapForDisplay,
-  timelineThreadErrorOf,
 } from "./ChatView.logic";
 import { recallCheckoutIsRepo, rememberCheckoutIsRepo } from "./ChatView.logic";
 import { ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
@@ -1259,51 +1258,5 @@ describe("deriveWorkspaceMutationId", () => {
     expect(deriveWorkspaceMutationId([item("reply", "assistant_message", "completed")], null)).toBe(
       null,
     );
-  });
-});
-
-describe("timelineThreadErrorOf", () => {
-  const limitText = "Claude usage limit reached.";
-  const limited = {
-    status: "failed",
-    lastErrorClass: "usage_limit",
-    lastError: limitText,
-  } as const;
-
-  it("leaves a usage limit to the timeline notice when no account can take over", () => {
-    expect(
-      timelineThreadErrorOf({
-        visibleThreadError: limitText,
-        runtime: limited,
-        hasLatestRun: true,
-        canSwitchAccount: false,
-      }),
-    ).toBe(null);
-  });
-
-  it("keeps the limit banner when it can offer another account", () => {
-    expect(
-      timelineThreadErrorOf({
-        visibleThreadError: limitText,
-        runtime: limited,
-        hasLatestRun: true,
-        canSwitchAccount: true,
-      }),
-    ).toBe(limitText);
-  });
-
-  it("shows any other error", () => {
-    expect(
-      timelineThreadErrorOf({
-        visibleThreadError: "Provider crashed.",
-        runtime: {
-          status: "failed",
-          lastErrorClass: "provider_error",
-          lastError: "Provider crashed.",
-        },
-        hasLatestRun: true,
-        canSwitchAccount: false,
-      }),
-    ).toBe("Provider crashed.");
   });
 });

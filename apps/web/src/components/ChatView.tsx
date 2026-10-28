@@ -23,11 +23,7 @@ import { ThreadFind, ThreadFindCanvas } from "./chat/ThreadFindProvider";
 import { closeThreadFind, openThreadFind, useThreadFindOpen } from "./chat/threadFindStore";
 import { THREAD_FIND_BAR_RESERVED_HEIGHT } from "./chat/ThreadFindBar";
 import { usageLimitRecoveryBannerItem } from "./chat/UsageLimitRecoveryBanner";
-import {
-  resolveDraftHeroState,
-  timelineThreadErrorOf,
-  turnRecapForDisplay,
-} from "./ChatView.logic";
+import { resolveDraftHeroState, turnRecapForDisplay } from "./ChatView.logic";
 import { useQueuedRunEdit } from "./chat/useQueuedRunEdit";
 import {
   isPaintOnlyThreadTimeline,
@@ -193,14 +189,6 @@ import {
   shouldShowInstanceBadge,
   sortProviderInstanceEntries,
 } from "../providerInstances";
-import {
-  pinnedAccountWarning,
-  rankAskSwitchCandidates,
-  resolveAccountSwitchThresholds,
-} from "@t3tools/shared/usageLimitSwitchCandidates";
-import { limitSwitchActionLabel } from "./chat/limitSwitchActionLabel";
-import { limitSwitchCacheWarning } from "./chat/limitSwitchCacheWarning";
-import { pinnedAccountBannerItem } from "./chat/PinnedAccountBanner";
 import {
   useClientSettings,
   useClientSettingsHydrated,
@@ -947,6 +935,13 @@ export default function ChatView(props: ChatViewProps) {
   );
   const browserAvailable = isPreviewSupportedInRuntime() || activeEnvironmentServerBrowser;
   const activeThreadShell = serverThread;
+  const timelineThreadError =
+    serverRuntime?.status === "failed" &&
+    serverRuntime.lastErrorClass === "usage_limit" &&
+    activeThreadShell?.latestRun &&
+    visibleThreadError === serverRuntime.lastError
+      ? null
+      : visibleThreadError;
 
   const [timelineAnchor, setTimelineAnchor] = useState<{
     readonly threadKey: string | null;
@@ -1196,85 +1191,6 @@ export default function ChatView(props: ChatViewProps) {
     (providerEnvironmentId === undefined
       ? undefined
       : providersByEnvironment.get(providerEnvironmentId)) ?? EMPTY_PROVIDERS;
-  const limitSwitchNowMinute = useNowMinute();
-  const limitSwitchTarget = (() => {
-    if (
-      settings.limitedThreadSwitch !== "ask" ||
-      resumableRunId === null ||
-      serverRuntime?.lastErrorClass !== "usage_limit" ||
-      !activeThread ||
-      serverProjection === null
-    ) {
-      return null;
-    }
-    const nowMs = Date.parse(`${limitSwitchNowMinute}:00.000Z`);
-    const target = rankAskSwitchCandidates({
-      providers: providerStatuses,
-      currentInstanceId: activeThread.modelSelection.instanceId,
-      nowMs,
-      model: activeThread.modelSelection.model,
-      thresholdsFor: resolveAccountSwitchThresholds({
-        defaults: {
-          sessionPercent: settings.earlySwitchSessionThreshold,
-          weeklyPercent: settings.earlySwitchWeeklyThreshold,
-        },
-        instances: settings.providerInstances,
-      }),
-    }).find((candidate) => candidate.usedPercent !== undefined);
-    if (target === undefined) return null;
-    const provider = providerStatuses.find((entry) => entry.instanceId === target.instanceId);
-    return {
-      instanceId: target.instanceId,
-      actionLabel: limitSwitchActionLabel({
-        accountLabel: provider?.displayName ?? target.instanceId,
-        lostPercent: target.lostPercent,
-        resetsAtMs: target.resetsAtMs,
-        nowMs,
-      }),
-    };
-  })();
-  const timelineThreadError = timelineThreadErrorOf({
-    visibleThreadError,
-    runtime: serverRuntime,
-    hasLatestRun: Boolean(activeThreadShell?.latestRun),
-    canSwitchAccount: limitSwitchTarget !== null,
-  });
-  const [dismissedPinnedWarning, setDismissedPinnedWarning] = useState<string | null>(null);
-  const pinnedWarning = (() => {
-    if (!activeThread || activeThread.modelSelection.accountChoice !== "pinned") return null;
-    const { instanceId, model } = activeThread.modelSelection;
-    const warning = pinnedAccountWarning({
-      providers: providerStatuses,
-      currentInstanceId: instanceId,
-      model,
-      nowMs: Date.parse(`${limitSwitchNowMinute}:00.000Z`),
-      thresholdsFor: resolveAccountSwitchThresholds({
-        defaults: {
-          sessionPercent: settings.earlySwitchSessionThreshold,
-          weeklyPercent: settings.earlySwitchWeeklyThreshold,
-        },
-        instances: settings.providerInstances,
-      }),
-      accountChoice: "pinned",
-      switchPinned: settings.switchPinnedAccounts,
-    });
-    if (warning === null) return null;
-    const key = `${routeThreadKey}:${instanceId}:${warning.pressure.windowId}`;
-    if (dismissedPinnedWarning === key) return null;
-    const labelOf = (id: typeof instanceId) =>
-      providerStatuses.find((entry) => entry.instanceId === id)?.displayName ?? id;
-    const window = providerStatuses
-      .find((entry) => entry.instanceId === instanceId)
-      ?.usageLimits?.windows.find((entry) => entry.id === warning.pressure.windowId);
-    return {
-      key,
-      warning,
-      model,
-      accountLabel: labelOf(instanceId),
-      targetLabel: warning.target ? labelOf(warning.target.instanceId) : null,
-      windowLabel: window?.label ?? "usage",
-    };
-  })();
   const selectedProviderByThreadId = composerActiveProvider ?? null;
   const threadProvider =
     activeThread?.modelSelection.instanceId ??
@@ -2708,31 +2624,7 @@ export default function ChatView(props: ChatViewProps) {
       ...childApprovalBanners,
       ...[childInputBanner, goalBanner, backgroundWorkBanner].filter((item) => item !== null),
     ];
-    const usageLimitsItems = [
-      ...(usageLimitsBanner === null ? [] : [usageLimitsBanner]),
-      ...(pinnedWarning === null
-        ? []
-        : [
-            pinnedAccountBannerItem({
-              id: `pinned-account:${pinnedWarning.key}`,
-              accountLabel: pinnedWarning.accountLabel,
-              windowLabel: pinnedWarning.windowLabel,
-              usedPercent: pinnedWarning.warning.pressure.usedPercent,
-              thresholdPercent: pinnedWarning.warning.pressure.thresholdPercent,
-              targetLabel: pinnedWarning.targetLabel,
-              onSwitch: () => {
-                const target = pinnedWarning.warning.target;
-                setDismissedPinnedWarning(pinnedWarning.key);
-                if (target) {
-                  onProviderModelSelectStable(target.instanceId, pinnedWarning.model, {
-                    accountChoice: "auto",
-                  });
-                }
-              },
-              onDismiss: () => setDismissedPinnedWarning(pinnedWarning.key),
-            }),
-          ]),
-    ];
+    const usageLimitsItems = usageLimitsBanner === null ? [] : [usageLimitsBanner];
     const projectCloneItems = projectCloneBannerItem === null ? [] : [projectCloneBannerItem];
     if (!localCheckoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
       return [
@@ -2936,7 +2828,7 @@ export default function ChatView(props: ChatViewProps) {
     setPendingServerThreadStartFromOriginByThreadId,
     scheduleComposerFocus,
   });
-  const { onResume, resumeThread, isResuming } = useComposerResume({
+  const { onResume, isResuming } = useComposerResume({
     environmentId,
     routeThreadKey,
     currentRouteThreadKeyRef,
@@ -3395,16 +3287,6 @@ export default function ChatView(props: ChatViewProps) {
               threadErrorBannerKey={threadErrorBannerKey}
               setThreadError={setThreadError}
               setThreadErrorBannerDismissTick={setThreadErrorBannerDismissTick}
-              switchAction={
-                limitSwitchTarget === null
-                  ? undefined
-                  : {
-                      label: limitSwitchTarget.actionLabel,
-                      note: limitSwitchCacheWarning(activeContextWindow?.usedTokens),
-                      disabled: isResuming || isSendBusy,
-                      onSwitch: () => void resumeThread(limitSwitchTarget.instanceId),
-                    }
-              }
             />
             <div className="relative flex min-h-0 flex-1 flex-col bg-background">
               <ThreadTimeline

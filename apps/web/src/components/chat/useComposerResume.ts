@@ -1,6 +1,5 @@
 import {
   type EnvironmentId,
-  type ProviderInstanceId,
   type ProviderInteractionMode,
   type RunId,
   type RuntimeMode,
@@ -87,7 +86,7 @@ export function useComposerResume(input: ComposerResumeInput) {
   const isResuming = resumingThreadKeys.has(routeThreadKey);
   const { sendInFlight: sendInFlightRef } = draftSendState(routeThreadKey);
 
-  const resumeThread = async (switchToInstanceId?: ProviderInstanceId) => {
+  const onResume = async () => {
     if (
       !activeThread ||
       (resumableRunId === null && !hasHeldQueuedRuns) ||
@@ -121,14 +120,7 @@ export function useComposerResume(input: ComposerResumeInput) {
         interactionMode,
       });
       if (settingsResult._tag === "Failure") return settingsResult;
-      const selectedModelSelection = composerRef.current?.getSendContext().selectedModelSelection;
-      const modelSelection =
-        switchToInstanceId === undefined
-          ? selectedModelSelection
-          : {
-              ...activeThread.modelSelection,
-              instanceId: switchToInstanceId,
-            };
+      const modelSelection = composerRef.current?.getSendContext().selectedModelSelection;
       const turnResult = await startThreadTurn({
         environmentId,
         input: {
@@ -171,7 +163,5 @@ export function useComposerResume(input: ComposerResumeInput) {
     });
   };
 
-  const onResume = () => resumeThread();
-
-  return { onResume, resumeThread, isResuming };
+  return { onResume, isResuming };
 }

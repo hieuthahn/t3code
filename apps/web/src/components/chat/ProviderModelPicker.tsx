@@ -4,7 +4,6 @@ import {
   type EnvironmentId,
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
-  type ThreadAccountChoice,
 } from "@t3tools/contracts";
 import { memo, useEffect, useState, type ReactNode } from "react";
 import { Badge } from "../ui/badge";
@@ -52,24 +51,12 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   triggerClassName?: string;
   triggerLabel?: string;
   triggerSuffix?: string | undefined;
-  autoAccountLabel?: string | undefined;
-  autoAccountName?: string | undefined;
   triggerTooltip?: ReactNode;
   triggerAriaLabel?: string;
   onOpenChange?: (open: boolean) => void;
   onOpenProviderSetup?: (instanceId: ProviderInstanceId) => void;
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
-  onInstanceModelChange: (
-    instanceId: ProviderInstanceId,
-    model: string,
-    accountChoice?: ThreadAccountChoice,
-  ) => void;
-  activeAccountPinned?: boolean;
-  onAccountChoiceChange?: (
-    instanceId: ProviderInstanceId,
-    model: string,
-    accountChoice: ThreadAccountChoice,
-  ) => void;
+  onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
 }) {
   const composerFloatingLayerProps = useComposerMenuProps();
   const [uncontrolledIsMenuOpen, setUncontrolledIsMenuOpen] = useState(false);
@@ -167,13 +154,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     };
   }, [isMenuOpen]);
 
-  const handleInstanceModelChange = (
-    instanceId: ProviderInstanceId,
-    model: string,
-    accountChoice?: ThreadAccountChoice,
-  ) => {
+  const handleInstanceModelChange = (instanceId: ProviderInstanceId, model: string) => {
     if (props.disabled) return;
-    props.onInstanceModelChange(instanceId, model, accountChoice);
+    props.onInstanceModelChange(instanceId, model);
     setIsMenuOpen(false);
   };
 
@@ -203,14 +186,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   const allModelNames = selectedEntries
     ? selectedEntries.map((selection) => selection.label).join(", ") || "Choose models"
     : undefined;
-  const showAutoAccount =
-    !selectedEntries && props.autoAccountLabel !== undefined && props.autoAccountName !== undefined;
-  const triggerSuffix =
-    props.triggerSuffix ?? (showAutoAccount ? `· ${props.autoAccountLabel}` : undefined);
-  const triggerTooltipText = [
-    props.triggerLabel ?? allModelNames ?? triggerLabel,
-    ...(showAutoAccount ? [`Auto mode, running on ${props.autoAccountName}`] : []),
-  ].join(" · ");
+  const triggerSuffix = props.triggerSuffix;
+  const triggerTooltipText = props.triggerLabel ?? allModelNames ?? triggerLabel;
   const triggerTooltipContent =
     props.triggerTooltip === undefined ? (
       shortcutLabel ? (
@@ -358,10 +335,6 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
               ? "Model picker is disabled"
               : (props.getModelDisabledReason?.(instanceId, model) ?? null)
           }
-          {...(props.activeAccountPinned ? { activeAccountPinned: true } : {})}
-          onAccountChoiceChange={(instanceId, model, accountChoice) => {
-            if (!props.disabled) props.onAccountChoiceChange?.(instanceId, model, accountChoice);
-          }}
           onInstanceModelChange={handleInstanceModelChange}
         />
         {props.selectedModels === undefined ? (

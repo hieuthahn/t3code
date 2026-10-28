@@ -637,7 +637,6 @@ export interface EffectiveComposerModelState {
 interface ComposerDraftModelState {
   activeProvider: ProviderInstanceId | null;
   modelSelectionByProvider: Partial<Record<ProviderInstanceId, ModelSelection>>;
-  modelSelectionExplicit?: boolean;
 }
 
 function providerSelectionsFromModelSelection(
@@ -974,19 +973,6 @@ function normalizeProviderModelOptions(
 }
 
 function normalizeModelSelection(
-  value: unknown,
-  legacy?: Parameters<typeof normalizeModelSelectionFields>[1],
-): NormalizedModelSelection | null {
-  const normalized = normalizeModelSelectionFields(value, legacy);
-  const pinned =
-    normalized !== null &&
-    value !== null &&
-    typeof value === "object" &&
-    (value as Record<string, unknown>).accountChoice === "pinned";
-  return pinned ? { ...normalized, accountChoice: "pinned" } : normalized;
-}
-
-function normalizeModelSelectionFields(
   value: unknown,
   legacy?: {
     provider?: unknown;
@@ -3061,16 +3047,11 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             const nextMap = { ...base.modelSelectionByProvider };
             const currentForProvider = nextMap[instanceKey];
             if (providerOpts) {
-              nextMap[instanceKey] = {
-                ...createModelSelection(
-                  instanceKey,
-                  currentForProvider?.model ?? fallbackModel,
-                  providerOpts,
-                ),
-                ...(currentForProvider?.accountChoice === "pinned"
-                  ? { accountChoice: "pinned" as const }
-                  : {}),
-              };
+              nextMap[instanceKey] = createModelSelection(
+                instanceKey,
+                currentForProvider?.model ?? fallbackModel,
+                providerOpts,
+              );
             } else if (currentForProvider && (currentForProvider.options?.length ?? 0) > 0) {
               const { options: _, ...rest } = currentForProvider;
               nextMap[instanceKey] = rest as ModelSelection;
@@ -4263,11 +4244,8 @@ export function subscribeComposerDraftModelReconciliation(input: {
       const ref = parseScopedThreadKey(key);
       const pick = draft.modelSelectionByProvider[draft.activeProvider];
       if (!ref || !pick || !threadKeys.has(key)) continue;
-      // A seeded pick only shaped the first turn; the server may since have moved accounts.
-      const pickSettles = (selection: ModelSelection) =>
-        draft.modelSelectionExplicit !== true || draftModelPickMatchesThread(pick, selection);
       const thread = get(input.threadShellAtom(ref));
-      if (!thread || !pickSettles(thread.modelSelection)) continue;
+      if (!thread || !draftModelPickMatchesThread(pick, thread.modelSelection)) continue;
       // Status and selection must come from the same emission; derived atoms can update apart.
       const shell = Option.getOrNull(
         AsyncResult.value(get(input.shellStateAtom(ref.environmentId))),
@@ -4276,7 +4254,10 @@ export function subscribeComposerDraftModelReconciliation(input: {
       const authoritativeThread = Option.getOrNull(shell.snapshot)?.threads.find(
         (candidate) => candidate.id === ref.threadId,
       );
-      if (authoritativeThread && pickSettles(authoritativeThread.modelSelection)) {
+      if (
+        authoritativeThread &&
+        draftModelPickMatchesThread(pick, authoritativeThread.modelSelection)
+      ) {
         matches.push([key, draft]);
       }
     }
@@ -4419,7 +4400,6 @@ export function useComposerDraftModelState(
         ? {
             activeProvider: draft.activeProvider,
             modelSelectionByProvider: draft.modelSelectionByProvider,
-            ...(draft.modelSelectionExplicit ? { modelSelectionExplicit: true } : {}),
           }
         : EMPTY_COMPOSER_DRAFT_MODEL_STATE;
     }),

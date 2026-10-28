@@ -1,7 +1,6 @@
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
   type ProviderInstanceId,
-  type ThreadAccountChoice,
   type EnvironmentId,
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
@@ -22,7 +21,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { ChevronRightIcon, ListChecksIcon, LogInIcon } from "lucide-react";
+import { ChevronRightIcon, ListChecksIcon } from "lucide-react";
 import { ModelListRow } from "./ModelListRow";
 import { ModelPickerSidebar } from "./ModelPickerSidebar";
 import { getProviderStatusMessage, hasProviderSetup } from "./ProviderStatusBanner";
@@ -51,31 +50,15 @@ import {
 } from "../../keybindings";
 import {
   useEnvironmentModelPreferences,
-  useBalanceNewThreads,
-  useModelPickerMergeAccounts,
-  useUpdateEnvironmentSettings,
   useToggleEnvironmentModelFavorite,
 } from "~/hooks/useSettings";
 import { announce } from "~/lib/announce";
-import { useNowMinute } from "~/hooks/useNowMinute";
-import {
-  type MergedModel,
-  accountBarOffersSignIn,
-  accountEmailLabel,
-  accountGroupName,
-  mergeModelPickerAccountModels,
-  mergeModelPickerAccountTabs,
-  resolveModelPickerAccountAction,
-  sameAccountGroup,
-  shortAccountLabels,
-} from "./modelPickerAccountGroups";
 import { modelRowClickIntent } from "./modelPickerMultiple";
 import { cn } from "~/lib/utils";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
-import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
+import { TooltipProvider } from "../ui/tooltip";
 import { InlineButton } from "../ui/button";
 import { Toggle as ToggleButton } from "../ui/toggle";
-import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import {
   modelPickerSetupSummary,
   resolveModelPickerSetupNotices,
@@ -406,19 +389,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   onRequestClose?: () => void;
   onOpenProviderSetup?: (instanceId: ProviderInstanceId) => void;
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
-  onInstanceModelChange: (
-    instanceId: ProviderInstanceId,
-    model: string,
-    accountChoice?: ThreadAccountChoice,
-  ) => void;
-  /** Whether the thread is pinned to the active account rather than following Auto. */
-  activeAccountPinned?: boolean;
-  /** Apply an Account footer pick to the active model while the picker stays open. */
-  onAccountChoiceChange?: (
-    instanceId: ProviderInstanceId,
-    model: string,
-    accountChoice: ThreadAccountChoice,
-  ) => void;
+  onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
 }) {
   const {
     keybindings: providedKeybindings,
@@ -505,24 +476,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const keybindings = providedKeybindings ?? serverKeybindings;
   const [searchHeight, setSearchHeight] = useState(0);
   const toggleFavorite = useToggleEnvironmentModelFavorite(props.environmentId);
-  const mergeAccounts = useModelPickerMergeAccounts(props.environmentId);
-  const balanceNewThreads = useBalanceNewThreads(props.environmentId);
-  const updateEnvironmentSettings = useUpdateEnvironmentSettings(props.environmentId);
   const multiSelectMode = onToggleModel !== undefined && props.multiSelectMode === true;
-  const activeGroupKey = activeEntry?.continuationGroupKey;
-  const groupAccounts =
-    mergeAccounts && activeGroupKey !== undefined
-      ? instanceEntries.filter((entry) => entry.continuationGroupKey === activeGroupKey)
-      : [];
-  const groupAccountLabels = shortAccountLabels(groupAccounts.map((entry) => entry.displayName));
-  const isSignedOut = (entry: ProviderInstanceEntry) =>
-    entry.snapshot?.auth.status === "unauthenticated";
-  const [accountPick, setAccountPick] = useState<ProviderInstanceId | "auto">(
-    props.activeAccountPinned === true && props.activeInstanceId !== undefined
-      ? props.activeInstanceId
-      : "auto",
-  );
-  const nowMinute = useNowMinute();
 
   const focusSearchInput = () => {
     searchInputRef.current?.focus({ preventScroll: true });
@@ -584,31 +538,13 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     }
     const resolvedModel = resolveSelectableModel(entry.driverKind, modelSlug, options);
     if (!resolvedModel) return null;
-    const action = resolveModelPickerAccountAction({
-      instanceId,
-      memberInstanceIds:
-        pickerModelByKey.get(modelPickerModelKey(instanceId, modelSlug))?.memberInstanceIds ?? [],
-      accountPick,
-      additive,
-      canToggle: onToggleModel !== undefined,
-    });
     if (entersMode) props.onMultiSelectModeChange?.(true);
-    if (action.kind === "toggle") onToggleModel?.(action.instanceId, resolvedModel);
-    else onInstanceModelChange(action.instanceId, resolvedModel, action.accountChoice);
+    if (additive && onToggleModel) {
+      onToggleModel(instanceId, resolvedModel);
+    } else {
+      onInstanceModelChange(instanceId, resolvedModel);
+    }
     return resolvedModel;
-  };
-
-  const applyAccountPick = (pick: ProviderInstanceId | "auto"): boolean => {
-    if (props.multiSelectMode === true) return true;
-    const instanceId = pick === "auto" ? props.activeInstanceId : pick;
-    const entry = instanceEntries.find((candidate) => candidate.instanceId === instanceId);
-    const options = modelOptionsByInstance.get(instanceId);
-    const model =
-      entry && options ? resolveSelectableModel(entry.driverKind, props.model, options) : null;
-    if (!entry || !model) return false;
-    updateEnvironmentSettings({ defaultAccountByDriver: { [entry.driverKind]: pick } });
-    props.onAccountChoiceChange?.(instanceId, model, pick === "auto" ? "auto" : "pinned");
-    return true;
   };
 
   const modelJumpShortcutContext = {
@@ -647,7 +583,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     return instanceIds.size > 0 ? instanceIds : undefined;
   })();
 
-  const instanceModels = (() => {
+  const flatModels = (() => {
     const out: ModelPickerItem[] = [];
     for (const [instanceId, models] of modelOptionsByInstance) {
       const entry = entryByInstanceId.get(instanceId);
@@ -687,39 +623,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     }
     return out;
   })();
-  const flatModels: ReadonlyArray<MergedModel<ModelPickerItem>> = mergeAccounts
-    ? mergeModelPickerAccountModels({
-        models: instanceModels,
-        providersByInstanceId: new Map(
-          instanceEntries.map((entry) => [entry.instanceId, entry.snapshot] as const),
-        ),
-        activeInstanceId: props.activeInstanceId,
-        nowMs: Date.parse(`${nowMinute}:00.000Z`),
-        balance: balanceNewThreads,
-      })
-    : instanceModels.map((model) => ({ ...model, memberInstanceIds: [model.instanceId] }));
-  const pickerFavoritesSet = new Set(favoritesSet);
-  for (const model of flatModels) {
-    if (
-      model.memberInstanceIds.some((instanceId) =>
-        favoritesSet.has(providerModelKey(instanceId, model.slug)),
-      )
-    ) {
-      pickerFavoritesSet.add(providerModelKey(model.instanceId, model.slug));
-    }
-  }
-  const pickerModelByKey = new Map(
-    flatModels.map((model) => [modelPickerModelKey(model.instanceId, model.slug), model] as const),
-  );
-  const handleToggleFavorite = (instanceId: ProviderInstanceId, slug: string) => {
-    const members = pickerModelByKey.get(modelPickerModelKey(instanceId, slug))
-      ?.memberInstanceIds ?? [instanceId];
-    const favorited = members.filter((member) => favoritesSet.has(providerModelKey(member, slug)));
-    for (const member of favorited.length > 0 ? favorited : [instanceId]) {
-      void toggleFavorite(member, slug);
-    }
-  };
-
   const isLocked = lockedProvider !== null;
   const isSearching = searchQuery.trim().length > 0;
   const lockedDisabledInstanceIds = (() => {
@@ -750,28 +653,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     }
     return [...available, ...disabled];
   })();
-  const accountGroupNames = new Map<ProviderInstanceId, string>();
-  if (mergeAccounts) {
-    for (const entry of instanceEntries) {
-      if (entry.continuationGroupKey === undefined) continue;
-      const members = instanceEntries.filter((other) => sameAccountGroup(other, entry));
-      const name = accountGroupName(members.map((member) => member.displayName));
-      if (name !== undefined) accountGroupNames.set(entry.instanceId, name);
-    }
-  }
-  const sidebarTabs = mergeAccounts
-    ? mergeModelPickerAccountTabs({
-        entries: sidebarInstanceEntries,
-        activeInstanceId: props.activeInstanceId,
-      }).entries
-    : sidebarInstanceEntries;
-  const selectedTabEntry =
-    selectedInstanceId === "favorites" ? undefined : entryByInstanceId.get(selectedInstanceId);
-  const matchesSelectedTab = (model: ModelPickerItem): boolean =>
-    mergeAccounts && selectedTabEntry !== undefined
-      ? sameAccountGroup(model, selectedTabEntry)
-      : model.instanceId === selectedInstanceId;
-  const showSidebar = !isSearching && sidebarTabs.length > 0;
+  const showSidebar = !isSearching && sidebarInstanceEntries.length > 0;
   const instanceOrder = instanceEntries.map((entry) => entry.instanceId);
 
   const filteredModels = (() => {
@@ -786,27 +668,25 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         ...(model.subProvider ? { subProvider: model.subProvider } : {}),
         driverKind: model.driverKind,
         providerDisplayName: model.instanceDisplayName,
-        isFavorite: pickerFavoritesSet.has(providerModelKey(model.instanceId, model.slug)),
+        isFavorite: favoritesSet.has(providerModelKey(model.instanceId, model.slug)),
       }));
     }
 
     if (lockedProvider !== null) {
       result = result.filter((m) => matchesLockedProvider(m));
       if (selectedInstanceId === "favorites") {
-        result = result.filter((m) =>
-          pickerFavoritesSet.has(providerModelKey(m.instanceId, m.slug)),
-        );
+        result = result.filter((m) => favoritesSet.has(providerModelKey(m.instanceId, m.slug)));
       } else {
-        result = result.filter(matchesSelectedTab);
+        result = result.filter((m) => m.instanceId === selectedInstanceId);
       }
     } else if (selectedInstanceId === "favorites") {
-      result = result.filter((m) => pickerFavoritesSet.has(providerModelKey(m.instanceId, m.slug)));
+      result = result.filter((m) => favoritesSet.has(providerModelKey(m.instanceId, m.slug)));
     } else {
-      result = result.filter(matchesSelectedTab);
+      result = result.filter((m) => m.instanceId === selectedInstanceId);
     }
 
     return sortProviderModelItems(result, {
-      favoriteModelKeys: pickerFavoritesSet,
+      favoriteModelKeys: favoritesSet,
       groupFavorites: selectedInstanceId !== "favorites",
       instanceOrder: selectedInstanceId === "favorites" ? instanceOrder : [],
     });
@@ -816,11 +696,11 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     if (isSearching || selectedInstanceId === "favorites") {
       return null;
     }
-    const currentModels: Array<MergedModel<ModelPickerItem>> = [];
-    const legacyModels: Array<MergedModel<ModelPickerItem>> = [];
+    const currentModels: ModelPickerItem[] = [];
+    const legacyModels: ModelPickerItem[] = [];
     for (const model of filteredModels) {
       const isLegacy =
-        model.isLegacy && !pickerFavoritesSet.has(providerModelKey(model.instanceId, model.slug));
+        model.isLegacy && !favoritesSet.has(providerModelKey(model.instanceId, model.slug));
       (isLegacy ? legacyModels : currentModels).push(model);
     }
     if (legacyModels.length === 0) {
@@ -852,11 +732,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
           entries: instanceEntries,
           needsSetup: (entry) =>
             matchesLockedProvider(entry) &&
-            !accountBarOffersSignIn({
-              instanceId: entry.instanceId,
-              signedOut: isSignedOut(entry),
-              barInstanceIds: groupAccounts.map((account) => account.instanceId),
-            }) &&
             shouldOfferModelPickerSetup(entry, modelOptionsByInstance.get(entry.instanceId) ?? []),
           selectedInstanceId,
           selectedInstanceKnown: selectedEntry !== undefined,
@@ -894,7 +769,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     modelKeys.splice(legacySection.currentModels.length, 0, legacySection.key);
     return modelKeys;
   })();
-  const filteredModelByKey = ((): ReadonlyMap<string, MergedModel<ModelPickerItem>> =>
+  const filteredModelByKey = ((): ReadonlyMap<string, ModelPickerItem> =>
     new Map(
       visibleModels.map(
         (model) => [modelPickerModelKey(model.instanceId, model.slug), model] as const,
@@ -907,7 +782,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     props.terminalOpen,
   );
   const modelListExtraData = {
-    pickerFavoritesSet,
+    favoritesSet,
     modelJumpLabelByKey,
     activeModelKey,
     selectedModelKeySet,
@@ -926,7 +801,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       event.preventDefault();
       event.stopPropagation();
       const next = adjacentModelPickerProvider({
-        entries: sidebarTabs,
+        entries: sidebarInstanceEntries,
         selectedInstanceId,
         direction: command === "modelPicker.nextProvider" ? 1 : -1,
         disabledInstanceIds: lockedDisabledInstanceIds,
@@ -977,7 +852,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             selectedInstanceId={selectedInstanceId}
             onSelectInstance={handleSelectInstance}
             onFocusSearch={focusSearchInput}
-            instanceEntries={sidebarTabs}
+            instanceEntries={sidebarInstanceEntries}
             showFavorites
             {...(selectableUnavailableInstanceIds ? { selectableUnavailableInstanceIds } : {})}
             {...(lockedDisabledInstanceIds
@@ -1144,13 +1019,10 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                     instanceId={model.instanceId}
                     driverKind={model.driverKind}
                     providerDisplayName={model.instanceDisplayName}
-                    accountGroupName={accountGroupNames.get(model.instanceId)}
                     providerAccentColor={model.instanceAccentColor}
                     acpRegistryAgentId={model.acpRegistryAgentId}
                     acpRegistryIconUrl={model.acpRegistryIconUrl}
-                    isFavorite={pickerFavoritesSet.has(
-                      providerModelKey(model.instanceId, model.slug),
-                    )}
+                    isFavorite={favoritesSet.has(providerModelKey(model.instanceId, model.slug))}
                     isSelected={
                       selectedModelKeys !== undefined
                         ? selectedModelKeySet.has(modelKey)
@@ -1165,7 +1037,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                     unavailable={model.isUnavailable === true}
                     jumpLabel={modelJumpLabelByKey.get(modelKey) ?? null}
                     disabledReason={disabledReason}
-                    onToggleFavorite={handleToggleFavorite}
+                    onToggleFavorite={toggleFavorite}
                   />
                 );
               }}
@@ -1182,84 +1054,17 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               onRequestClose={onRequestClose}
               onOpenProviderSetup={onOpenProviderSetup}
             />
-            {groupAccounts.length > 1 || props.onMultiSelectModeChange ? (
+            {props.onMultiSelectModeChange ? (
               <div className="flex flex-col items-start gap-1.5 border-t px-2 py-1.5">
-                {groupAccounts.length > 1 ? (
-                  <div className="flex w-full min-w-0 items-baseline gap-2">
-                    <span className="shrink-0 text-sm text-muted-foreground">Account</span>
-                    <ToggleGroup
-                      size="xs"
-                      className="min-w-0 flex-wrap"
-                      aria-label="Account for this thread"
-                      value={[accountPick]}
-                      onValueChange={(next) => {
-                        const value = next[0] as ProviderInstanceId | "auto" | undefined;
-                        if (value === undefined) return;
-                        const signedOut = groupAccounts.find(
-                          (entry) => entry.instanceId === value && isSignedOut(entry),
-                        );
-                        if (signedOut === undefined) {
-                          if (applyAccountPick(value)) setAccountPick(value);
-                          return;
-                        }
-                        onRequestClose?.();
-                        onOpenProviderSetup?.(signedOut.instanceId);
-                      }}
-                    >
-                      <Tooltip>
-                        <TooltipTrigger render={<Toggle value="auto">Auto</Toggle>} />
-                        <TooltipPopup side="top">
-                          {balanceNewThreads
-                            ? "Each new thread starts on the signed-in account with the most quota left."
-                            : "New threads stay on the account they already use."}
-                        </TooltipPopup>
-                      </Tooltip>
-                      {groupAccounts.map((entry, index) => {
-                        const email = accountEmailLabel({
-                          displayName: entry.displayName,
-                          authEmail: entry.snapshot?.auth.email,
-                        });
-                        const signedOut = isSignedOut(entry);
-                        return (
-                          <Tooltip key={entry.instanceId}>
-                            <TooltipTrigger
-                              render={
-                                <Toggle
-                                  value={entry.instanceId}
-                                  disabled={signedOut && !canOpenProviderSetup}
-                                  aria-label={
-                                    signedOut
-                                      ? `${groupAccountLabels[index]}, signed out`
-                                      : undefined
-                                  }
-                                >
-                                  {groupAccountLabels[index]}
-                                  {signedOut ? <LogInIcon aria-hidden="true" /> : null}
-                                </Toggle>
-                              }
-                            />
-                            <TooltipPopup side="top">
-                              {signedOut
-                                ? `${email} is signed out.${canOpenProviderSetup ? " Click to sign in." : ""}`
-                                : email}
-                            </TooltipPopup>
-                          </Tooltip>
-                        );
-                      })}
-                    </ToggleGroup>
-                  </div>
-                ) : null}
-                {props.onMultiSelectModeChange ? (
-                  <ToggleButton
-                    size="xs"
-                    variant="outline"
-                    pressed={multiSelectMode}
-                    onPressedChange={props.onMultiSelectModeChange}
-                  >
-                    <ListChecksIcon aria-hidden="true" />
-                    Multiple models
-                  </ToggleButton>
-                ) : null}
+                <ToggleButton
+                  size="xs"
+                  variant="outline"
+                  pressed={multiSelectMode}
+                  onPressedChange={props.onMultiSelectModeChange}
+                >
+                  <ListChecksIcon aria-hidden="true" />
+                  Multiple models
+                </ToggleButton>
               </div>
             ) : null}
           </div>

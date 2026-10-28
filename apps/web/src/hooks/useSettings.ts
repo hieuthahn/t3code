@@ -509,29 +509,6 @@ export function useEnvironmentModelPreferences(environmentId: EnvironmentId | nu
   return resolveModelPreferences(settings ?? DEFAULT_SERVER_SETTINGS, legacy);
 }
 
-export function useModelPickerMergeAccounts(environmentId: EnvironmentId | null): boolean {
-  const settings = useAtomValue(
-    environmentId ? serverEnvironment.settingsValueAtom(environmentId) : noEnvironmentSettingsAtom,
-  );
-  return (settings ?? DEFAULT_SERVER_SETTINGS).modelPickerMergeAccounts;
-}
-
-export function useDefaultAccountByDriver(
-  environmentId: EnvironmentId | null,
-): ServerSettings["defaultAccountByDriver"] {
-  const settings = useAtomValue(
-    environmentId ? serverEnvironment.settingsValueAtom(environmentId) : noEnvironmentSettingsAtom,
-  );
-  return (settings ?? DEFAULT_SERVER_SETTINGS).defaultAccountByDriver;
-}
-
-export function useBalanceNewThreads(environmentId: EnvironmentId | null): boolean {
-  const settings = useAtomValue(
-    environmentId ? serverEnvironment.settingsValueAtom(environmentId) : noEnvironmentSettingsAtom,
-  );
-  return (settings ?? DEFAULT_SERVER_SETTINGS).balanceNewThreads;
-}
-
 export function useEnvironmentSettings<T = UnifiedSettings>(
   environmentId: EnvironmentId,
   selector?: (settings: UnifiedSettings) => T,

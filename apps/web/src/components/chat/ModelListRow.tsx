@@ -24,8 +24,6 @@ export const ModelListRow = memo(function ModelListRow(props: {
   instanceId: ProviderInstanceId;
   driverKind: ProviderDriverKind;
   providerDisplayName: string;
-  /** Name shown instead of the account when the row stands for a group of accounts. */
-  accountGroupName?: string | undefined;
   providerAccentColor?: string | undefined;
   acpRegistryAgentId?: string | undefined;
   acpRegistryIconUrl?: string | undefined;
@@ -48,10 +46,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
     shortName: props.shortName,
     subProvider: props.subProvider,
   };
-  const providerLabel = getProviderRowLabel(
-    props.accountGroupName ?? props.providerDisplayName,
-    props.subProvider,
-  );
+  const providerLabel = getProviderRowLabel(props.providerDisplayName, props.subProvider);
 
   const row = (
     <ComboboxItem

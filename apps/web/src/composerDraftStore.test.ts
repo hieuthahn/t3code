@@ -1396,39 +1396,6 @@ describe("composerDraftStore modelSelection", () => {
     expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
   });
 
-  it("keeps an account pin picked for the model the live thread already runs", () => {
-    const h = modelReconciliationHarness(TEST_ENVIRONMENT_ID, threadId);
-    const pinned = { ...h.model(), accountChoice: "pinned" as const };
-    useComposerDraftStore.getState().setModelSelection(threadRef, pinned, {
-      explicit: true,
-      replaceOptions: true,
-    });
-    h.flush();
-    expect(
-      draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionByProvider[pinned.instanceId]
-        ?.accountChoice,
-    ).toBe("pinned");
-
-    h.update({ modelSelection: pinned });
-    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
-  });
-
-  it("releases a seeded pick once the live thread runs on another account", () => {
-    const h = modelReconciliationHarness(TEST_ENVIRONMENT_ID, threadId, "cached");
-    const store = useComposerDraftStore.getState();
-    store.setPrompt(threadRef, "next turn");
-    store.setModelSelection(threadRef, modelSelection(CODEX_DRIVER, "gpt-5.5"));
-    h.flush();
-    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.activeProvider).toBe(CODEX_INSTANCE);
-
-    h.update({ modelSelection: createModelSelection(CODEX_SECONDARY_INSTANCE, "gpt-5.5") }, "live");
-    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toMatchObject({
-      prompt: "next turn",
-      activeProvider: null,
-      modelSelectionByProvider: {},
-    });
-  });
-
   it("releases an inactive thread pick only after its queued model becomes durable", () => {
     const store = useComposerDraftStore.getState();
     const pick = modelSelection(CODEX_DRIVER, "gpt-5.5", { fastMode: false });
@@ -1584,25 +1551,6 @@ describe("composerDraftStore modelSelection", () => {
         thinking: false,
       }),
     );
-  });
-
-  it("keeps a pinned account when a trait edit rewrites the selection", () => {
-    const store = useComposerDraftStore.getState();
-    store.setModelSelection(threadRef, {
-      ...modelSelection(CODEX_DRIVER, "gpt-5.4", { reasoningEffort: "low" }),
-      accountChoice: "pinned",
-    });
-
-    store.setProviderModelOptions(
-      threadRef,
-      CODEX_DRIVER,
-      toSelections({ reasoningEffort: "xhigh" }),
-    );
-
-    expect(
-      draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionByProvider[CODEX_INSTANCE]
-        ?.accountChoice,
-    ).toBe("pinned");
   });
 
   // regression: #6011 new threads ignored project default models unless edits are marked explicit

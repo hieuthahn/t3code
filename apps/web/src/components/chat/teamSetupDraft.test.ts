@@ -83,7 +83,6 @@ describe("team setup helpers", () => {
       teamWithArchitect(saved, {
         ...architect,
         options: [{ id: "effort", value: "high" }],
-        accountChoice: "pinned",
       }),
     ).toEqual({
       ...saved,

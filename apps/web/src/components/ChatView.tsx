@@ -3757,6 +3757,10 @@ export default function ChatView(props: ChatViewProps) {
                               activeThreadModelSelection={activeThread?.modelSelection}
                               activeProjectId={activeProject?.id ?? null}
                               activeContextWindow={activeContextWindow}
+                              promptCacheTtlMs={activeThreadLiveTokenUsage?.promptCacheTtlMs}
+                              promptCacheExpiresAt={
+                                activeThreadLiveTokenUsage?.promptCacheExpiresAt
+                              }
                               activeTasksProgress={activeComposerTasksProgress}
                               activeTaskSteps={activeComposerTaskSteps}
                               compactThreadUnavailable={compactThreadUnavailable}

@@ -28,6 +28,7 @@ import type {
   RuntimeRequestId,
   ScopedThreadRef,
   ServerProvider,
+  ServerProviderUsageWindow,
   ThreadId,
 } from "@t3tools/contracts";
 import type { ApprovalResponder } from "@t3tools/client-runtime/state/thread-requests";
@@ -218,6 +219,7 @@ import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
 import { buildPullRequestReferenceContext } from "../pullRequest/pullRequestDetail.logic";
 import { getComposerPromptInjectionState, getComposerReasoningStep } from "./composerProviderState";
 import { readPromptUltrathink } from "./TraitsPicker";
+import { UsageRibbon } from "./UsageRibbon";
 import {
   providerSupportsManualCompaction,
   resolveContextWindowModelDisplayName,
@@ -458,6 +460,8 @@ export interface ChatComposerProps {
   activeProjectId: ProjectId | null;
 
   activeContextWindow: ContextWindowSnapshot | null;
+  promptCacheTtlMs?: number | undefined;
+  promptCacheExpiresAt?: string | undefined;
   compactThreadUnavailable: boolean;
   compactDisabled: boolean;
   compactDisabledReason: string | null;
@@ -537,6 +541,7 @@ export interface ChatComposerProps {
 
 const NO_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const NO_PROVIDER_SLASH_COMMANDS: ServerProvider["slashCommands"] = [];
+const NO_USAGE_WINDOWS: ReadonlyArray<ServerProviderUsageWindow> = [];
 
 export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps) {
   const {
@@ -592,6 +597,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     reportedModelSelection,
     activeProjectId,
     activeContextWindow,
+    promptCacheTtlMs,
+    promptCacheExpiresAt,
     compactThreadUnavailable,
     compactDisabled,
     compactDisabledReason,
@@ -3969,6 +3976,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             <ComposerPromptLengthValidation
               message={providerInputSubmissionError ?? composerSubmissionError}
             />
+
+            {isComposerCollapsedMobile || isComposerResting ? null : (
+              <UsageRibbon
+                windows={selectedProviderStatus?.usageLimits?.windows ?? NO_USAGE_WINDOWS}
+                updatedAt={activeContextWindow?.updatedAt}
+                promptCacheTtlMs={promptCacheTtlMs}
+                promptCacheExpiresAt={promptCacheExpiresAt}
+              />
+            )}
 
             {isComposerCollapsedMobile ? null : (
               <div

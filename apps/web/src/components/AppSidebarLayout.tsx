@@ -1,6 +1,8 @@
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import {
+  lazy,
+  Suspense,
   useEffect,
   useState,
   useSyncExternalStore,
@@ -22,6 +24,7 @@ import {
   resolveShortcutCommand,
   shortcutLabelForCommand,
 } from "../keybindings";
+import { useKeyboardShortcutsDialogStore } from "../keyboardShortcutsDialogStore";
 import { isEditableFocused } from "../lib/editableFocus";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
@@ -171,6 +174,36 @@ export function registerNavigationHistoryCommands(router: AnyRouter): () => void
   );
 }
 
+const KeyboardShortcutsDialogHost = lazy(() =>
+  import("./KeyboardShortcutsDialog").then((module) => ({
+    default: module.KeyboardShortcutsDialogHost,
+  })),
+);
+
+function DeferredKeyboardShortcutsDialog() {
+  const requested = useKeyboardShortcutsDialogStore((state) => state.requested);
+  if (!requested) return null;
+  return (
+    <Suspense fallback={null}>
+      <KeyboardShortcutsDialogHost />
+    </Suspense>
+  );
+}
+
+export function registerKeyboardShortcutsCommand(): () => void {
+  return registerCommands(
+    {
+      "shortcuts.toggle": (event) => {
+        if (isCommandPaletteOpen()) return false;
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) useKeyboardShortcutsDialogStore.getState().toggle();
+      },
+    },
+    { when: (event) => !isKeybindingCaptureTarget(event) },
+  );
+}
+
 const MODIFIER_KEYS = new Set(["Alt", "Control", "Meta", "Shift"]);
 
 // A held key undoes once. Module state: undoing an archive navigates, and the
@@ -251,6 +284,7 @@ function registerAppShellCommands(router: AnyRouter, shellElement: Element): () 
   const disposers = [
     registerThreadUndoCommands(router, readSidebarVisible),
     registerNavigationHistoryCommands(router),
+    registerKeyboardShortcutsCommand(),
     registerMenuAction("open-settings", () => {
       if (!/^\/settings(\/|$)/.test(router.state.location.pathname))
         void router.navigate({ to: "/settings" });
@@ -428,6 +462,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         </Sidebar>
         {children}
         <BackgroundThreadAnnouncer />
+        <DeferredKeyboardShortcutsDialog />
         <SidebarControl />
         <MainAppLocationTracker />
       </SidebarProvider>

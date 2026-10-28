@@ -32,6 +32,11 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { rewindToMessage } from "./chatViewSend";
+import {
+  reconnectBeforeRevertMessage,
+  REWIND_RUNNING_MESSAGE,
+  REWIND_UNSUPPORTED_MESSAGE,
+} from "./rewindDialog.logic";
 import { makeThreadErrorSetter } from "../ChatView.logic";
 interface TimelineRewindInput {
   readonly environmentId: EnvironmentId;
@@ -111,21 +116,18 @@ export function useTimelineRewind(input: TimelineRewindInput) {
     if (!message || message.role !== "user") return;
 
     if (!supportsConversationRollback) {
-      setThreadError(
-        activeThread.id,
-        "This provider does not support reverting conversation history. Start a new thread instead.",
-      );
+      setThreadError(activeThread.id, REWIND_UNSUPPORTED_MESSAGE);
       return;
     }
     if (activeEnvironmentUnavailable && activeEnvironmentUnavailableLabel) {
       setThreadError(
         activeThread.id,
-        `Reconnect ${activeEnvironmentUnavailableLabel} before reverting checkpoints.`,
+        reconnectBeforeRevertMessage(activeEnvironmentUnavailableLabel),
       );
       return;
     }
     if (phase === "running" || isSendBusy || isConnecting) {
-      setThreadError(activeThread.id, "Interrupt the current turn before reverting checkpoints.");
+      setThreadError(activeThread.id, REWIND_RUNNING_MESSAGE);
       return;
     }
     if (restoreFiles === undefined) {
@@ -183,12 +185,12 @@ export function useTimelineRewind(input: TimelineRewindInput) {
     if (activeEnvironmentUnavailable && activeEnvironmentUnavailableLabel) {
       setThreadError(
         activeThread.id,
-        `Reconnect ${activeEnvironmentUnavailableLabel} before reverting checkpoints.`,
+        reconnectBeforeRevertMessage(activeEnvironmentUnavailableLabel),
       );
       return;
     }
     if (phase === "running" || isSendBusy || isConnecting) {
-      setThreadError(activeThread.id, "Interrupt the current turn before reverting checkpoints.");
+      setThreadError(activeThread.id, REWIND_RUNNING_MESSAGE);
       return;
     }
     const localApi = readLocalApi();

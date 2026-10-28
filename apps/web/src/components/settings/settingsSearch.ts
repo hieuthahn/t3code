@@ -662,6 +662,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     desktopOnly: true,
   },
   {
+    id: "keep-awake",
+    title: "Keep computer awake while agents work",
+    to: "/settings/general",
+    searchTerms: ["sleep suspend power battery caffeinate running thread desktop app"],
+    desktopOnly: true,
+  },
+  {
     id: "text-generation-model",
     title: "Text generation model",
     to: "/settings/general",

@@ -44,6 +44,7 @@ const THREAD_KEYBINDING_COMMANDS = [
   "thread.settle",
   "thread.pin",
   "thread.undo",
+  "thread.rewind",
   ...THREAD_JUMP_KEYBINDING_COMMANDS,
 ] as const;
 export type ThreadKeybindingCommand = (typeof THREAD_KEYBINDING_COMMANDS)[number];
@@ -80,6 +81,7 @@ export const STATIC_KEYBINDING_COMMANDS = [
   "preview.zoomOut",
   "preview.resetZoom",
   "commandPalette.toggle",
+  "shortcuts.toggle",
   "filePicker.toggle",
   "projectSearch.toggle",
   "usage.open",

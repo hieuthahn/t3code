@@ -23,7 +23,7 @@ export class SidebarPointerSensor {
     {
       eventName: "onPointerDown" as const,
       handler: ({ nativeEvent }: ReactPointerEvent) =>
-        nativeEvent.isPrimary && nativeEvent.button === 0,
+        nativeEvent.isPrimary && nativeEvent.button === 0 && !nativeEvent.altKey,
     },
   ];
   autoScrollEnabled = true;

@@ -239,6 +239,83 @@ describe("thread undo shortcut", () => {
   });
 });
 
+describe("thread rewind shortcut", () => {
+  const escape = event({ key: "Escape", code: "Escape" });
+
+  it("binds Escape to rewind only while the chord is armed", () => {
+    assert.equal(
+      resolveShortcutCommand(escape, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "MacIntel",
+        context: { escapeChord: true },
+      }),
+      "thread.rewind",
+    );
+  });
+
+  it("leaves a single Escape unbound", () => {
+    assert.isNull(
+      resolveShortcutCommand(escape, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "MacIntel",
+        context: { escapeChord: false },
+      }),
+    );
+    assert.isNull(
+      resolveShortcutCommand(escape, DEFAULT_RESOLVED_KEYBINDINGS, { platform: "MacIntel" }),
+    );
+  });
+
+  it("stays out of the terminal", () => {
+    assert.isNull(
+      resolveShortcutCommand(escape, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "MacIntel",
+        context: { escapeChord: true, terminalFocus: true },
+      }),
+    );
+  });
+});
+
+describe("keyboard shortcuts dialog shortcut", () => {
+  const slash = event({ key: "/", code: "Slash" });
+
+  it("opens on Cmd+/ on macOS and Ctrl+/ elsewhere", () => {
+    assert.equal(
+      resolveShortcutCommand({ ...slash, metaKey: true }, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "MacIntel",
+      }),
+      "shortcuts.toggle",
+    );
+    assert.equal(
+      resolveShortcutCommand({ ...slash, ctrlKey: true }, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "Win32",
+      }),
+      "shortcuts.toggle",
+    );
+  });
+
+  it("leaves a bare slash and the terminal alone", () => {
+    assert.isNull(
+      resolveShortcutCommand(slash, DEFAULT_RESOLVED_KEYBINDINGS, { platform: "MacIntel" }),
+    );
+    assert.isNull(
+      resolveShortcutCommand({ ...slash, ctrlKey: true }, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "Win32",
+        context: { terminalFocus: true },
+      }),
+    );
+  });
+
+  it("is the only default on that chord", () => {
+    const onChord = DEFAULT_RESOLVED_KEYBINDINGS.filter(
+      (binding) =>
+        binding.shortcut.key === "/" && binding.shortcut.modKey && !binding.shortcut.shiftKey,
+    );
+    assert.deepEqual(
+      onChord.map((binding) => binding.command),
+      ["shortcuts.toggle"],
+    );
+  });
+});
+
 describe("split/new/close terminal shortcuts", () => {
   it("supports when expressions", () => {
     const keybindings = compile([

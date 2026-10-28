@@ -14,7 +14,7 @@ import * as Option from "effect/Option";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { describe, expect, it } from "vite-plus/test";
 
-import { createRunningThreadKeepAliveAtom } from "./threads";
+import { createAnyThreadRunningAtom, createRunningThreadKeepAliveAtom } from "./threads";
 
 const LOCAL = EnvironmentId.make("local");
 const REMOTE = EnvironmentId.make("remote");
@@ -165,5 +165,57 @@ describe("createRunningThreadKeepAliveAtom", () => {
     expect(h.openStreams()).toEqual(["remote:d"]);
     h.registry.set(h.environmentIds, [LOCAL]);
     expect(h.openStreams()).toEqual([]);
+  });
+});
+
+describe("createAnyThreadRunningAtom", () => {
+  function make() {
+    const registry = AtomRegistry.make();
+    const environmentIds = Atom.make<ReadonlyArray<EnvironmentId>>([LOCAL, REMOTE]).pipe(
+      Atom.keepAlive,
+    );
+    const threads = Atom.family((_environmentId: EnvironmentId) =>
+      Atom.make<ReadonlyArray<ReturnType<typeof shell>>>([]).pipe(Atom.keepAlive),
+    );
+    const running = createAnyThreadRunningAtom({
+      environmentIdsAtom: environmentIds,
+      threadsAtom: threads,
+    });
+    registry.mount(running);
+    return { registry, environmentIds, threads, running };
+  }
+
+  it("is false with no threads or only settled and waiting threads", () => {
+    const h = make();
+    expect(h.registry.get(h.running)).toBe(false);
+    h.registry.set(h.threads(LOCAL), [shell("a", "idle"), shell("b", "waiting")]);
+    expect(h.registry.get(h.running)).toBe(false);
+  });
+
+  it("is true while any thread in any environment has an active run", () => {
+    const h = make();
+    for (const status of ["running", "starting", "preparing", "queued"] as const) {
+      h.registry.set(h.threads(REMOTE), [shell("a", status)]);
+      expect(h.registry.get(h.running)).toBe(true);
+    }
+    h.registry.set(h.threads(REMOTE), [shell("a", "idle")]);
+    expect(h.registry.get(h.running)).toBe(false);
+  });
+
+  it("stays true while overlapping runs end one at a time", () => {
+    const h = make();
+    h.registry.set(h.threads(LOCAL), [shell("a", "running")]);
+    h.registry.set(h.threads(REMOTE), [shell("b", "running")]);
+    h.registry.set(h.threads(LOCAL), [shell("a", "idle")]);
+    expect(h.registry.get(h.running)).toBe(true);
+    h.registry.set(h.threads(REMOTE), [shell("b", "idle")]);
+    expect(h.registry.get(h.running)).toBe(false);
+  });
+
+  it("ignores environments that are no longer enabled", () => {
+    const h = make();
+    h.registry.set(h.threads(REMOTE), [shell("a", "running")]);
+    h.registry.set(h.environmentIds, [LOCAL]);
+    expect(h.registry.get(h.running)).toBe(false);
   });
 });

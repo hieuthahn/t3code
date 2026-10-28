@@ -163,6 +163,7 @@ import {
   filterSidebarProjectScopeItems,
   firstValidTimestampMs,
   isSidebarNestedLinkClick,
+  isThreadSplitClick,
   isTrailingDoubleClick,
   orderItemsByPreferredIds,
   planSidebarThreadDrop,
@@ -1865,6 +1866,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       return;
     }
     if (isTrailingDoubleClick(event.detail)) {
+      return;
+    }
+    if (isThreadSplitClick(event)) {
+      event.preventDefault();
+      openInSplitView([threadRef]);
       return;
     }
     navigateToThread(threadRef);

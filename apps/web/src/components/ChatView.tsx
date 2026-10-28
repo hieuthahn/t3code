@@ -271,9 +271,12 @@ import {
   BranchRestoreConfirmHost,
   DeviceSetupDialogHost,
   openBranchRestoreConfirm,
+  openRewindDialog,
   PullRequestThreadDialogHost,
   RevertConfirmHost,
+  RewindDialogHost,
 } from "./chat/ChatOverlayHosts";
+import { rewindUnavailableReason } from "./chat/rewindDialog.logic";
 import type { AssistantCitationRequest } from "./chat/AssistantCitationSource";
 import type { MessagesTimelineHistoryControls } from "./chat/MessagesTimeline";
 import { ThreadTimeline } from "./chat/ThreadTimeline";
@@ -2849,6 +2852,10 @@ export default function ChatView(props: ChatViewProps) {
         if (!canInterruptRunningThread) return false;
         if (!event.repeat) void onInterruptStable();
       },
+      "thread.rewind": () => {
+        if (routeKind === "draft") return false;
+        openRewindDialog(routeThreadKey);
+      },
     },
     fallback: (command) => {
       const scriptId = projectScriptIdFromCommand(command);
@@ -3750,6 +3757,10 @@ export default function ChatView(props: ChatViewProps) {
                               activeThreadModelSelection={activeThread?.modelSelection}
                               activeProjectId={activeProject?.id ?? null}
                               activeContextWindow={activeContextWindow}
+                              promptCacheTtlMs={activeThreadLiveTokenUsage?.promptCacheTtlMs}
+                              promptCacheExpiresAt={
+                                activeThreadLiveTokenUsage?.promptCacheExpiresAt
+                              }
                               activeTasksProgress={activeComposerTasksProgress}
                               activeTaskSteps={activeComposerTaskSteps}
                               compactThreadUnavailable={compactThreadUnavailable}
@@ -4075,6 +4086,25 @@ export default function ChatView(props: ChatViewProps) {
       ) : null}
 
       <RevertConfirmHost threadKey={routeThreadKey} onConfirm={onConfirmRevertStable} />
+      <RewindDialogHost
+        threadKey={routeThreadKey}
+        timelineEntries={timelineEntries}
+        turnDiffSummaries={turnDiffSummaries}
+        threadStartCheckpointReady={threadStartCheckpointReady}
+        availableRevertTurnCounts={availableRevertTurnCounts}
+        unsettledRunId={activeRunningTurnId}
+        unavailableReason={rewindUnavailableReason({
+          supportsConversationRollback,
+          environmentUnavailableLabel: activeEnvironmentUnavailable
+            ? activeEnvironmentUnavailableLabel
+            : null,
+          phase,
+          isSendBusy,
+          isConnecting,
+          isRevertingCheckpoint,
+        })}
+        onSelect={onRevertTimelineTurnStable}
+      />
       <LinkPullRequestDialogHost />
       <ThreadVisitWatermark threadRef={routeThreadRef} />
       <ExpandedImageDialogHost threadKey={routeThreadKey} />

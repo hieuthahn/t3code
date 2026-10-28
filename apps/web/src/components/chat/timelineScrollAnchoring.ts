@@ -148,6 +148,7 @@ export function getAnchoredTurnMetrics({
 export interface RememberedTimelinePosition {
   readonly rowId: string;
   readonly offsetWithinRow: number;
+  readonly historyEntryId?: string | undefined;
   readonly atEnd: boolean;
   readonly disclosures?: {
     readonly runs: ReadonlySet<RunId>;

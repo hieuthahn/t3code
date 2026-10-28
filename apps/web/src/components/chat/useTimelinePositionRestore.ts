@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import type { LegendListRef } from "@legendapp/list/react";
 import type { AssistantCitationRequest } from "./AssistantCitationSource";
 import type { MessagesTimelineRow } from "./MessagesTimeline.logic";
@@ -58,6 +58,7 @@ export function useTimelinePositionRestore({
   rows,
   citationRequest,
   cancelPositionRestoreRef,
+  earlierHistory,
   onManualNavigation,
   onPositioned,
 }: {
@@ -68,6 +69,13 @@ export function useTimelinePositionRestore({
   readonly rows: MessagesTimelineRow[];
   readonly citationRequest: AssistantCitationRequest | null;
   readonly cancelPositionRestoreRef: React.RefObject<(() => void) | null> | undefined;
+  readonly earlierHistory:
+    | {
+        readonly available: boolean;
+        readonly loading: boolean;
+        readonly load: (throughEntryId: string) => void;
+      }
+    | undefined;
   readonly onManualNavigation: () => void;
   readonly onPositioned: (identity: string) => void;
 }) {
@@ -87,6 +95,39 @@ export function useTimelinePositionRestore({
       opened.identity = null;
     }
   });
+  const savedRowMissing =
+    restoringThreadPosition &&
+    rememberedPosition?.atEnd === false &&
+    !rows.some((row) => row.id === rememberedPosition.rowId);
+  const historyEntryId = savedRowMissing ? rememberedPosition?.historyEntryId : undefined;
+  const historyPage = `${listIdentityKey}:${rows[0]?.id}`;
+  const [stalledHistoryPage, setStalledHistoryPage] = useState<string | null>(null);
+  if (!restoringThreadPosition && stalledHistoryPage !== null) setStalledHistoryPage(null);
+  const awaitingHistory =
+    historyEntryId !== undefined &&
+    earlierHistory?.available === true &&
+    stalledHistoryPage !== historyPage &&
+    !rows.some((row) => row.id === historyEntryId);
+  const loadEarlierHistory = useEffectEvent((throughEntryId: string) =>
+    earlierHistory?.load(throughEntryId),
+  );
+  const historyRequestRef = useRef<{ readonly page: string; sawLoading: boolean } | null>(null);
+  const historyLoading = earlierHistory?.loading === true;
+  useEffect(() => {
+    if (!awaitingHistory || historyEntryId === undefined) {
+      historyRequestRef.current = null;
+      return;
+    }
+    const request = historyRequestRef.current;
+    if (request?.page === historyPage) {
+      if (historyLoading) request.sawLoading = true;
+      else if (request.sawLoading) setStalledHistoryPage(historyPage);
+      return;
+    }
+    if (historyLoading) return;
+    historyRequestRef.current = { page: historyPage, sawLoading: false };
+    loadEarlierHistory(historyEntryId);
+  }, [awaitingHistory, historyEntryId, historyLoading, historyPage]);
   useLayoutEffect(() => {
     if (!restoringThreadPosition || rows.length === 0) return;
     const list = listRef.current;
@@ -123,17 +164,29 @@ export function useTimelinePositionRestore({
     viewport?.addEventListener("pointerdown", cancelForNavigation, { passive: true });
     viewport?.ownerDocument.addEventListener("keydown", onScrollKey);
     const position = rememberedPosition;
-    const index = position ? rows.findIndex((row) => row.id === position.rowId) : -1;
-    // A saved row outside the loaded history page has no valid offset, so it falls back to the end.
-    const restoresRow = position?.atEnd === false && index >= 0;
-    if (restoresRow) onManualNavigation();
+    const savedIndex = position ? rows.findIndex((row) => row.id === position.rowId) : -1;
+    const historyIndex =
+      savedIndex < 0 && position?.historyEntryId !== undefined
+        ? rows.findIndex((row) => row.id === position.historyEntryId)
+        : -1;
+    const target =
+      position?.atEnd !== false
+        ? undefined
+        : savedIndex >= 0
+          ? { index: savedIndex, rowId: position.rowId, offsetWithinRow: position.offsetWithinRow }
+          : historyIndex >= 0
+            ? { index: historyIndex, rowId: position.historyEntryId!, offsetWithinRow: 0 }
+            : undefined;
+    // A saved row outside the loaded history page has no valid offset, so it waits at the end.
+    const restoresRow = target !== undefined;
+    if (restoresRow || awaitingHistory) onManualNavigation();
     if (cancelPositionRestoreRef) cancelPositionRestoreRef.current = cancelRestoration;
     const scrolling = restoresRow
       ? list.scrollToIndex({
-          index,
+          index: target.index,
           animated: false,
           viewPosition: 0,
-          viewOffset: -position.offsetWithinRow,
+          viewOffset: -target.offsetWithinRow,
         })
       : position?.atEnd !== false && listOpenedOnRef.current?.identity === listIdentityKey
         ? undefined
@@ -149,7 +202,7 @@ export function useTimelinePositionRestore({
           list,
           (element) => {
             const state = list.getState();
-            const rowIndex = state.indexByKey(position.rowId);
+            const rowIndex = state.indexByKey(target.rowId);
             const row = rowIndex === undefined ? undefined : state.elementAtIndex(rowIndex);
             if (!row) return undefined;
             return Math.max(
@@ -158,7 +211,7 @@ export function useTimelinePositionRestore({
                 element.scrollTop +
                   row.getBoundingClientRect().top -
                   element.getBoundingClientRect().top +
-                  position.offsetWithinRow,
+                  target.offsetWithinRow,
                 measuredEndOffset(element),
               ),
             );
@@ -166,7 +219,7 @@ export function useTimelinePositionRestore({
           () => cancelled,
         );
       }
-      if (!cancelled) onPositioned(listIdentityKey);
+      if (!cancelled && !awaitingHistory) onPositioned(listIdentityKey);
     });
     return () => {
       cancelled = true;
@@ -179,6 +232,7 @@ export function useTimelinePositionRestore({
       viewport?.ownerDocument.removeEventListener("keydown", onScrollKey);
     };
   }, [
+    awaitingHistory,
     citationRequest,
     cancelPositionRestoreRef,
     listIdentityKey,

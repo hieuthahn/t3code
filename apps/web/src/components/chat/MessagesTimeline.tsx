@@ -658,6 +658,11 @@ const ConversationTimeline = memo(function ConversationTimeline({
     rows,
     citationRequest,
     cancelPositionRestoreRef,
+    earlierHistory: historyControls && {
+      available: historyControls.hasMoreHistory && historyControls.error === null,
+      loading: historyControls.loading,
+      load: historyControls.onLoadEarlier,
+    },
     onManualNavigation,
     onPositioned: setPositionedThreadKey,
   });
@@ -850,6 +855,9 @@ const ConversationTimeline = memo(function ConversationTimeline({
           {
             ...position,
             offsetWithinRow: element.getBoundingClientRect().top - row.getBoundingClientRect().top,
+            historyEntryId: rows.findLast(
+              (candidate, rowIndex) => rowIndex <= (index ?? -1) && candidate.kind === "message",
+            )?.id,
             atEnd: isAtEnd,
             disclosures: {
               runs: paintedExpandedRunIds,

@@ -352,6 +352,94 @@ describe("MessagesTimeline thread switches", () => {
       });
     },
   );
+
+  it.each([
+    { label: "loads history through the saved row and restores it", failLoad: null },
+    { label: "lands on the end when loading the saved row's history fails", failLoad: "error" },
+    { label: "lands on the end when a history load brings no older page", failLoad: "empty" },
+  ])("$label", async ({ failLoad }) => {
+    const onIsAtEndChange = vi.fn();
+    const props = {
+      ...baseProps(),
+      cancelPositionRestoreRef: createRef<(() => void) | null>(),
+      onIsAtEndChange,
+    };
+    const first = props.routeThreadKey;
+    const history = conversation("first", 80);
+    const onLoadEarlier = vi.fn();
+    const timeline = (
+      threadKey: string,
+      entries: Entry[],
+      historyControls?: TimelineProps["historyControls"],
+    ) => (
+      <MessagesTimeline
+        {...props}
+        routeThreadKey={threadKey}
+        timelineEntries={entries}
+        liveFollowEnabled={false}
+        historyControls={historyControls}
+      />
+    );
+    await using screen = await renderElement(timeline(first, history));
+    const viewport = props.listRef.current!.getScrollableNode()!;
+    await vi.waitFor(() => expect(viewport.scrollHeight).toBeGreaterThan(4_000));
+    await vi.waitFor(async () => {
+      await act(() => {
+        viewport.scrollTop = 2_000;
+        viewport.dispatchEvent(new Event("scroll"));
+      });
+      expect(viewport.scrollTop).toBe(2_000);
+      expect(readTimelinePosition(first)?.atEnd).toBe(false);
+    });
+    const saved = readTimelinePosition(first)!;
+    const savedIndex = history.findIndex((entry) => entry.id === saved.rowId);
+    expect(savedIndex).toBeGreaterThanOrEqual(0);
+    expect(savedIndex).toBeLessThan(history.length - 12);
+    const tail = history.slice(-12);
+    await screen.rerender(timeline(`${first}-other`, conversation("second", 20)));
+    await screen.rerender(
+      timeline(first, tail, { hasMoreHistory: true, loading: false, error: null, onLoadEarlier }),
+    );
+
+    await vi.waitFor(() => expect(onLoadEarlier).toHaveBeenCalledWith(saved.rowId));
+    await screen.rerender(
+      timeline(first, tail, { hasMoreHistory: true, loading: true, error: null, onLoadEarlier }),
+    );
+    if (failLoad !== null) {
+      await screen.rerender(
+        timeline(first, tail, {
+          hasMoreHistory: true,
+          loading: false,
+          error: failLoad === "error" ? "History failed to load" : null,
+          onLoadEarlier,
+        }),
+      );
+      await vi.waitFor(() => {
+        const element = props.listRef.current!.getScrollableNode()!;
+        expect(element.scrollHeight - element.clientHeight - element.scrollTop).toBeLessThan(2);
+        expect(props.cancelPositionRestoreRef.current).toBeNull();
+        expect(onIsAtEndChange).toHaveBeenLastCalledWith(true);
+      });
+      return;
+    }
+    await screen.rerender(
+      timeline(first, history.slice(savedIndex), {
+        hasMoreHistory: true,
+        loading: false,
+        error: null,
+        onLoadEarlier,
+      }),
+    );
+    await vi.waitFor(() => {
+      const element = props.listRef.current!.getScrollableNode()!;
+      const state = props.listRef.current!.getState();
+      const row = state.elementAtIndex(state.indexByKey(saved.rowId)!);
+      const rowTop = row!.getBoundingClientRect().top - element.getBoundingClientRect().top;
+      expect(Math.abs(rowTop + saved.offsetWithinRow)).toBeLessThan(2);
+      expect(props.cancelPositionRestoreRef.current).toBeNull();
+    });
+    expect(onLoadEarlier).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("MessagesTimeline account switch notices", () => {

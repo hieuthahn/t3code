@@ -2547,7 +2547,7 @@ export function handoffRunsSignature(runs: ReadonlyArray<HandoffTimelineRun>): s
   return runs
     .map(
       (run) =>
-        `${run.id}\0${run.providerInstanceId}\0${run.ordinal}\0${run.modelSelection.instanceId}\0${run.modelSelection.model}\0${run.status}`,
+        `${run.id}\0${run.providerInstanceId}\0${run.ordinal}\0${run.modelSelection.instanceId}\0${run.modelSelection.model}`,
     )
     .join("\n");
 }

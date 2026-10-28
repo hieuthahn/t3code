@@ -10,7 +10,7 @@ import type { ThreadStructure } from "./state/models.ts";
 
 export type HandoffTimelineRun = Pick<
   OrchestrationV2Run,
-  "id" | "ordinal" | "providerInstanceId" | "modelSelection" | "status"
+  "id" | "ordinal" | "providerInstanceId" | "modelSelection"
 >;
 
 export type HandoffEndpoints = ReturnType<typeof resolveHandoffEndpoints>;

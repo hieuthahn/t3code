@@ -43,7 +43,6 @@ import {
   type MaintainScrollAtEndOptions,
 } from "@legendapp/list/react";
 import { type TimelineEntry } from "../../session-logic";
-import { splitAccountSwitchNotices } from "./accountSwitchMarker";
 import type { CodexArtifactTemplate } from "@t3tools/shared/codexArtifactTemplates";
 import { type ChatFileAttachment, type TurnDiffSummary } from "../../types";
 import { ArrowRightIcon, BotIcon, CircleAlertIcon, Minimize2Icon } from "lucide-react";
@@ -315,7 +314,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   awaitingUser = null,
   awaitingRequestId = null,
   listRef,
-  timelineEntries: allTimelineEntries,
+  timelineEntries,
   findExpanded = false,
   findQuery = "",
   activeFindMatch = null,
@@ -372,8 +371,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
   historyControls,
   loadEarlier = null,
 }: MessagesTimelineProps) {
-  const { entries: timelineEntries, reasons: accountSwitchReasons } =
-    splitAccountSwitchNotices(allTimelineEntries);
   const listIdentityKey = displayThreadKey ?? routeThreadKey;
   // Snapshot restore positions on identity changes; ongoing scroll writes must not move them.
   const [listState, setListState] = useState(() => timelineListStateFor(listIdentityKey));
@@ -953,7 +950,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
     workspaceRoot,
     skills,
     runs,
-    accountSwitchReasons,
     activeThreadEnvironmentId,
     onRevertToTurnCount,
     onRunShellCommand,

@@ -1,15 +1,12 @@
 import { InlineAudioPreview } from "../files/InlineAudioPreview";
 import { filePreviewKind } from "@t3tools/shared/filePreview";
 import { findRevealRef } from "./markdownFindContext";
-import { type MessageId, type RunId, type ServerProviderSkill, ThreadId } from "@t3tools/contracts";
-import { useAtomValue } from "@effect/atom-react";
+import { type MessageId, type ServerProviderSkill, ThreadId } from "@t3tools/contracts";
 import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
 import { Link } from "@tanstack/react-router";
 import { useQuietThreadShell } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
-import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
-import { resolveAccountSwitchMarker } from "./accountSwitchMarker";
-import { TimelineSystemDivider } from "./TimelineSystemDivider";
+import { serverEnvironment } from "../../state/server";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import { memo, use, useState, type ReactNode } from "react";
 import {
@@ -24,7 +21,6 @@ import {
 } from "../../types";
 import ChatMarkdown from "../ChatMarkdown";
 import {
-  ArrowLeftRightIcon,
   CalendarClockIcon,
   ChevronDownIcon,
   DownloadIcon,
@@ -124,35 +120,6 @@ function UserVideoAttachment({ file }: { readonly file: ChatFileAttachment }) {
 }
 
 export function UserMessageRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
-  return (
-    <>
-      <AccountSwitchDivider runId={row.message.runId} />
-      <UserMessageRowContent row={row} />
-    </>
-  );
-}
-
-function AccountSwitchDivider({ runId }: { runId: RunId | null }) {
-  const ctx = use(TimelineRowCtx);
-  const providers =
-    useAtomValue(serverEnvironment.providersValueAtom(ctx.activeThreadEnvironmentId)) ??
-    EMPTY_SERVER_PROVIDERS;
-  const marker = resolveAccountSwitchMarker({ runId, runs: ctx.runs, providers });
-  const reason = runId === null ? undefined : ctx.accountSwitchReasons.get(runId);
-  if (marker === null && reason === undefined) return null;
-  return (
-    <TimelineSystemDivider
-      icon={ArrowLeftRightIcon}
-      label="Switched account"
-      detail={
-        reason ??
-        `${marker?.fromLabel} → ${marker?.toLabel}${marker?.afterFailedRun ? " after the last run failed" : ""}`
-      }
-    />
-  );
-}
-
-function UserMessageRowContent({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
   return ctx.workflowOpening?.messageId === row.message.id ? (
     <WorkflowOpeningBlock

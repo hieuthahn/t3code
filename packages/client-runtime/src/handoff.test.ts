@@ -29,7 +29,6 @@ const run = (
   ordinal,
   providerInstanceId: instanceId,
   modelSelection: { instanceId, model },
-  status: "completed",
 });
 
 describe("handoff endpoints shared by web and mobile", () => {

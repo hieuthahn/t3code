@@ -1083,9 +1083,8 @@ export type SidebarV2TopStatusKind =
   | "woke"
   | "working";
 
-/** Decide whether a compact row shows its status; an idle "Waiting" thread shows its time instead. */
 export function compactRowShowsStatus(kind: SidebarV2TopStatusKind | null): boolean {
-  return kind !== null && kind !== "waiting";
+  return kind !== null;
 }
 
 export function resolveSidebarV2TopStatus(input: {
@@ -1289,9 +1288,9 @@ export function resolveThreadStatusPill(input: {
   ) {
     return {
       label: "Waiting",
-      colorClass: "text-sidebar-muted-foreground",
-      dotClass: "bg-sidebar-muted-foreground",
-      pulse: false,
+      colorClass: "text-sky-600 dark:text-sky-300/80",
+      dotClass: "bg-sky-500 dark:bg-sky-300/80",
+      pulse: true,
     };
   }
 

@@ -34,12 +34,9 @@ Instead of the terminal, open the instance in **Settings > Providers** and use
 signed in to the account you want, approve it, then paste the code Claude shows.
 
 Check the account reported in provider settings after signing in. Existing
-threads can switch only between Claude instances that share conversation
-history. Separate account directories stay isolated, including their local
-conversation state, unless their `projects` directories are the same (for
-example, one is a symlink to the other). Instances that share `projects` also
-share a thread's history, so a thread can move between them without a handoff.
-Claude does not have Codex's shared-home and shadow-home arrangement.
+threads can switch only between Claude instances with the same config directory.
+Separate account directories stay isolated, including their local conversation
+state. Claude does not have Codex's shared-home and shadow-home arrangement.
 
 For presets that differ only in API keys or endpoints, use the instance's
 **Environment variables**. Variable assignments do not belong in **Launch arguments**.

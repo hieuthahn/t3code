@@ -240,7 +240,13 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
               />
             ) : null}
 
-            {panels.connectors ? <ThreadConnectorsPanel servers={props.mcpServers} /> : null}
+            {panels.connectors ? (
+              <ThreadConnectorsPanel
+                environmentId={props.environmentId}
+                threadId={props.threadId}
+                servers={props.mcpServers}
+              />
+            ) : null}
 
             {panels.outputs ? (
               <ThreadOutputsPanel

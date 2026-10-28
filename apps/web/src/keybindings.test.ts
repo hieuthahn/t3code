@@ -239,6 +239,41 @@ describe("thread undo shortcut", () => {
   });
 });
 
+describe("thread rewind shortcut", () => {
+  const escape = event({ key: "Escape", code: "Escape" });
+
+  it("binds Escape to rewind only while the chord is armed", () => {
+    assert.equal(
+      resolveShortcutCommand(escape, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "MacIntel",
+        context: { escapeChord: true },
+      }),
+      "thread.rewind",
+    );
+  });
+
+  it("leaves a single Escape unbound", () => {
+    assert.isNull(
+      resolveShortcutCommand(escape, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "MacIntel",
+        context: { escapeChord: false },
+      }),
+    );
+    assert.isNull(
+      resolveShortcutCommand(escape, DEFAULT_RESOLVED_KEYBINDINGS, { platform: "MacIntel" }),
+    );
+  });
+
+  it("stays out of the terminal", () => {
+    assert.isNull(
+      resolveShortcutCommand(escape, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "MacIntel",
+        context: { escapeChord: true, terminalFocus: true },
+      }),
+    );
+  });
+});
+
 describe("keyboard shortcuts dialog shortcut", () => {
   const slash = event({ key: "/", code: "Slash" });
 

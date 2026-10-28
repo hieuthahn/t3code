@@ -1,6 +1,8 @@
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import {
+  lazy,
+  Suspense,
   useEffect,
   useState,
   useSyncExternalStore,
@@ -38,7 +40,6 @@ import {
   usePanelNavigationSuppression,
 } from "../panelAnimations";
 import { BackgroundThreadAnnouncer } from "./BackgroundThreadAnnouncer";
-import { KeyboardShortcutsDialogHost } from "./KeyboardShortcutsDialog";
 import LegacyThreadSidebar from "./LegacySidebar";
 import { useThreadVisitedMigration } from "../hooks/useThreadVisitedMigration";
 import ThreadSidebar from "./Sidebar";
@@ -170,6 +171,22 @@ export function registerNavigationHistoryCommands(router: AnyRouter): () => void
         usagePageOpen: readUsagePageOpen(router),
       }),
     },
+  );
+}
+
+const KeyboardShortcutsDialogHost = lazy(() =>
+  import("./KeyboardShortcutsDialog").then((module) => ({
+    default: module.KeyboardShortcutsDialogHost,
+  })),
+);
+
+function DeferredKeyboardShortcutsDialog() {
+  const requested = useKeyboardShortcutsDialogStore((state) => state.requested);
+  if (!requested) return null;
+  return (
+    <Suspense fallback={null}>
+      <KeyboardShortcutsDialogHost />
+    </Suspense>
   );
 }
 
@@ -445,7 +462,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         </Sidebar>
         {children}
         <BackgroundThreadAnnouncer />
-        <KeyboardShortcutsDialogHost />
+        <DeferredKeyboardShortcutsDialog />
         <SidebarControl />
         <MainAppLocationTracker />
       </SidebarProvider>

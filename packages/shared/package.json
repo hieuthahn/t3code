@@ -363,10 +363,6 @@
       "types": "./src/usageLimits.ts",
       "import": "./src/usageLimits.ts"
     },
-    "./usageLimitSwitchCandidates": {
-      "types": "./src/usageLimitSwitchCandidates.ts",
-      "import": "./src/usageLimitSwitchCandidates.ts"
-    },
     "./desktopAppControl": {
       "types": "./src/desktopAppControl.ts",
       "import": "./src/desktopAppControl.ts"

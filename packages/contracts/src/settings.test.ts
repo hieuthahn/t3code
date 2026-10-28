@@ -502,26 +502,65 @@ describe("sidebarCompactGroupBy forward compatibility", () => {
   });
 });
 
-describe("balanceNewThreads", () => {
-  it("decodes a missing key to false and keeps an explicit value", () => {
-    expect(decodeServerSettings({}).balanceNewThreads).toBe(false);
-    expect(decodeServerSettings({ balanceNewThreads: true }).balanceNewThreads).toBe(true);
-    expect(DEFAULT_SERVER_SETTINGS.balanceNewThreads).toBe(false);
-    expect(decodeServerSettingsPatch({}).balanceNewThreads).toBeUndefined();
-  });
-});
+describe("removed account switching settings", () => {
+  const savedBeforeRemoval = {
+    limitedThreadSwitch: "ask",
+    modelPickerMergeAccounts: true,
+    defaultAccountByDriver: { claudeAgent: "claudeAgent_viet", codex: "auto" },
+    earlyAccountSwitch: false,
+    midTurnAccountSwitch: false,
+    balanceNewThreads: true,
+    earlySwitchSessionThreshold: 85,
+    earlySwitchWeeklyThreshold: 95,
+    switchPinnedAccounts: true,
+    autoEffortDefault: false,
+    defaultModelSelection: { instanceId: "magpie", model: "claude-opus-5-5" },
+    providerInstances: {
+      magpie: {
+        driver: "claudeAgent",
+        displayName: "Magpie",
+        enabled: true,
+        accountSwitch: { sessionPercent: 80, weeklyPercent: 90 },
+      },
+    },
+  };
+  const removedKeys = [
+    "limitedThreadSwitch",
+    "modelPickerMergeAccounts",
+    "defaultAccountByDriver",
+    "earlyAccountSwitch",
+    "midTurnAccountSwitch",
+    "balanceNewThreads",
+    "earlySwitchSessionThreshold",
+    "earlySwitchWeeklyThreshold",
+    "switchPinnedAccounts",
+  ];
 
-describe("defaultAccountByDriver", () => {
-  it("decodes a missing key to an empty record so old settings files still load", () => {
-    expect(decodeServerSettings({}).defaultAccountByDriver).toEqual({});
-    expect(DEFAULT_SERVER_SETTINGS.defaultAccountByDriver).toEqual({});
-    expect(decodeServerSettingsPatch({}).defaultAccountByDriver).toBeUndefined();
-  });
-
-  it("keeps one choice per driver", () => {
-    const decoded = decodeServerSettings({
-      defaultAccountByDriver: { claudeAgent: "claude_ai", codex: "auto" },
+  it("decodes a settings file that still holds them and keeps the other values", () => {
+    const decoded = decodeServerSettings(savedBeforeRemoval);
+    expect(decoded.autoEffortDefault).toBe(false);
+    expect(decoded.defaultModelSelection).toEqual({
+      instanceId: ProviderInstanceId.make("magpie"),
+      model: "claude-opus-5-5",
     });
-    expect(decoded.defaultAccountByDriver).toEqual({ claudeAgent: "claude_ai", codex: "auto" });
+    expect(decoded.providerInstances[ProviderInstanceId.make("magpie")]).toEqual({
+      driver: ProviderDriverKind.make("claudeAgent"),
+      displayName: "Magpie",
+      enabled: true,
+    });
+    const encoded = encodeServerSettings(decoded);
+    for (const key of removedKeys) expect(encoded).not.toHaveProperty(key);
+  });
+
+  it("decodes a patch from an older client that still sends them", () => {
+    const { providerInstances: _instances, ...patch } = savedBeforeRemoval;
+    expect(decodeServerSettingsPatch(patch)).toEqual({
+      autoEffortDefault: false,
+      defaultModelSelection: {
+        instanceId: ProviderInstanceId.make("magpie"),
+        model: "claude-opus-5-5",
+      },
+    });
   });
 });
+

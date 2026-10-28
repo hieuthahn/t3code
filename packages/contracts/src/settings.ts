@@ -49,8 +49,6 @@ import {
   PreviewZoomFactor,
 } from "./preview.ts";
 import {
-  AccountSwitchThresholdPercent,
-  DEFAULT_ACCOUNT_SWITCH_THRESHOLD_PERCENT,
   ProviderInstanceConfig,
   ProviderInstanceId,
   ProviderDriverKind,
@@ -65,8 +63,6 @@ import {
 import { TEAM_MAX_PROFILES, TeamProfile, TeamSetup } from "./team.ts";
 
 export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"]);
-export const LimitedThreadSwitchMode = Schema.Literals(["off", "ask", "auto"]);
-export type LimitedThreadSwitchMode = typeof LimitedThreadSwitchMode.Type;
 
 /** Which judge picks a turn's effort when Auto effort is on: auto asks Jev first when keyed. */
 export const AutoEffortJudge = Schema.Literals(["auto", "haiku"]);
@@ -312,9 +308,6 @@ export const LoadBalancingWeights = Schema.Record(
   TrimmedNonEmptyString,
   Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 100 })),
 );
-
-export const DefaultAccountChoice = Schema.Union([Schema.Literal("auto"), ProviderInstanceId]);
-export type DefaultAccountChoice = typeof DefaultAccountChoice.Type;
 
 export const DiffColorScheme = Schema.Literals(["red-green", "blue-orange"]);
 
@@ -1331,29 +1324,6 @@ export const ServerSettings = Schema.Struct({
   autoResumeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Beta: guest links for this machine's threads. Off refuses new links and pauses existing ones. */
   guestSharingEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  limitedThreadSwitch: LimitedThreadSwitchMode.pipe(
-    Schema.withDecodingDefault(Effect.succeed("auto" as const)),
-  ),
-  /** Show one model row per account group in the model picker and pick the account itself. */
-  modelPickerMergeAccounts: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  /** Account a new thread starts on, per provider driver: "auto" or a provider instance id. */
-  defaultAccountByDriver: Schema.Record(ProviderDriverKind, DefaultAccountChoice).pipe(
-    Schema.withDecodingDefault(Effect.succeed({})),
-  ),
-  /** Move a thread to a roomier account at a turn boundary once a usage threshold is crossed. */
-  earlyAccountSwitch: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  /** Interrupt a running turn and continue it on a roomier account. Needs `earlyAccountSwitch`. */
-  midTurnAccountSwitch: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  /** Spread a new thread across accounts that share a history. Needs `modelPickerMergeAccounts`. */
-  balanceNewThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  earlySwitchSessionThreshold: AccountSwitchThresholdPercent.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_ACCOUNT_SWITCH_THRESHOLD_PERCENT)),
-  ),
-  earlySwitchWeeklyThreshold: AccountSwitchThresholdPercent.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_ACCOUNT_SWITCH_THRESHOLD_PERCENT)),
-  ),
-  /** Let automatic switches move a thread off an account the user picked by hand. */
-  switchPinnedAccounts: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   autoEffortJudge: AutoEffortJudge.pipe(
     Schema.withDecodingDefault(Effect.succeed("auto" as const)),
   ),
@@ -1717,17 +1687,6 @@ export const ServerSettingsPatch = Schema.Struct({
   sidebarAutoSettleKeepPullRequests: Schema.optionalKey(Schema.Boolean),
   sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
   autoResumeLimitedThreads: Schema.optionalKey(Schema.Boolean),
-  limitedThreadSwitch: Schema.optionalKey(LimitedThreadSwitchMode),
-  modelPickerMergeAccounts: Schema.optionalKey(Schema.Boolean),
-  defaultAccountByDriver: Schema.optionalKey(
-    Schema.Record(ProviderDriverKind, DefaultAccountChoice),
-  ),
-  earlyAccountSwitch: Schema.optionalKey(Schema.Boolean),
-  midTurnAccountSwitch: Schema.optionalKey(Schema.Boolean),
-  balanceNewThreads: Schema.optionalKey(Schema.Boolean),
-  earlySwitchSessionThreshold: Schema.optionalKey(AccountSwitchThresholdPercent),
-  earlySwitchWeeklyThreshold: Schema.optionalKey(AccountSwitchThresholdPercent),
-  switchPinnedAccounts: Schema.optionalKey(Schema.Boolean),
   autoEffortJudge: Schema.optionalKey(AutoEffortJudge),
   autoEffortDefault: Schema.optionalKey(Schema.Boolean),
   promptSuggestions: Schema.optionalKey(Schema.Boolean),

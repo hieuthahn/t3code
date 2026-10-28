@@ -932,21 +932,3 @@ describe("applyServerSettingsPatch team", () => {
   });
 });
 
-describe("applyServerSettingsPatch defaultAccountByDriver", () => {
-  const CODEX = ProviderDriverKind.make("codex");
-  const CLAUDE = ProviderDriverKind.make("claudeAgent");
-
-  it("saves one provider's default without touching another's", () => {
-    const withCodex = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-      defaultAccountByDriver: { [CODEX]: ProviderInstanceId.make("codex_b") },
-    });
-    const both = applyServerSettingsPatch(withCodex, {
-      defaultAccountByDriver: { [CLAUDE]: "auto" },
-    });
-    expect(both.defaultAccountByDriver).toEqual({ codex: "codex_b", claudeAgent: "auto" });
-    const changed = applyServerSettingsPatch(both, {
-      defaultAccountByDriver: { [CODEX]: ProviderInstanceId.make("codex_c") },
-    });
-    expect(changed.defaultAccountByDriver).toEqual({ codex: "codex_c", claudeAgent: "auto" });
-  });
-});

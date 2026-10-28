@@ -71,21 +71,17 @@ it.effect(
     }),
 );
 
-it.effect("ModelSelection keeps a pinned account choice through decode and encode", () =>
+it.effect("ModelSelection drops the account pin a stored selection still carries", () =>
   Effect.gen(function* () {
     const parsed = yield* decodeModelSelection({
       instanceId: "claudeAgent_dung",
       model: "claude-sonnet-5-5",
       accountChoice: "pinned",
     });
-    assert.strictEqual(parsed.accountChoice, "pinned");
-    const encoded = yield* encodeModelSelection(parsed);
-    assert.deepStrictEqual(encoded, {
+    assert.deepStrictEqual(yield* encodeModelSelection(parsed), {
       instanceId: "claudeAgent_dung",
       model: "claude-sonnet-5-5",
-      accountChoice: "pinned",
     });
-    const legacy = yield* decodeModelSelection({ instanceId: "claudeAgent", model: "m" });
-    assert.isUndefined(legacy.accountChoice);
   }),
 );
+

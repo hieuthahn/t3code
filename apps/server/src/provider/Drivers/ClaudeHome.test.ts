@@ -3,7 +3,6 @@ import * as NodeOS from "node:os";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
 import {
@@ -46,38 +45,6 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
           explicit,
         );
       }),
-    );
-
-    it.effect("groups homes whose projects directory is a symlink to the same history", () =>
-      Effect.gen(function* () {
-        const fileSystem = yield* FileSystem.FileSystem;
-        const root = yield* fileSystem.realPath(
-          yield* fileSystem.makeTempDirectoryScoped({ prefix: "claude-shared-" }),
-        );
-        const shared = `${root}/shared-projects`;
-        yield* fileSystem.makeDirectory(shared);
-        for (const name of ["a", "b"]) {
-          yield* fileSystem.makeDirectory(`${root}/${name}`);
-          yield* fileSystem.symlink(shared, `${root}/${name}/projects`);
-        }
-        yield* fileSystem.makeDirectory(`${root}/owner/projects`, { recursive: true });
-        yield* fileSystem.makeDirectory(`${root}/linked`);
-        yield* fileSystem.symlink(`${root}/owner/projects`, `${root}/linked/projects`);
-        yield* fileSystem.makeDirectory(`${root}/c/projects`, { recursive: true });
-
-        const keyA = yield* makeClaudeContinuationGroupKey({ homePath: `${root}/a` });
-        const keyB = yield* makeClaudeContinuationGroupKey({ homePath: `${root}/b` });
-        const keyC = yield* makeClaudeContinuationGroupKey({ homePath: `${root}/c` });
-
-        expect(keyA).toBe(`claude:home:${root}`);
-        expect(keyB).toBe(keyA);
-        expect(keyC).toBe(`claude:home:${root}/c`);
-
-        const owner = yield* makeClaudeContinuationGroupKey({ homePath: `${root}/owner` });
-        const linked = yield* makeClaudeContinuationGroupKey({ homePath: `${root}/linked` });
-        expect(owner).toBe(`claude:home:${root}/owner`);
-        expect(linked).toBe(owner);
-      }).pipe(Effect.scoped),
     );
 
     it.effect("separates capability probes by cwd", () =>

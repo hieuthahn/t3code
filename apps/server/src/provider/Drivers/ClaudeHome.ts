@@ -59,17 +59,9 @@ export const makeClaudeContinuationGroupKey = Effect.fn("makeClaudeContinuationG
   function* (
     config: Pick<ClaudeSettings, "homePath">,
     environment?: NodeJS.ProcessEnv,
-  ): Effect.fn.Return<string, never, Path.Path | FileSystem.FileSystem> {
-    const path = yield* Path.Path;
-    const fileSystem = yield* FileSystem.FileSystem;
+  ): Effect.fn.Return<string, never, Path.Path> {
     const resolvedHomePath = yield* resolveClaudeHomePath(config, environment);
-    // A home whose `projects` directory lives inside another home shares that
-    // home's session history, so both resolve to the owning home.
-    const owningHomePath = yield* fileSystem.realPath(path.join(resolvedHomePath, "projects")).pipe(
-      Effect.map((projectsPath) => path.dirname(projectsPath)),
-      Effect.orElseSucceed(() => resolvedHomePath),
-    );
-    return `claude:home:${owningHomePath}`;
+    return `claude:home:${resolvedHomePath}`;
   },
 );
 
@@ -93,5 +85,5 @@ export const claudeSignedOutMessage = (input: {
     input.configDir !== undefined
       ? ` from ${quotePath(input.cwd)}, with CLAUDE_CONFIG_DIR set to ${quotePath(input.configDir)}`
       : "";
-  return `Claude could not authenticate. For subscription login, run \`claude auth login\` on this environment's machine${configuration}, then send the message again or switch this thread to a signed-in account. For API-key authentication, check this instance's configured credentials.`;
+  return `Claude could not authenticate. For subscription login, run \`claude auth login\` on this environment's machine${configuration}, then send the message again. For API-key authentication, check this instance's configured credentials.`;
 };

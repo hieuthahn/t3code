@@ -637,7 +637,7 @@ describe("AutoEffortService team verdict", () => {
           expect(yield* laterTurns(sql)).toEqual([
             expect.objectContaining({ team_before: 0, team_after: 0, judge_team: 1 }),
           ]);
-          expect(yield* service.isTeamAuto(ThreadId.make("thread-1"), false)).toBe(true);
+          expect(yield* service.isTeamAuto(ThreadId.make("thread-1"), false, false)).toBe(true);
           const retried = yield* service.resolve(request({ team: teamTurn(false) }));
           expect(retried.teamAction).toBeUndefined();
         }),
@@ -746,10 +746,37 @@ describe("AutoEffortService team verdict", () => {
       haikuSays('{"effort":"high","sure":0.9,"why":"big job","team":false,"teamSure":0.9}'),
       ({ service }) =>
         Effect.gen(function* () {
-          expect(yield* service.isTeamAuto(ThreadId.make("thread-1"), false)).toBe(false);
+          expect(yield* service.isTeamAuto(ThreadId.make("thread-1"), false, false)).toBe(false);
           yield* service.judgeTeam(teamRequest());
-          expect(yield* service.isTeamAuto(ThreadId.make("thread-1"), false)).toBe(true);
-          expect(yield* service.isTeamAuto(ThreadId.make("thread-1"), true)).toBe(false);
+          expect(yield* service.isTeamAuto(ThreadId.make("thread-1"), false, false)).toBe(true);
+          expect(yield* service.isTeamAuto(ThreadId.make("thread-1"), true, false)).toBe(false);
+        }),
+    ),
+  );
+
+  it.effect("owns a thread never judged while Auto is the default", () =>
+    run(
+      haikuSays('{"effort":"high","sure":0.9,"why":"big job","team":false,"teamSure":0.9}'),
+      ({ service }) =>
+        Effect.gen(function* () {
+          expect(yield* service.isTeamAuto(ThreadId.make("thread-old"), false, true)).toBe(true);
+          expect(yield* service.isTeamAuto(ThreadId.make("thread-old"), true, true)).toBe(true);
+        }),
+    ),
+  );
+
+  it.effect("leaves a thread whose team the user picked at launch", () =>
+    run(
+      haikuSays('{"effort":"high","sure":0.9,"why":"big job","team":false,"teamSure":0.9}'),
+      ({ service, sql }) =>
+        Effect.gen(function* () {
+          yield* service.recordTeamChoice(ThreadId.make("thread-picked"), true);
+          expect(yield* service.isTeamAuto(ThreadId.make("thread-picked"), true, true)).toBe(false);
+          const rows = yield* sql<{ readonly judged_by: string; readonly team_after: number }>`
+            SELECT judged_by, team_after FROM auto_team_verdicts
+            WHERE thread_id = ${"thread-picked"}
+          `.pipe(Effect.orDie);
+          expect(rows).toEqual([{ judged_by: "user", team_after: 1 }]);
         }),
     ),
   );

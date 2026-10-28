@@ -1761,3 +1761,25 @@ export function deriveWorkspaceMutationId(
     ? null
     : JSON.stringify([itemId, latestCheckpointCompletedAt]);
 }
+
+/** The banner error; a usage limit stays a timeline notice unless another account can take over. */
+export function timelineThreadErrorOf(input: {
+  readonly visibleThreadError: string | null;
+  readonly runtime:
+    | {
+        readonly status: string;
+        readonly lastErrorClass?: string | null | undefined;
+        readonly lastError?: string | null | undefined;
+      }
+    | null
+    | undefined;
+  readonly hasLatestRun: boolean;
+  readonly canSwitchAccount: boolean;
+}): string | null {
+  const limitShownInTimeline =
+    input.runtime?.status === "failed" &&
+    input.runtime.lastErrorClass === "usage_limit" &&
+    input.hasLatestRun &&
+    input.visibleThreadError === input.runtime.lastError;
+  return limitShownInTimeline && !input.canSwitchAccount ? null : input.visibleThreadError;
+}

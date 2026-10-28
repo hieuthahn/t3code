@@ -23,7 +23,11 @@ import { ThreadFind, ThreadFindCanvas } from "./chat/ThreadFindProvider";
 import { closeThreadFind, openThreadFind, useThreadFindOpen } from "./chat/threadFindStore";
 import { THREAD_FIND_BAR_RESERVED_HEIGHT } from "./chat/ThreadFindBar";
 import { usageLimitRecoveryBannerItem } from "./chat/UsageLimitRecoveryBanner";
-import { resolveDraftHeroState, turnRecapForDisplay } from "./ChatView.logic";
+import {
+  resolveDraftHeroState,
+  timelineThreadErrorOf,
+  turnRecapForDisplay,
+} from "./ChatView.logic";
 import { useQueuedRunEdit } from "./chat/useQueuedRunEdit";
 import {
   isPaintOnlyThreadTimeline,
@@ -940,13 +944,6 @@ export default function ChatView(props: ChatViewProps) {
   );
   const browserAvailable = isPreviewSupportedInRuntime() || activeEnvironmentServerBrowser;
   const activeThreadShell = serverThread;
-  const timelineThreadError =
-    serverRuntime?.status === "failed" &&
-    serverRuntime.lastErrorClass === "usage_limit" &&
-    activeThreadShell?.latestRun &&
-    visibleThreadError === serverRuntime.lastError
-      ? null
-      : visibleThreadError;
 
   const [timelineAnchor, setTimelineAnchor] = useState<{
     readonly threadKey: string | null;
@@ -1233,6 +1230,12 @@ export default function ChatView(props: ChatViewProps) {
       }),
     };
   })();
+  const timelineThreadError = timelineThreadErrorOf({
+    visibleThreadError,
+    runtime: serverRuntime,
+    hasLatestRun: Boolean(activeThreadShell?.latestRun),
+    canSwitchAccount: limitSwitchTarget !== null,
+  });
   const [dismissedPinnedWarning, setDismissedPinnedWarning] = useState<string | null>(null);
   const pinnedWarning = (() => {
     if (!activeThread || activeThread.modelSelection.accountChoice !== "pinned") return null;

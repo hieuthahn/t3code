@@ -1007,6 +1007,14 @@ const make = Effect.gen(function* () {
             })
             .pipe(Effect.mapError(mapError(input, "update-thread", threadId)));
         }
+        if (
+          input.createdBy === "user" &&
+          input.team !== undefined &&
+          input.team !== "auto" &&
+          Option.isSome(autoEffort)
+        ) {
+          yield* autoEffort.value.recordTeamChoice(threadId, input.team !== null);
+        }
         let runId: RunId | null = null;
         let messageWasAlreadyAccepted = false;
         if (input.initialMessage !== undefined) {

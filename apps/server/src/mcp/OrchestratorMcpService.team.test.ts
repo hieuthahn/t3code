@@ -255,6 +255,37 @@ it.effect("sends a team's delegation to its first worker when no target is named
   }),
 );
 
+it.effect("starts a team's worker after the architect moved to another account", () =>
+  Effect.gen(function* () {
+    const dispatched: Array<OrchestrationV2ServerCommand> = [];
+    const scopeBeforeSwitch: McpInvocationScope = {
+      ...scope,
+      thread: { ...scope.thread!, providerInstanceId: ProviderInstanceId.make("codex_spent") },
+    };
+    yield* call((service) =>
+      service.delegateTeamTask(scopeBeforeSwitch, { task: "Retry sends", title: "Retry sends" }),
+    ).pipe(Effect.provide(makeLayer({ dispatched, team })));
+    assert.deepEqual(delegations(dispatched), [
+      { instanceId: workerInstanceId, model: "gpt-5.4-mini", options: [] },
+    ]);
+  }),
+);
+
+it.effect("refuses an agent's delegation from an account the thread has left", () =>
+  Effect.gen(function* () {
+    const dispatched: Array<OrchestrationV2ServerCommand> = [];
+    const scopeBeforeSwitch: McpInvocationScope = {
+      ...scope,
+      thread: { ...scope.thread!, providerInstanceId: ProviderInstanceId.make("codex_spent") },
+    };
+    const refused = yield* call((service) =>
+      service.delegateTask(scopeBeforeSwitch, { task: "Retry sends" }),
+    ).pipe(Effect.flip, Effect.provide(makeLayer({ dispatched })));
+    assert.equal((refused as { code?: string }).code, "parent_not_active");
+    assert.deepEqual(delegations(dispatched), []);
+  }),
+);
+
 it.effect("refuses a team delegation to a model outside the team", () =>
   Effect.gen(function* () {
     const dispatched: Array<OrchestrationV2ServerCommand> = [];

@@ -2199,7 +2199,8 @@ const make = Effect.gen(function* () {
     if (
       parentRun === undefined ||
       parentRun.rootNodeId === null ||
-      parentRun.providerInstanceId !== scope.thread.providerInstanceId
+      // A team run keeps the scope it opened with, so an architect moved to another account still owns it.
+      (caller === "agent" && parentRun.providerInstanceId !== scope.thread.providerInstanceId)
     ) {
       return yield* failure(
         "parent_not_active",

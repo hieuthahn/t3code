@@ -71,7 +71,41 @@ export function limitRecoveryCommand(
   };
 }
 
-const makeSweep = Effect.gen(function* () {
+/** True once a thread's usage limit has reset, so its waiting queue can run. */
+export function limitResetReleasesQueue(
+  thread: Pick<
+    ProjectionStore.ProjectionLimitRecoveryCandidate,
+    | "status"
+    | "lastErrorClass"
+    | "usageLimitResetAt"
+    | "latestRunCompletedAt"
+    | "updatedAt"
+    | "archivedAt"
+    | "settledOverride"
+    | "pendingRuntimeRequest"
+    | "snoozedUntil"
+  > | null,
+  nowMs: number,
+): boolean {
+  if (
+    thread?.status !== "failed" ||
+    thread.lastErrorClass !== "usage_limit" ||
+    !thread.usageLimitResetAt ||
+    thread.archivedAt !== null ||
+    thread.settledOverride === "settled" ||
+    thread.pendingRuntimeRequest !== null ||
+    (thread.snoozedUntil != null && DateTime.toEpochMillis(thread.snoozedUntil) > nowMs)
+  )
+    return false;
+  const resetMs = Date.parse(thread.usageLimitResetAt);
+  return (
+    Number.isFinite(resetMs) &&
+    resetMs > DateTime.toEpochMillis(thread.latestRunCompletedAt ?? thread.updatedAt) &&
+    resetMs <= nowMs
+  );
+}
+
+export const makeSweep = Effect.gen(function* () {
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const threads = yield* ThreadManagement.ThreadManagementService;
   const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -107,6 +141,21 @@ const makeSweep = Effect.gen(function* () {
         Effect.catchCause((cause) =>
           Effect.logWarning("orchestration-v2.limit-recovery.dispatch-failed", {
             threadId: thread.id,
+            cause,
+          }),
+        ),
+      );
+    }
+    const queuedThreadIds = yield* projections.getRecoveryThreadIds("queued-runs");
+    for (const threadId of queuedThreadIds) {
+      yield* Effect.gen(function* () {
+        const shell = yield* projections.getThreadShell(threadId);
+        if (!limitResetReleasesQueue(shell, nowMs)) return;
+        yield* orchestrator.releaseQueueAfterLimitReset(threadId);
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("orchestration-v2.limit-recovery.queue-release-failed", {
+            threadId,
             cause,
           }),
         ),

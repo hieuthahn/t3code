@@ -118,9 +118,15 @@ export interface AutoEffortServiceShape {
   readonly resolve: (request: AutoEffortRequest) => Effect.Effect<AutoEffortResolution>;
   /** Judges team or single agent from a thread's first message; false when unsure or unavailable. */
   readonly judgeTeam: (request: AutoTeamRequest) => Effect.Effect<boolean>;
-  /** True while Team Auto still owns the thread: judged at launch, and no manual change since. */
-  readonly isTeamAuto: (threadId: ThreadId, teamOn: boolean) => Effect.Effect<boolean>;
+  /** True while Team Auto owns the thread: no manual change since its last verdict, or none yet. */
+  readonly isTeamAuto: (
+    threadId: ThreadId,
+    teamOn: boolean,
+    unjudgedIsAuto: boolean,
+  ) => Effect.Effect<boolean>;
   readonly recordTeamTurn: (record: TeamTurnRecord, after: boolean) => Effect.Effect<void>;
+  /** Records the team a user picked at launch, so Team Auto leaves the thread alone. */
+  readonly recordTeamChoice: (threadId: ThreadId, on: boolean) => Effect.Effect<void>;
 }
 
 export class AutoEffortService extends Context.Service<AutoEffortService, AutoEffortServiceShape>()(
@@ -148,6 +154,7 @@ interface LaunchJudgment {
 }
 
 const LAUNCH_RUN_ORDINAL = 1;
+const USER_CHOICE = "user";
 
 const capitalized = (text: string | undefined) =>
   text === undefined ? undefined : `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
@@ -348,9 +355,10 @@ const make = Effect.gen(function* () {
   const isTeamAuto = Effect.fn("AutoEffortService.isTeamAuto")(function* (
     threadId: ThreadId,
     teamOn: boolean,
+    unjudgedIsAuto: boolean,
   ) {
-    const rows = yield* sql<{ readonly teamAfter: number }>`
-      SELECT team_after AS "teamAfter" FROM auto_team_verdicts
+    const rows = yield* sql<{ readonly teamAfter: number; readonly judgedBy: string }>`
+      SELECT team_after AS "teamAfter", judged_by AS "judgedBy" FROM auto_team_verdicts
       WHERE thread_id = ${threadId}
       ORDER BY run_ordinal DESC
       LIMIT 1
@@ -360,8 +368,20 @@ const make = Effect.gen(function* () {
       ),
     );
     const last = rows[0];
-    return last !== undefined && (last.teamAfter === 1) === teamOn;
+    if (last === undefined) return unjudgedIsAuto;
+    return last.judgedBy !== USER_CHOICE && (last.teamAfter === 1) === teamOn;
   });
+
+  const recordTeamChoice = (threadId: ThreadId, on: boolean) =>
+    recordVerdict({
+      threadId,
+      runOrdinal: LAUNCH_RUN_ORDINAL,
+      before: false,
+      after: on,
+      verdict: undefined,
+      by: USER_CHOICE,
+      teamName: undefined,
+    });
 
   const storedTurn = (threadId: ThreadId, runOrdinal: number) =>
     sql<{
@@ -600,7 +620,13 @@ const make = Effect.gen(function* () {
     };
   });
 
-  return AutoEffortService.of({ resolve, judgeTeam, isTeamAuto, recordTeamTurn });
+  return AutoEffortService.of({
+    resolve,
+    judgeTeam,
+    isTeamAuto,
+    recordTeamTurn,
+    recordTeamChoice,
+  });
 });
 
 export const layer = Layer.effect(AutoEffortService, make);

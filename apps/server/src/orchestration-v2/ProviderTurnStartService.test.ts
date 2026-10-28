@@ -291,7 +291,8 @@ function makeLocalCommandHarness(input: {
   };
   readonly teamAuto?: {
     readonly teamOn: boolean;
-    readonly owned: boolean;
+    /** Undefined for a thread Team Auto never judged. */
+    readonly owned?: boolean;
     readonly action?: AutoEffort.TeamTurnAction;
     readonly noDefaultTeam?: boolean;
     readonly dispatchFails?: boolean;
@@ -370,6 +371,7 @@ function makeLocalCommandHarness(input: {
         relationshipToParent: null,
         rootThreadId: threadId,
       } as OrchestrationV2ThreadProjection["thread"]["lineage"],
+      ...(input.teamAuto === undefined ? {} : { createdBy: "user" }),
       ...(input.teamAuto?.teamOn === true ? { team: autoTeamSetup } : {}),
     } as OrchestrationV2ThreadProjection["thread"],
     runs: [
@@ -786,7 +788,8 @@ function makeLocalCommandHarness(input: {
           ? Layer.empty
           : Layer.mergeAll(
               Layer.mock(AutoEffort.AutoEffortService)({
-                isTeamAuto: () => Effect.succeed(input.teamAuto?.owned === true),
+                isTeamAuto: (_threadId, _teamOn, unjudgedIsAuto) =>
+                  Effect.succeed(input.teamAuto?.owned ?? unjudgedIsAuto),
                 resolve: (request) =>
                   Effect.sync(() => {
                     resolveRequests.push(request);
@@ -992,6 +995,22 @@ effectIt.effect("asks a team thread's architect to answer alone when the judge s
     expect(started?.appThread.team).toBeDefined();
     expect(started?.message.text).toContain("What does the retry option default to?");
     expect(started?.message.text).toContain("without team_assign");
+  }),
+);
+
+effectIt.effect("asks the team question on a thread started before Team Auto", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "Build the billing module across server, web and the database",
+      previousTurn: { runStatus: "completed", turnStatus: "completed" },
+      teamAuto: { teamOn: false, action: "start-team" },
+    });
+
+    yield* harness.start;
+
+    expect(harness.resolveRequests[0]?.team).toEqual(
+      expect.objectContaining({ on: false, teamName: "Strong team" }),
+    );
   }),
 );
 

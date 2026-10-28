@@ -473,6 +473,16 @@ describe("resolveSidebarThreadStatus", () => {
         ...idle,
         runtime: { ...runtime, status: "idle" as const, lastError: "persisted" },
       }),
+    ).toBe("ready");
+  });
+
+  it("shows Waiting while a settled run holds on a child session it awaits", () => {
+    expect(
+      resolveSidebarThreadStatus({
+        ...idle,
+        runtime: { ...runtime, status: "idle" as const },
+        pendingBackgroundTasks: [{ taskId: "child-1", kind: "subagent" }],
+      }),
     ).toBe("waiting");
   });
 });
@@ -1142,6 +1152,14 @@ describe("unseen completion with background work", () => {
       receded: true,
       pill: "Waiting",
     },
+    {
+      roster: "background subagent",
+      task: { kind: "subagent" },
+      status: "waiting",
+      topStatus: "waiting",
+      receded: true,
+      pill: "Waiting",
+    },
   ] as const)("presents a completed thread with a $roster roster", (expected) => {
     const thread = presentThreadShell(localEnvironmentId, {
       ...makeThreadFixture().source,
@@ -1204,6 +1222,9 @@ describe("Working shelf (beta)", () => {
     expect(isSidebarThreadWorking({ ...idle, runtime })).toBe(true);
     expect(isSidebarThreadWorking(waiting)).toBe(true);
     expect(isSidebarThreadWorking(idle)).toBe(false);
+    expect(
+      isSidebarThreadWorking({ ...idle, runtime: { ...runtime, status: "idle" as const } }),
+    ).toBe(false);
     expect(isSidebarThreadWorking({ ...idle, runtime, hasPendingApprovals: true })).toBe(false);
     expect(isSidebarThreadWorking({ ...idle, runtime, hasPendingUserInput: true })).toBe(false);
     expect(

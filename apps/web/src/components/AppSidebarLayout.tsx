@@ -22,6 +22,7 @@ import {
   resolveShortcutCommand,
   shortcutLabelForCommand,
 } from "../keybindings";
+import { useKeyboardShortcutsDialogStore } from "../keyboardShortcutsDialogStore";
 import { isEditableFocused } from "../lib/editableFocus";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
@@ -37,6 +38,7 @@ import {
   usePanelNavigationSuppression,
 } from "../panelAnimations";
 import { BackgroundThreadAnnouncer } from "./BackgroundThreadAnnouncer";
+import { KeyboardShortcutsDialogHost } from "./KeyboardShortcutsDialog";
 import LegacyThreadSidebar from "./LegacySidebar";
 import { useThreadVisitedMigration } from "../hooks/useThreadVisitedMigration";
 import ThreadSidebar from "./Sidebar";
@@ -171,6 +173,20 @@ export function registerNavigationHistoryCommands(router: AnyRouter): () => void
   );
 }
 
+export function registerKeyboardShortcutsCommand(): () => void {
+  return registerCommands(
+    {
+      "shortcuts.toggle": (event) => {
+        if (isCommandPaletteOpen()) return false;
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) useKeyboardShortcutsDialogStore.getState().toggle();
+      },
+    },
+    { when: (event) => !isKeybindingCaptureTarget(event) },
+  );
+}
+
 const MODIFIER_KEYS = new Set(["Alt", "Control", "Meta", "Shift"]);
 
 // A held key undoes once. Module state: undoing an archive navigates, and the
@@ -251,6 +267,7 @@ function registerAppShellCommands(router: AnyRouter, shellElement: Element): () 
   const disposers = [
     registerThreadUndoCommands(router, readSidebarVisible),
     registerNavigationHistoryCommands(router),
+    registerKeyboardShortcutsCommand(),
     registerMenuAction("open-settings", () => {
       if (!/^\/settings(\/|$)/.test(router.state.location.pathname))
         void router.navigate({ to: "/settings" });
@@ -428,6 +445,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         </Sidebar>
         {children}
         <BackgroundThreadAnnouncer />
+        <KeyboardShortcutsDialogHost />
         <SidebarControl />
         <MainAppLocationTracker />
       </SidebarProvider>

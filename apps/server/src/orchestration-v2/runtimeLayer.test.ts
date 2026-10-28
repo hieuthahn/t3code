@@ -4692,6 +4692,104 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
   );
 
   it.effect.each([
+    ["holds", 4, "queued"],
+    ["starts", 6, "starting"],
+  ] as const)(
+    "%s a limited thread's queue %i minutes after a limit that resets in 5",
+    ([name, minutesLater, expectedStatus]) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const eventSink = yield* EventSink.EventSinkV2;
+        const threadId = ThreadId.make(`runtime-layer-queue-limit-reset-${name}`);
+        yield* orchestrator.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make(`${threadId}:create`),
+          threadId,
+          createdBy: "user",
+          creationSource: "web",
+          projectId: ProjectId.make(`${threadId}:project`),
+          title: "Limited queue reset",
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: process.cwd(),
+        });
+        for (const index of [0, 1]) {
+          yield* orchestrator.dispatch({
+            type: "message.dispatch",
+            commandId: CommandId.make(`${threadId}:${index}`),
+            threadId,
+            messageId: MessageId.make(`${threadId}:${index}`),
+            text: `Prompt ${index}`,
+            attachments: [],
+            createdBy: "user",
+            creationSource: "web",
+            modelSelection,
+            dispatchMode: { type: index === 0 ? "start_immediately" : "queue_after_active" },
+          });
+        }
+        const [active, waiting] = (yield* orchestrator.getThreadProjection(threadId)).runs;
+        assert.isDefined(active);
+        assert.isDefined(waiting);
+        const failedAt = yield* DateTime.now;
+        const resetAt = DateTime.add(failedAt, { minutes: 5 });
+        yield* eventSink.write({
+          events: [
+            {
+              id: EventId.make(`${threadId}:error`),
+              type: "turn-item.updated",
+              threadId,
+              runId: active.id,
+              nodeId: active.rootNodeId!,
+              providerInstanceId: active.providerInstanceId,
+              occurredAt: failedAt,
+              payload: {
+                id: TurnItemId.make(`${threadId}:error`),
+                type: "error",
+                threadId,
+                runId: active.id,
+                nodeId: active.rootNodeId!,
+                providerThreadId: active.providerThreadId,
+                providerTurnId: null,
+                nativeItemRef: null,
+                parentItemId: null,
+                ordinal: 2,
+                status: "failed",
+                title: "Usage limit",
+                startedAt: failedAt,
+                completedAt: failedAt,
+                updatedAt: failedAt,
+                failure: {
+                  class: "usage_limit",
+                  message: "Usage limit reached",
+                  code: "usage_limit",
+                  retryable: null,
+                  resetAt: DateTime.formatIso(resetAt),
+                },
+              },
+            },
+            {
+              id: EventId.make(`${threadId}:failed`),
+              type: "run.updated",
+              threadId,
+              runId: active.id,
+              providerInstanceId: active.providerInstanceId,
+              occurredAt: failedAt,
+              payload: { ...active, status: "failed", completedAt: failedAt },
+            },
+          ],
+        });
+
+        yield* TestClock.adjust(`${minutesLater} minutes`);
+        yield* orchestrator.releaseQueueAfterLimitReset(threadId);
+
+        const after = yield* orchestrator.getThreadProjection(threadId);
+        assert.equal(after.runs.find((run) => run.id === waiting.id)?.status, expectedStatus);
+      }),
+  );
+
+  it.effect.each([
     ["server", modelSelection],
     ["provider", modelSelection],
     ["provider", { ...modelSelection, instanceId: alternateInstanceId }],

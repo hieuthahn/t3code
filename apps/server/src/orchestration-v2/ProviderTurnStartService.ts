@@ -236,11 +236,14 @@ export const layer: Layer.Layer<
         return undefined;
       }
       const teamOn = thread.team !== undefined;
-      if (!(yield* autoEffortService.value.isTeamAuto(thread.id, teamOn))) return undefined;
       const teamSettings = yield* serverSettings.getSettings.pipe(
         Effect.map((settings) => settings.team),
         Effect.orElseSucceed(() => undefined),
       );
+      const unjudgedIsAuto = teamSettings?.autoNewThreads === true && thread.createdBy === "user";
+      if (!(yield* autoEffortService.value.isTeamAuto(thread.id, teamOn, unjudgedIsAuto))) {
+        return undefined;
+      }
       const auto = autoTeamSetup(teamSettings, run.modelSelection);
       // A running team still takes the answer-alone hint after its default setup is gone.
       if (auto === undefined && !teamOn) return undefined;

@@ -189,6 +189,16 @@ describe("resolveIdleCompaction", () => {
   });
 });
 
+describe("ClientSettings keep awake", () => {
+  it("defaults off and accepts a patch", () => {
+    expect(decodeClientSettings({}).keepAwakeWhileAgentsWork).toBe(false);
+    expect(decodeClientSettingsPatch({})).not.toHaveProperty("keepAwakeWhileAgentsWork");
+    expect(
+      decodeClientSettingsPatch({ keepAwakeWhileAgentsWork: true }).keepAwakeWhileAgentsWork,
+    ).toBe(true);
+  });
+});
+
 describe("ClientSettings notifications", () => {
   it("requires opt-in when existing settings omit notification preferences", () => {
     expect(decodeClientSettings({}).notificationMode).toBe("off");

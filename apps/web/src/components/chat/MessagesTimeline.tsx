@@ -624,6 +624,22 @@ const ConversationTimeline = memo(function ConversationTimeline({
     worktreeSetup,
   });
   const rows = useStableRows(rawRows, listIdentityKey);
+  const [historyHead, setHistoryHead] = useState({ identity: listIdentityKey, rowId: rows[0]?.id });
+  if (historyHead.identity !== listIdentityKey || historyHead.rowId !== rows[0]?.id) {
+    setHistoryHead({ identity: listIdentityKey, rowId: rows[0]?.id });
+    const latestPosition = readTimelinePosition(listIdentityKey);
+    // A revisit paints the remembered timeline, then the server's latest history page drops its head.
+    if (
+      !restoringThreadPosition &&
+      historyHead.identity === listIdentityKey &&
+      historyHead.rowId !== undefined &&
+      latestPosition?.atEnd === false &&
+      !rows.some((row) => row.id === historyHead.rowId)
+    ) {
+      setListState((current) => ({ ...current, rememberedPosition: latestPosition }));
+      setPositionedThreadKey(null);
+    }
+  }
   // Run status/timestamps change per stream event; keep them out of shared row context.
   const runs = useStableHandoffRuns(runsProp);
   const minimapItems = deriveTimelineMinimapItems(rows);
@@ -834,7 +850,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
           {
             ...position,
             offsetWithinRow: element.getBoundingClientRect().top - row.getBoundingClientRect().top,
-            scrollOffset: element.scrollTop,
             atEnd: isAtEnd,
             disclosures: {
               runs: paintedExpandedRunIds,

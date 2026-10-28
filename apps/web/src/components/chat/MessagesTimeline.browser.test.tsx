@@ -15,6 +15,7 @@ import { deriveTimelineEntriesFromVisibleTurnItems } from "../../session-logic";
 import { remarkThoughtPreview } from "./TimelineWorkEntryRow.logic";
 import { parseMarkdownWithMath } from "@t3tools/shared/markdownMath";
 import { collectThreadFindRanges } from "./threadFindHighlights";
+import { readTimelinePosition } from "./timelineScrollAnchoring";
 
 const environmentQuery = vi.hoisted(() => ({
   error: "Pull request not found",
@@ -235,6 +236,122 @@ describe("MessagesTimeline messages", () => {
     await click(screen.button("Safe details"));
     expect((globalThis as { __t3Xss?: number }).__t3Xss).toBeUndefined();
   });
+});
+
+describe("MessagesTimeline thread switches", () => {
+  const conversation = (thread: string, count: number) =>
+    Array.from({ length: count }, (_, index) =>
+      message(
+        Array.from(
+          { length: index % 3 === 0 ? 60 : 4 },
+          (_, line) => `${thread} ${index}.${line}`,
+        ).join("\n\n"),
+        { role: index % 2 === 0 ? "user" : "assistant" },
+        `${thread}-${index}`,
+      ),
+    );
+  const paintedRowCount = (viewport: HTMLElement) => {
+    const box = viewport.getBoundingClientRect();
+    return [...viewport.querySelectorAll("p")].filter((paragraph) => {
+      const rect = paragraph.getBoundingClientRect();
+      return rect.bottom > box.top && rect.top < box.bottom;
+    }).length;
+  };
+
+  it.each([2_000, 5_000])(
+    "lands on the end of a revisited thread whose saved row is not loaded yet (saved offset %i)",
+    async (savedOffset) => {
+      const props = baseProps();
+      const first = props.routeThreadKey;
+      const second = `${first}-other`;
+      const history = conversation("first", 80);
+      const timeline = (threadKey: string, entries: Entry[], liveFollowEnabled = true) => (
+        <MessagesTimeline
+          {...props}
+          routeThreadKey={threadKey}
+          timelineEntries={entries}
+          liveFollowEnabled={liveFollowEnabled}
+        />
+      );
+      await using screen = await renderElement(timeline(first, history, false));
+      const viewport = props.listRef.current!.getScrollableNode()!;
+      await vi.waitFor(() => expect(viewport.scrollHeight).toBeGreaterThan(savedOffset + 2_000));
+      await vi.waitFor(async () => {
+        await act(() => {
+          viewport.scrollTop = savedOffset;
+          viewport.dispatchEvent(new Event("scroll"));
+        });
+        expect(viewport.scrollTop).toBe(savedOffset);
+        expect(readTimelinePosition(first)?.atEnd).toBe(false);
+      });
+      await screen.rerender(timeline(second, conversation("second", 20)));
+      await screen.rerender(timeline(first, history.slice(-12)));
+
+      await vi.waitFor(() => {
+        const element = props.listRef.current!.getScrollableNode()!;
+        expect(element.scrollHeight - element.clientHeight - element.scrollTop).toBeLessThan(2);
+        expect(paintedRowCount(element)).toBeGreaterThan(0);
+      });
+      expect(screen.text()).toContain("first 79.");
+    },
+  );
+
+  it.each([
+    { label: "the end", savedOffset: 2_000, keptRows: 12 },
+    { label: "the saved row", savedOffset: 10_000, keptRows: 40 },
+  ])(
+    "returns to $label when the latest history page replaces a restored thread",
+    async ({ savedOffset, keptRows }) => {
+      const props = { ...baseProps(), cancelPositionRestoreRef: createRef<(() => void) | null>() };
+      const first = props.routeThreadKey;
+      const history = conversation("first", 80);
+      const timeline = (threadKey: string, entries: Entry[], liveFollowEnabled = false) => (
+        <MessagesTimeline
+          {...props}
+          routeThreadKey={threadKey}
+          timelineEntries={entries}
+          liveFollowEnabled={liveFollowEnabled}
+        />
+      );
+      await using screen = await renderElement(timeline(first, history));
+      const viewport = props.listRef.current!.getScrollableNode()!;
+      await vi.waitFor(() => expect(viewport.scrollHeight).toBeGreaterThan(savedOffset + 2_000));
+      await vi.waitFor(async () => {
+        await act(() => {
+          viewport.scrollTop = savedOffset;
+          viewport.dispatchEvent(new Event("scroll"));
+        });
+        expect(viewport.scrollTop).toBe(savedOffset);
+        expect(readTimelinePosition(first)?.atEnd).toBe(false);
+      });
+      const saved = readTimelinePosition(first)!;
+      const savedRowDrift = () => {
+        const element = props.listRef.current!.getScrollableNode()!;
+        const state = props.listRef.current!.getState();
+        const row = state.elementAtIndex(state.indexByKey(saved.rowId)!);
+        const rowTop = row!.getBoundingClientRect().top - element.getBoundingClientRect().top;
+        return Math.abs(rowTop + saved.offsetWithinRow);
+      };
+      await screen.rerender(timeline(`${first}-other`, conversation("second", 20), true));
+      await screen.rerender(timeline(first, history));
+      await vi.waitFor(() => {
+        expect(savedRowDrift()).toBeLessThan(2);
+        expect(props.cancelPositionRestoreRef.current).toBeNull();
+      });
+      await screen.rerender(timeline(first, history.slice(-keptRows)));
+
+      await vi.waitFor(() => {
+        const element = props.listRef.current!.getScrollableNode()!;
+        expect(paintedRowCount(element)).toBeGreaterThan(0);
+        if (keptRows === 12) {
+          expect(screen.text()).toContain("first 79.");
+          expect(element.scrollHeight - element.clientHeight - element.scrollTop).toBeLessThan(2);
+        } else {
+          expect(savedRowDrift()).toBeLessThan(2);
+        }
+      });
+    },
+  );
 });
 
 describe("MessagesTimeline account switch notices", () => {

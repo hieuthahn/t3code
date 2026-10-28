@@ -124,27 +124,26 @@ export function useTimelinePositionRestore({
     viewport?.ownerDocument.addEventListener("keydown", onScrollKey);
     const position = rememberedPosition;
     const index = position ? rows.findIndex((row) => row.id === position.rowId) : -1;
-    if (position?.atEnd === false) onManualNavigation();
+    // A saved row outside the loaded history page has no valid offset, so it falls back to the end.
+    const restoresRow = position?.atEnd === false && index >= 0;
+    if (restoresRow) onManualNavigation();
     if (cancelPositionRestoreRef) cancelPositionRestoreRef.current = cancelRestoration;
-    const scrolling =
-      position?.atEnd === false
-        ? index >= 0
-          ? list.scrollToIndex({
-              index,
-              animated: false,
-              viewPosition: 0,
-              viewOffset: -position.offsetWithinRow,
-            })
-          : list.scrollToOffset({ offset: position.scrollOffset, animated: false })
-        : listOpenedOnRef.current?.identity === listIdentityKey
-          ? undefined
-          : list.scrollToEnd({ animated: false });
-    const settlesAtEnd = position?.atEnd !== false && scrolling !== undefined;
+    const scrolling = restoresRow
+      ? list.scrollToIndex({
+          index,
+          animated: false,
+          viewPosition: 0,
+          viewOffset: -position.offsetWithinRow,
+        })
+      : position?.atEnd !== false && listOpenedOnRef.current?.identity === listIdentityKey
+        ? undefined
+        : list.scrollToEnd({ animated: false });
+    const settlesAtEnd = !restoresRow && scrolling !== undefined;
     void Promise.resolve(scrolling).then(async () => {
       if (cancelled) return;
       if (settlesAtEnd) {
         await settleListScroll(list, measuredEndOffset, () => cancelled);
-      } else if (position?.atEnd === false && index >= 0) {
+      } else if (restoresRow) {
         // Keep the saved row mounted until its measured position and the DOM agree.
         await settleListScroll(
           list,

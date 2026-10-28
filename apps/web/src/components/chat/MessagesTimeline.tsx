@@ -834,7 +834,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
           {
             ...position,
             offsetWithinRow: element.getBoundingClientRect().top - row.getBoundingClientRect().top,
-            scrollOffset: element.scrollTop,
             atEnd: isAtEnd,
             disclosures: {
               runs: paintedExpandedRunIds,

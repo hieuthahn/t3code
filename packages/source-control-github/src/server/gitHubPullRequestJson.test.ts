@@ -510,6 +510,32 @@ describe("pull request detail decoding", () => {
     ).toBeUndefined();
   });
 
+  it("offers only the merge strategies every ruleset on the base branch allows", () => {
+    const pullRequestRule = (allowedMergeMethods: ReadonlyArray<string> | null) => ({
+      parameters: { __typename: "PullRequestParameters", allowedMergeMethods },
+    });
+    const withRules = (nodes: ReadonlyArray<Record<string, unknown>>) =>
+      detailOf([], { baseRef: { compare: null, rules: { nodes } } }).viewerAccess.mergeCapabilities;
+
+    expect(
+      withRules([
+        pullRequestRule(["MERGE", "SQUASH"]),
+        pullRequestRule(["MERGE", "REBASE"]),
+        { parameters: { __typename: "RequiredDeploymentsParameters" } },
+      ]),
+    ).toEqual({ merge: true, squash: false, rebase: false });
+    expect(withRules([pullRequestRule(null), { parameters: null }])).toEqual({
+      merge: true,
+      squash: true,
+      rebase: true,
+    });
+    expect(detailOf([]).viewerAccess.mergeCapabilities).toEqual({
+      merge: true,
+      squash: true,
+      rebase: true,
+    });
+  });
+
   it("shows a re-running check once, as the run that is happening now", () => {
     const detail = detailOf([
       inWorkflow({

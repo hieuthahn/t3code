@@ -74,7 +74,7 @@ const coreResponse = (pullRequest: Readonly<Record<string, unknown>> = {}) => ({
         viewerCanUpdate: true,
         viewerDidAuthor: false,
         viewerCanUpdateBranch: true,
-        baseRef: { compare: { behindBy: 2 } },
+        baseRef: { compare: { behindBy: 2 }, rules: { nodes: [] } },
         reviewRequests: { nodes: [] },
         labels: { nodes: [] },
         commits: { nodes: [] },

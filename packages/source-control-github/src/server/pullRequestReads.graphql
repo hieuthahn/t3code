@@ -117,6 +117,16 @@ query PullRequestCore(
         compare(headRef: $headRef) {
           behindBy
         }
+        # Rulesets can narrow the repository's merge strategies for this base branch.
+        rules(first: 100) {
+          nodes {
+            parameters {
+              ... on PullRequestParameters {
+                allowedMergeMethods
+              }
+            }
+          }
+        }
       }
       reviewRequests(first: $requestedReviewers) {
         nodes {

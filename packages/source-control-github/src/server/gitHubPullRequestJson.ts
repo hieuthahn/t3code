@@ -63,6 +63,7 @@ import type {
   PullRequestSubject,
   RepositoryAuthors,
   RepositoryLabels,
+  RepositoryRule,
   ReviewerCandidates,
   ViewerPermissions,
 } from "./pullRequestReads.graphql.ts";
@@ -1020,6 +1021,25 @@ type CoreRequestedReviewer = NonNullable<
   >["nodes"]
 >[number];
 
+/** Narrow the repository's merge strategies to those every base-branch ruleset allows. */
+function toMergeCapabilities(
+  repository: NonNullable<PullRequestCore.Result["repository"]>,
+  rules: ReadonlyArray<RepositoryRule>,
+): PullRequestMergeCapabilities {
+  const allowedByRuleset = rules.flatMap(({ parameters }) =>
+    parameters?.__typename === "PullRequestParameters" && parameters.allowedMergeMethods !== null
+      ? [parameters.allowedMergeMethods]
+      : [],
+  );
+  const rulesetsAllow = (method: "MERGE" | "SQUASH" | "REBASE") =>
+    allowedByRuleset.every((allowed) => allowed.includes(method));
+  return {
+    merge: repository.mergeCommitAllowed && rulesetsAllow("MERGE"),
+    squash: repository.squashMergeAllowed && rulesetsAllow("SQUASH"),
+    rebase: repository.rebaseMergeAllowed && rulesetsAllow("REBASE"),
+  };
+}
+
 export function toPullRequestCore(result: PullRequestCore.Result): GitHubPullRequestCore | null {
   const repository = result.repository;
   const pr = repository?.pullRequest;
@@ -1061,11 +1081,7 @@ export function toPullRequestCore(result: PullRequestCore.Result): GitHubPullReq
       canTriage: toCanTriage(repository.viewerPermission),
       ...toPullRequestViewerFields(pr),
       canMergeNow: IMMEDIATELY_MERGEABLE.has(pr.mergeStateStatus),
-      mergeCapabilities: {
-        merge: repository.mergeCommitAllowed,
-        squash: repository.squashMergeAllowed,
-        rebase: repository.rebaseMergeAllowed,
-      },
+      mergeCapabilities: toMergeCapabilities(repository, nodesOf(pr.baseRef?.rules)),
       autoMergeAllowed: repository.autoMergeAllowed,
     },
     comparison:
